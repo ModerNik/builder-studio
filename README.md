@@ -164,7 +164,7 @@ npm run build:win
 
 In **Settings → Advanced**, set **Python runtime** to `out/runtime/engine/runtime/python.exe` (or set `BS_ENGINE_PYTHON` in your environment to enable engine-backed tests).
 
-Releases are built and published automatically from `main` by `.github/workflows/release.yml` when a `v*` tag is pushed (`npm version <patch|minor|major> && git push --follow-tags`).
+Pushing a `v*` tag (`npm version <patch|minor|major> && git push --follow-tags`) makes `.github/workflows/release.yml` build the release from `main` and upload it as a draft GitHub release. Publish the draft by hand as a full release marked latest: installed copies only update from the latest published release.
 
 ---
 
