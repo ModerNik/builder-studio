@@ -1,0 +1,155 @@
+/* Styles the app composites need beyond utilities: the stage sweep and the Markdown prose variants.
+   Tokens only; imported by the components that use them. */
+@reference '../../../app/styles/main.css';
+
+/* the current stage of a JobStageIndicator: a slow sweep; static half fill under reduced motion */
+.stage-sweep {
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--accent-solid) 50%,
+    transparent 100%
+  );
+  background-size: 50% 100%;
+  background-repeat: no-repeat;
+  animation: stage-sweep 1.6s var(--ease-standard) infinite;
+}
+@keyframes stage-sweep {
+  from {
+    background-position: -100% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-sweep {
+    animation: none;
+    background-image: linear-gradient(90deg, var(--accent-solid) 50%, transparent 50%);
+    background-size: 100% 100%;
+  }
+}
+
+/* Markdown prose: docs (DESIGN.md, docs pages), chat (assistant replies, plans), log (design log rounds).
+   The older .markdown rules in main.css stay for screens not yet on the kit.
+   In the components layer, so utilities on the same element still win. */
+@layer components {
+  .prose {
+    user-select: text;
+    overflow-wrap: anywhere;
+    color: var(--fg);
+    & > :first-child {
+      margin-top: 0;
+    }
+    & > :last-child {
+      margin-bottom: 0;
+    }
+    & :is(h1, h2, h3, h4) {
+      text-wrap: balance;
+      color: var(--fg);
+      scroll-margin-top: var(--space-4);
+    }
+    & :is(p, ul, ol, table, pre, blockquote) {
+      margin-bottom: var(--space-3);
+    }
+    & :is(ul, ol) {
+      padding-left: var(--space-5);
+    }
+    & ul {
+      list-style: disc;
+    }
+    & ol {
+      list-style: decimal;
+    }
+    & li {
+      margin-bottom: var(--space-0_5);
+    }
+    & li::marker {
+      color: var(--fg-muted);
+    }
+    & strong {
+      font-weight: 600;
+    }
+    & a {
+      color: var(--accent-text);
+      text-decoration: underline;
+      text-underline-offset: 0.125em;
+      text-decoration-thickness: 0.0625em;
+    }
+    & a:focus-visible {
+      outline: var(--focus-width) solid var(--focus-ring);
+      outline-offset: var(--focus-offset);
+      border-radius: var(--radius-xs);
+    }
+    & code {
+      @apply rounded-sm bg-surface-sunken px-1 py-px font-mono text-[0.9em];
+    }
+    & pre {
+      @apply overflow-x-auto rounded-md border border-border-subtle bg-surface-sunken px-3 py-2 font-mono text-sm;
+    }
+    & pre code {
+      @apply bg-transparent p-0 text-[1em];
+    }
+    & table {
+      @apply block max-w-full overflow-x-auto text-sm tabular-nums;
+      border-collapse: collapse;
+    }
+    & :is(th, td) {
+      @apply border border-border-default px-2 py-1 text-left align-top;
+    }
+    & th {
+      @apply bg-surface-sunken font-medium text-fg-secondary;
+    }
+    & blockquote {
+      @apply border-l border-border-strong pl-3 text-fg-secondary;
+    }
+    & hr {
+      @apply my-4 border-border-subtle;
+    }
+    & img {
+      @apply max-w-full rounded-md;
+    }
+  }
+
+  .prose-docs {
+    @apply max-w-prose text-base leading-6;
+    & h1 {
+      @apply mb-4 text-2xl;
+    }
+    & h2 {
+      @apply mt-8 mb-3 border-b border-border-subtle pb-1 text-xl;
+    }
+    & h3 {
+      @apply mt-6 mb-2 text-lg;
+    }
+    & h4 {
+      @apply mt-4 mb-1 text-md;
+    }
+  }
+
+  .prose-chat {
+    @apply text-base leading-6;
+    & h1 {
+      @apply mt-3 mb-2 text-lg;
+    }
+    & h2 {
+      @apply mt-3 mb-1.5 text-md;
+    }
+    & :is(h3, h4) {
+      @apply mt-2 mb-1 text-base font-semibold;
+    }
+    & :is(p, ul, ol, table, pre, blockquote) {
+      margin-bottom: var(--space-2);
+    }
+  }
+
+  .prose-log {
+    @apply text-sm leading-5 text-fg-secondary;
+    & :is(h1, h2, h3, h4) {
+      @apply mt-3 mb-1 text-base font-semibold;
+    }
+    & :is(p, ul, ol, table, pre, blockquote) {
+      margin-bottom: var(--space-1_5);
+    }
+  }
+}

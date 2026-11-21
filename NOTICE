@@ -1,0 +1,22 @@
+Builder Studio
+Copyright (c) 2026 ModerNik
+Contact: https://github.com/ModerNik/builder-studio/issues
+
+Original Builder Studio application code is licensed under AGPL-3.0-only,
+with the additional permission in legal/ADDITIONAL_PERMISSIONS.md and the
+additional terms in legal/ADDITIONAL_TERMS.md. See LICENSE. Third-party
+components retain their own terms; see the generated THIRD_PARTY_NOTICES.txt.
+
+Modified versions must keep these notices, credit "Based on Builder Studio by
+ModerNik", say that they were changed, and use their own name and icon: the
+Builder Studio name and logo are not licensed. See legal/ADDITIONAL_TERMS.md.
+
+The shadcn/ui-derived components in src/renderer/src/shared/ui/primitives/
+retain their upstream MIT notice in legal/SHADCN-LICENSE.txt. Upstream terms:
+https://github.com/shadcn-ui/ui/blob/main/LICENSE.md
+
+BS Engine is a separately licensed proprietary component. This application
+license does not grant rights to copy, redistribute, resell, or integrate
+BS Engine into another application, service or modified version.
+
+NOT AN OFFICIAL MINECRAFT PRODUCT. NOT APPROVED BY OR ASSOCIATED WITH MOJANG OR MICROSOFT.

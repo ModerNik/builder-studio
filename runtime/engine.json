@@ -1,0 +1,26 @@
+{
+  "identity": "engine-1.0.0-cp314-win_amd64-9f04e3a1481c",
+  "engineVersion": "1.0.0",
+  "schematicaVersion": "0.3.0",
+  "pythonVersion": "3.14.7",
+  "platform": "win32-x64",
+  "source": {
+    "repository": "https://github.com/ModerNik/builder-studio-engine",
+    "commit": "9f04e3a1481cb86d58a7b0b6f585ec4d99e5ee98",
+    "tree": "e77ea1b1397168f25ed69cf6684582719e68dedc"
+  },
+  "publication": {
+    "kind": "release",
+    "tag": "v1.0.0",
+    "sha256": "7b95dd2a9fa7118340ebee3a3da867092a053f4fc90ff0f525976b4200808a7c",
+    "manifestSha256": "21aa84566c00935fc6e0de6e25f4c58c04e08e9d2cad969ae83eb740e58a2c53"
+  },
+  "inputs": [
+    {
+      "kind": "release",
+      "tag": "v1.0.0",
+      "sha256": "7b95dd2a9fa7118340ebee3a3da867092a053f4fc90ff0f525976b4200808a7c",
+      "manifestSha256": "21aa84566c00935fc6e0de6e25f4c58c04e08e9d2cad969ae83eb740e58a2c53"
+    }
+  ]
+}

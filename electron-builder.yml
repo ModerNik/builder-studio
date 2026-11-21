@@ -1,0 +1,73 @@
+appId: dev.builder-studio
+productName: builder-studio
+directories:
+  buildResources: build
+files:
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - resources/**
+  - package.json
+  # The list above is an allow-list. These stay as explicit guards if it is ever widened: Python code and
+  # dependencies belong to the managed runtime, never the application ASAR, and secrets never ship.
+  - '!engine/**'
+  - '!runtime/**'
+  - '!out/runtime/**'
+  - '!{.env,.env.*,.npmrc}'
+  - '!**/.vscode/*'
+  # The Agent SDK's own claude.exe (285 MB) is never run: the app always passes the user's Claude Code (src/main/agent/agent.ts).
+  - '!**/node_modules/@anthropic-ai/claude-agent-sdk-*/**'
+# The UI is English only; the other 54 Chromium locale files are 49 MB.
+electronLanguages:
+  - en-US
+asarUnpack:
+  - resources/**
+extraResources:
+  - from: out/runtime/delivery
+    to: runtime-delivery
+    filter:
+      - '*.json'
+      - '*.zip'
+  - from: out/THIRD_PARTY_NOTICES.txt # written by npm run licences
+    to: THIRD_PARTY_NOTICES.txt
+  - from: runtime
+    to: runtime
+    filter:
+      - extract.ps1
+      - sources.json
+      - engine.json
+  - from: out/runtime/engine/resources
+    to: engine
+    filter:
+      - '**/*'
+      - '.*/**/*'
+  - from: out/runtime/engine
+    to: engine-provenance
+    filter:
+      - engine-manifest.json
+
+win:
+  executableName: builder-studio
+nsis:
+  oneClick: false
+  license: out/ENGINE-EULA.txt
+  artifactName: ${name}-${version}-setup.${ext}
+  # productName stays builder-studio: renaming it moves userData and loses settings.json
+  shortcutName: Builder Studio
+  uninstallDisplayName: Builder Studio
+  createDesktopShortcut: always
+npmRebuild: false
+electronFuses:
+  runAsNode: false
+  enableNodeOptionsEnvironmentVariable: false
+  enableNodeCliInspectArguments: false
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
+# `npm run release` uploads into the draft release made beforehand (release.yml); installs check it on launch
+# (src/main/app/updater.ts). draft: if no release exists, a stray one never goes live half-uploaded
+publish:
+  provider: github
+  owner: ModerNik
+  repo: builder-studio
+  private: false
+  releaseType: draft

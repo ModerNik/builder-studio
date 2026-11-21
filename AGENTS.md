@@ -1,0 +1,21 @@
+# Repository instructions
+
+- **Commit messages:** use `type: message` or `type(scope): message`. Scope is optional; include it only when useful and never use `repo` as a scope. Examples: `docs: clarify commit message format` and `feat(editor): add ruler tool`. Exception: release commits use `release <version>` (for example, `release 1.0.0`), never `chore(release): <version>`.
+- **Branches and pull requests:** any push with more than one commit (feature, fix, refactor or anything else) goes to a branch, never straight to `main`, and lands through a pull request that is squash-merged. One squash commit per change keeps the history readable and shows what each release shipped. A single commit may go straight to `main`.
+- **Build output:** put runtime builds, installers and `BS_ACCEPTANCE_ROOT` under `out/` in this repo, never in a temp, scratch or `~/.codex` folder, and delete them when you are done. Each runtime build is about 1 GB, and copies left elsewhere fill drive C.
+- **UI work:** keep the design system and the UI kit up to date. A new component, variant, state or token is designed in `docs/DESIGN.md` first, then added to the kit (`src/renderer/src/shared/ui/`, or the `ui/` folder of the slice that owns it, plus its `/kit` section in `src/renderer/src/pages/kit/sections/`), and only then used in a screen. Details: `docs/DESIGN.md`, "Working with the kit".
+- **Renderer layout:** `src/renderer/src/` follows Feature-Sliced Design: `shared` < `entities` < `features` < `widgets` < `pages` < `app`. A layer imports only from the layers below it (ESLint enforces this). Inside a slice, `ui/` holds components and `model/` holds stores, hooks and logic with their tests. Details: `docs/DESIGN.md`, "Renderer layout".
+- **GitHub Actions:** `.github/workflows/release.yml` on a `v*` tag push is the only pipeline. Do not add workflows or triggers that run on branch pushes, pull requests, schedules or anything else (CI, caching, lint, preview builds) unless explicitly asked for that specific pipeline.
+
+## Branch and worktree lifecycle
+
+- Name topic branches `<type>/<short-task-description>` using lowercase kebab-case, such as `fix/viewer-selection` or `chore/worktree-cleanup`. Describe the actual change, as in commit messages; never use assistant names, random adjective/person names, or opaque IDs.
+- Name each worktree directory after its branch, replacing `/` with `-` (for example, `fix/viewer-selection` becomes `fix-viewer-selection`). If a tool generates a name, rename the branch and move the worktree with `git worktree move` before starting work.
+- When work is finished and merged, remove its temporary worktree and delete its local and remote topic branches as part of completing the task. Preserve the primary checkout and permanent branches (`main`, and `development` where present).
+- Before cleanup, refresh remote refs, verify that the branch tip is included in the target branch (or the exact head of a merged squash PR), and inspect tracked, untracked and ignored files for work that must be kept. Never discard unmerged changes or unsaved files without explicit user authorization.
+- Run cleanup from outside the worktree being removed. Use `git worktree remove`, then `git branch -d` and remote branch deletion; use `-D` only after verifying a squash merge or equivalent landed changes. Prune stale worktree metadata and remote-tracking refs afterward. If cleanup is blocked, report what remains and why.
+
+## Release descriptions
+
+- Release descriptions contain only shipped features and final changes, primarily user-facing behavior or changes affecting user experience. Never include development information, implementation history, testing/validation results, CI details, or internal acceptance notes.
+- Group changes into scope blocks, one `###` heading per area the release touches (for example UI, Engine, Settings, Agents). Skip empty scopes and list each change under the one scope it fits best.

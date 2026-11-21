@@ -1,0 +1,6 @@
+out
+dist
+.claude
+.agents
+tsconfig.json
+tsconfig.*.json

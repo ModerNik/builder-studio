@@ -1,0 +1,55 @@
+# ── Dependencies ────────────────────────────────────────────
+node_modules/
+.pnpm-store/
+.venv/
+venv/
+
+# ── Build output ────────────────────────────────────────────
+# electron-vite bundles and the staged runtime (out/runtime) land in out/,
+# electron-builder installers and unpacked apps in dist/
+out/
+dist/
+*.tsbuildinfo
+
+# ── Tool caches ─────────────────────────────────────────────
+.eslintcache
+.vite/
+coverage/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Logs ────────────────────────────────────────────────────
+*.log*
+logs/
+
+# ── Environment and secrets ─────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+
+# ── OS files ────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editors ─────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── AI assistants & local tooling ───────────────────────────
+.claude/
+.agents/
+.codex/
+CLAUDE.local.md
+AGENTS.override.md
+skills-lock.json
+graphify-out/
+.graphifyignore

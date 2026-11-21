@@ -1,0 +1,58 @@
+/* Viewer overlay kit: the axis gizmo's and tool rail's footprints (toolbars keep clear of them) and the
+   indeterminate sweep. */
+/* the inset outside a stage too, for overlays a screen places over its own viewer wrapper */
+:root {
+  --viewer-inset: var(--space-3);
+}
+.viewer-stage {
+  --viewer-gizmo-size: 6rem;
+  --viewer-inset: var(--space-3);
+  --viewer-rail-size: 0px;
+  container: viewer-stage / inline-size;
+}
+/* a stage with a tool rail: toolbars along the top start after it (button, the rail's padding, a gap) */
+.viewer-stage:has(> .viewer-rail) {
+  --viewer-rail-size: calc(var(--density-control-sm) + 0.5rem + var(--viewer-inset));
+}
+/* a stage with the tool HUD in its bottom-start corner: the rail stops above it and scrolls on a short stage */
+.viewer-stage:has(> .viewer-hud) > .viewer-rail {
+  bottom: calc(2 * var(--viewer-inset) + 1.75rem);
+}
+/* narrow stages (phones, split compare): tighter insets. The gizmo keeps its size: any smaller and its
+   12px letters no longer fit their bubbles. */
+@container viewer-stage (max-width: 35rem) {
+  .viewer-stage > * {
+    --viewer-inset: var(--space-2);
+  }
+}
+
+@keyframes viewer-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+.viewer-sweep {
+  animation: viewer-sweep 1.4s var(--ease-standard) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* a still bar; the card's text says it is loading */
+  .viewer-sweep {
+    animation: none;
+    transform: translateX(100%);
+  }
+}
+
+/* the map fits its surface to the stage's height as well as its width (100cqh), so it needs a size
+   container; this keeps the stage's container name */
+.viewer-stage.viewer-map {
+  container-type: size;
+}
+
+/* map selection: pixels stay square at any zoom */
+.viewer-map img,
+.viewer-map canvas {
+  image-rendering: pixelated;
+}

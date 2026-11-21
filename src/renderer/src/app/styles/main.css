@@ -1,0 +1,1092 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/hanken-grotesk';
+@import '@fontsource-variable/jetbrains-mono';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Builder Studio design tokens: direction A · Deepslate & Copper (docs/DESIGN.md is the reference).
+   Light values on :root, dark on .dark (the default: index.html ships class="dark").
+   Contrast pairs are pinned by tokens.test.ts. */
+
+/* Theme-independent scales: type, radius, motion, layers, breakpoints, layout sizes (also Tailwind's theme) */
+@theme static {
+  /* Families: Hanken Grotesk for UI, JetBrains Mono for code, paths, ids and coordinates */
+  --font-sans: 'Hanken Grotesk Variable', 'Hanken Grotesk', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, monospace;
+  /* Type scale in rem (follows OS/browser zoom): base 16px is the default UI text, 14px secondary, 12-13px meta only; headings scale with the window */
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1rem;
+  --text-2xs--font-weight: 500;
+  --text-2xs--letter-spacing: 0.02em;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-xs--font-weight: 500;
+  --text-xs--letter-spacing: 0.01em;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.25rem;
+  --text-sm--font-weight: 400;
+  --text-sm--letter-spacing: 0;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-base--font-weight: 400;
+  --text-base--letter-spacing: 0;
+  --text-md: 1.125rem;
+  --text-md--line-height: 1.625rem;
+  --text-md--font-weight: 500;
+  --text-md--letter-spacing: -0.005em;
+  --text-lg: 1.25rem;
+  --text-lg--line-height: 1.75rem;
+  --text-lg--font-weight: 600;
+  --text-lg--letter-spacing: -0.01em;
+  --text-xl: clamp(1.375rem, 1.2rem + 0.4vw, 1.5rem);
+  --text-xl--line-height: 1.3;
+  --text-xl--font-weight: 600;
+  --text-xl--letter-spacing: -0.015em;
+  --text-2xl: clamp(1.5rem, 1.25rem + 0.8vw, 1.875rem);
+  --text-2xl--line-height: 1.25;
+  --text-2xl--font-weight: 600;
+  --text-2xl--letter-spacing: -0.02em;
+  --text-3xl: clamp(1.75rem, 1.4rem + 1.2vw, 2.25rem);
+  --text-3xl--line-height: 1.2;
+  --text-3xl--font-weight: 600;
+  --text-3xl--letter-spacing: -0.025em;
+  /* Radius: md = controls, lg = panels/menus/dialogs, xl = touch sheets, full = status chips and switches only */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  /* Easing (M1 Calm): standard and enter share one ease-out; exit accelerates away */
+  --ease-standard: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-enter: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-linear: linear;
+  /* Breakpoints (px; media queries cannot read custom properties) */
+  --breakpoint-xs: 360px;
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+  --breakpoint-2xl: 1536px;
+  --breakpoint-3xl: 1920px;
+  /* Layout widths: max-w-dialog, max-w-settings, ... and the Workbench docks' default widths */
+  --container-prose: 68ch;
+  --container-dialog: 30rem;
+  --container-dialog-lg: 45rem;
+  --container-settings: 55rem;
+  --container-page: 80rem;
+  --container-wide: 96rem;
+  --container-editor: 18.75rem;
+  --container-agent: 23.25rem;
+}
+
+:root {
+  /* Spacing: 4px base (Tailwind's p-1 = 4px); raw steps for plain CSS */
+  --space-0_5: 0.125rem;
+  --space-1: 0.25rem;
+  --space-1_5: 0.375rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  /* Radius kept for the kit and older rules (= radius-md) */
+  --radius: 6px;
+  /* Border widths: hairline everywhere, strong for selected outlines, focus ring width and offset */
+  --border-hairline: 1px;
+  --border-strong-width: 1.5px;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+  /* Motion (M1 Calm): durations, travel distance; press is colour-only except primary buttons */
+  --dur-instant: 0ms;
+  --dur-fast: 120ms;
+  --dur-base: 180ms;
+  --dur-slow: 240ms;
+  --travel: 4px;
+  --press-scale-primary: 0.97;
+  /* Layers: z-sticky, z-dock, ... (Tailwind z-* classes) */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dock: 20;
+  --z-floating: 30;
+  --z-overlay: 1000;
+  --z-modal: 1100;
+  --z-dropdown: 1200; /* above modals: menus and selects open from inside dialogs */
+  --z-popover: 1300;
+  --z-toast: 1400;
+  --z-tooltip: 1500;
+  /* Root size: 16px up to a 1440px-wide window, 18px at 1920, 20px from 2400. Sizes below are rem so they
+     grow with it; px stays for hairlines, radii and the title bar (the OS draws its buttons at a fixed height).
+     To turn growth off set --root-size-max to --root-size-min; to retune, change the fluid line (16px + 1px per 240px) */
+  --root-size-min: 1rem;
+  --root-size-max: 1.25rem;
+  --root-size-fluid: calc(0.625rem + 0.4167vw);
+  /* Workbench shell (S3): title bar, document tabs, status bar, dock sizes and limits */
+  --shell-titlebar: 36px;
+  --shell-tabbar: 2.5rem;
+  --shell-statusbar: 1.75rem;
+  --dock-rail: 2.5rem;
+  --dock-editor: var(--container-editor);
+  --dock-assistant: var(--container-agent);
+  --dock-review: 22.5rem;
+  --dock-activity: 13.75rem;
+  --dock-min: 15rem;
+  --dock-max: 35rem;
+  /* Density (rem, shown at a 16px root): fine pointers 36px controls and rows, 16px text; coarse pointers 44px+ */
+  --density-control: 2.25rem;
+  --density-control-sm: 1.875rem;
+  --density-control-xs: 1.625rem;
+  --density-row: 2.25rem;
+  --density-icon-button: 2.25rem;
+  --density-gap: 0.5rem;
+  --density-text: 1rem;
+}
+
+/* Coarse pointers: 44px targets. data-density="touch" on <html> forces the same sizes (the UI kit's density preview). */
+@media (pointer: coarse) {
+  :root {
+    --density-control: 2.75rem;
+    --density-control-sm: 2.5rem;
+    --density-control-xs: 2rem;
+    --density-row: 3rem;
+    --density-icon-button: 2.75rem;
+    --density-gap: 0.75rem;
+    --density-text: 1rem;
+  }
+}
+:root[data-density='touch'] {
+  --density-control: 2.75rem;
+  --density-control-sm: 2.5rem;
+  --density-control-xs: 2rem;
+  --density-row: 3rem;
+  --density-icon-button: 2.75rem;
+  --density-gap: 0.75rem;
+  --density-text: 1rem;
+}
+
+/* Reduced motion: no travel or scale, colour and opacity only, 120ms at most */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0ms;
+    --dur-base: 120ms;
+    --dur-slow: 120ms;
+    --travel: 0px;
+    --press-scale-primary: 1;
+    --pop-scale: 1;
+  }
+}
+
+/* Kit interaction helpers. focus-ring: the 2px verdigris ring at 2px offset, keyboard focus only.
+   can-hover / can-press: hover and press styles that skip disabled, aria-disabled and Radix data-disabled controls. */
+@utility focus-ring {
+  &:focus-visible {
+    outline: var(--focus-width) solid var(--focus-ring);
+    outline-offset: var(--focus-offset);
+  }
+}
+@custom-variant can-hover {
+  @media (hover: hover) {
+    &:hover:not(:disabled, [aria-disabled='true'], [data-disabled]) {
+      @slot;
+    }
+  }
+}
+@custom-variant can-press (&:active:not(:disabled, [aria-disabled='true'], [data-disabled]));
+
+/* Kit motion (M1 Calm), driven by Radix data-state. Floating layers fade in, travel 4px away from their anchor
+   and grow from 0.98; dialogs fade and grow; sheets travel from their edge; exits run at three quarters of the
+   enter time. Under reduced motion the tokens zero travel and scale, leaving a short fade. */
+:root {
+  --pop-scale: 0.98;
+}
+@utility motion-pop {
+  --tw-enter-opacity: 0;
+  --tw-exit-opacity: 0;
+  --tw-enter-scale: var(--pop-scale);
+  --tw-exit-scale: var(--pop-scale);
+  &:is([data-state='open'], [data-state='delayed-open'], [data-state='instant-open']) {
+    animation: enter var(--dur-base) var(--ease-enter);
+  }
+  &[data-state='closed'] {
+    animation: exit calc(var(--dur-base) * 0.75) var(--ease-exit) forwards;
+  }
+  &[data-side='bottom'] {
+    --tw-enter-translate-y: calc(var(--travel) * -1);
+    --tw-exit-translate-y: calc(var(--travel) * -1);
+  }
+  &[data-side='top'] {
+    --tw-enter-translate-y: var(--travel);
+    --tw-exit-translate-y: var(--travel);
+  }
+  &[data-side='left'] {
+    --tw-enter-translate-x: var(--travel);
+    --tw-exit-translate-x: var(--travel);
+  }
+  &[data-side='right'] {
+    --tw-enter-translate-x: calc(var(--travel) * -1);
+    --tw-exit-translate-x: calc(var(--travel) * -1);
+  }
+}
+@utility motion-fade {
+  --tw-enter-opacity: 0;
+  --tw-exit-opacity: 0;
+  &[data-state='open'] {
+    animation: enter var(--dur-base) var(--ease-enter);
+  }
+  &[data-state='closed'] {
+    animation: exit calc(var(--dur-base) * 0.75) var(--ease-exit) forwards;
+  }
+}
+@utility motion-dialog {
+  --tw-enter-opacity: 0;
+  --tw-exit-opacity: 0;
+  --tw-enter-scale: var(--pop-scale);
+  --tw-exit-scale: var(--pop-scale);
+  &[data-state='open'] {
+    animation: enter var(--dur-base) var(--ease-enter);
+  }
+  &[data-state='closed'] {
+    animation: exit calc(var(--dur-base) * 0.75) var(--ease-exit) forwards;
+  }
+}
+@utility motion-sheet {
+  --tw-enter-opacity: 0;
+  --tw-exit-opacity: 0;
+  &[data-state='open'] {
+    animation: enter var(--dur-slow) var(--ease-enter);
+  }
+  &[data-state='closed'] {
+    animation: exit calc(var(--dur-slow) * 0.75) var(--ease-exit) forwards;
+  }
+  &[data-side='right'] {
+    --tw-enter-translate-x: var(--travel);
+    --tw-exit-translate-x: var(--travel);
+  }
+  &[data-side='left'] {
+    --tw-enter-translate-x: calc(var(--travel) * -1);
+    --tw-exit-translate-x: calc(var(--travel) * -1);
+  }
+  &[data-side='top'] {
+    --tw-enter-translate-y: calc(var(--travel) * -1);
+    --tw-exit-translate-y: calc(var(--travel) * -1);
+  }
+  &[data-side='bottom'] {
+    --tw-enter-translate-y: var(--travel);
+    --tw-exit-translate-y: var(--travel);
+  }
+}
+/* Indeterminate progress: a bar sweeps the track; reduced motion parks it as a static partial fill */
+@keyframes progress-sweep {
+  from {
+    translate: -100% 0;
+  }
+  to {
+    translate: 250% 0;
+  }
+}
+@utility animate-progress-sweep {
+  animation: progress-sweep 1.4s var(--ease-standard) infinite;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+}
+
+:root {
+  color-scheme: light;
+  /* Surfaces: sunken < bg < panel < raised < overlay; hover/active are state fills; viewer is the neutral 3D backdrop */
+  --surface-sunken: oklch(0.975 0.001 265);
+  --surface-bg: oklch(0.962 0.001 265);
+  --surface-panel: oklch(1 0 265);
+  --surface-raised: oklch(0.982 0.001 265);
+  --surface-overlay: oklch(1 0 265);
+  --surface-hover: oklch(0.94 0.002 265);
+  --surface-active: oklch(0.905 0.003 265);
+  --surface-viewer: oklch(0.925 0 0);
+  --surface-scrim: oklch(0.2 0.01 265 / 38%);
+  --surface-inverse: oklch(0.209 0.006 265);
+  /* Text tiers */
+  --fg: oklch(0.209 0.006 265);
+  --fg-secondary: oklch(0.453 0.01 265);
+  --fg-muted: oklch(0.51 0.01 265);
+  --fg-disabled: oklch(0.68 0.007 265);
+  --fg-inverse: oklch(0.962 0.001 265);
+  /* Borders */
+  --border-subtle: oklch(0.925 0.003 265);
+  --border-default: oklch(0.893 0.004 265);
+  --border-strong: oklch(0.6 0.01 265);
+  /* Accent (verdigris): solid fills, subtle tints, text on surfaces; focus ring and text selection */
+  --accent-solid: oklch(0.506 0.087 175);
+  --accent-solid-hover: oklch(0.456 0.085 175);
+  --accent-solid-active: oklch(0.416 0.077 175);
+  --accent-subtle-bg: oklch(0.958 0.028 175);
+  --accent-subtle-border: oklch(0.8 0.07 175);
+  --accent-on-solid: oklch(1 0 175);
+  --accent-text: oklch(0.47 0.087 175);
+  --focus-ring: var(--accent-solid);
+  --selection-bg: oklch(0.86 0.06 175);
+  /* Semantic sets: solid, on-solid, subtle tint + border, text */
+  --success-solid: oklch(0.52 0.13 148);
+  --success-solid-hover: oklch(0.47 0.13 148);
+  --success-on-solid: oklch(1 0 148);
+  --success-subtle-bg: oklch(0.962 0.03 148);
+  --success-subtle-border: oklch(0.82 0.07 148);
+  --success-text: oklch(0.48 0.13 148);
+  --warning-solid: oklch(0.77 0.15 80);
+  --warning-solid-hover: oklch(0.72 0.148 80);
+  --warning-on-solid: oklch(0.2 0.03 80);
+  --warning-subtle-bg: oklch(0.962 0.03 80);
+  --warning-subtle-border: oklch(0.82 0.07 80);
+  --warning-text: oklch(0.48 0.098 80);
+  --danger-solid: oklch(0.53 0.18 27);
+  --danger-solid-hover: oklch(0.48 0.18 27);
+  --danger-on-solid: oklch(1 0 27);
+  --danger-subtle-bg: oklch(0.962 0.018 27);
+  --danger-subtle-border: oklch(0.82 0.07 27);
+  --danger-text: oklch(0.48 0.18 27);
+  --info-solid: oklch(0.52 0.16 255);
+  --info-solid-hover: oklch(0.47 0.154 255);
+  --info-on-solid: oklch(1 0 255);
+  --info-subtle-bg: oklch(0.962 0.018 255);
+  --info-subtle-border: oklch(0.82 0.07 255);
+  --info-text: oklch(0.48 0.158 255);
+  --neutral-solid: oklch(0.42 0.007 265);
+  --neutral-solid-hover: oklch(0.37 0.007 265);
+  --neutral-on-solid: oklch(1 0 265);
+  --neutral-subtle-bg: var(--surface-hover);
+  --neutral-subtle-border: var(--border-default);
+  --neutral-text: var(--fg-secondary);
+  /* Job and agent states: fg on its bg chip */
+  --state-idle-fg: var(--fg-muted);
+  --state-idle-bg: var(--surface-hover);
+  --state-queued-fg: var(--fg-secondary);
+  --state-queued-bg: var(--neutral-subtle-bg);
+  --state-running-fg: var(--accent-text);
+  --state-running-bg: var(--accent-subtle-bg);
+  --state-awaiting-approval-fg: var(--warning-text);
+  --state-awaiting-approval-bg: var(--warning-subtle-bg);
+  --state-done-fg: var(--success-text);
+  --state-done-bg: var(--success-subtle-bg);
+  --state-failed-fg: var(--danger-text);
+  --state-failed-bg: var(--danger-subtle-bg);
+  --state-cancelled-fg: var(--fg-muted);
+  --state-cancelled-bg: var(--neutral-subtle-bg);
+  /* Diff: text, row tint, 3D/gutter mark */
+  --diff-added-fg: oklch(0.48 0.124 128);
+  --diff-added-bg: oklch(0.955 0.04 128);
+  --diff-added-mark: oklch(0.58 0.15 128);
+  --diff-removed-fg: oklch(0.48 0.18 25);
+  --diff-removed-bg: oklch(0.955 0.022 25);
+  --diff-removed-mark: oklch(0.58 0.2 25);
+  --diff-changed-fg: oklch(0.48 0.098 95);
+  --diff-changed-bg: oklch(0.955 0.04 95);
+  --diff-changed-mark: oklch(0.58 0.118 95);
+  /* Lint severities */
+  --lint-error: var(--danger-text);
+  --lint-warning: var(--warning-text);
+  --lint-info: var(--info-text);
+  --lint-hint: var(--fg-secondary);
+  /* Axis gizmo X/Y/Z */
+  --axis-x: oklch(0.52 0.17 27);
+  --axis-y: oklch(0.495 0.154 145);
+  --axis-z: oklch(0.51 0.16 255);
+  /* Review pins */
+  --pin-open-fill: var(--accent-solid);
+  --pin-open-text: var(--accent-on-solid);
+  --pin-open-ring: var(--surface-bg);
+  --pin-selected-fill: var(--fg);
+  --pin-selected-text: var(--surface-bg);
+  --pin-selected-ring: var(--surface-bg);
+  --pin-resolved-fill: var(--neutral-solid);
+  --pin-resolved-text: var(--neutral-on-solid);
+  --pin-resolved-ring: var(--surface-bg);
+  /* Categorical (charts, check overlays): 8 hues, fixed order */
+  --cat-1: oklch(0.575 0.163 255.5);
+  --cat-2: oklch(0.671 0.175 40.6);
+  --cat-3: oklch(0.669 0.141 162.1);
+  --cat-4: oklch(0.764 0.161 75.1);
+  --cat-5: oklch(0.716 0.141 357.4);
+  --cat-6: oklch(0.529 0.18 142.5);
+  --cat-7: oklch(0.527 0.197 283.4);
+  --cat-8: oklch(0.623 0.191 24.9);
+  /* Elevation: shadow + 1px border-subtle ring on menus, popovers, dialogs, toasts */
+  --elevation-sm: 0 1px 2px oklch(0.2 0.01 265 / 8%);
+  --elevation-md: 0 4px 12px -2px oklch(0.2 0.01 265 / 12%);
+  --elevation-lg: 0 12px 28px -6px oklch(0.2 0.01 265 / 16%);
+  --elevation-xl: 0 24px 48px -12px oklch(0.2 0.01 265 / 22%);
+}
+.dark {
+  color-scheme: dark;
+  /* Surfaces: sunken < bg < panel < raised < overlay; hover/active are state fills; viewer is the neutral 3D backdrop */
+  --surface-sunken: oklch(0.16 0.005 265);
+  --surface-bg: oklch(0.188 0.006 265);
+  --surface-panel: oklch(0.218 0.006 265);
+  --surface-raised: oklch(0.25 0.007 265);
+  --surface-overlay: oklch(0.272 0.007 265);
+  --surface-hover: oklch(0.292 0.007 265);
+  --surface-active: oklch(0.325 0.007 265);
+  --surface-viewer: oklch(0.228 0 0);
+  --surface-scrim: oklch(0.08 0 0 / 62%);
+  --surface-inverse: oklch(0.947 0.002 265);
+  /* Text tiers */
+  --fg: oklch(0.947 0.002 265);
+  --fg-secondary: oklch(0.735 0.01 265);
+  --fg-muted: oklch(0.665 0.01 265);
+  --fg-disabled: oklch(0.5 0.007 265);
+  --fg-inverse: oklch(0.188 0.006 265);
+  /* Borders */
+  --border-subtle: oklch(0.262 0.007 265);
+  --border-default: oklch(0.31 0.007 265);
+  --border-strong: oklch(0.57 0.01 265);
+  /* Accent (verdigris): solid fills, subtle tints, text on surfaces; focus ring and text selection */
+  --accent-solid: oklch(0.743 0.114 175);
+  --accent-solid-hover: oklch(0.788 0.114 175);
+  --accent-solid-active: oklch(0.703 0.114 175);
+  --accent-subtle-bg: oklch(0.3 0.045 175);
+  --accent-subtle-border: oklch(0.46 0.08 175);
+  --accent-on-solid: oklch(0.22 0.035 175);
+  --accent-text: oklch(0.8 0.114 175);
+  --focus-ring: var(--accent-solid);
+  --selection-bg: oklch(0.4 0.07 175);
+  /* Semantic sets: solid, on-solid, subtle tint + border, text */
+  --success-solid: oklch(0.72 0.14 148);
+  --success-solid-hover: oklch(0.76 0.14 148);
+  --success-on-solid: oklch(0.2 0.03 148);
+  --success-subtle-bg: oklch(0.29 0.045 148);
+  --success-subtle-border: oklch(0.45 0.08 148);
+  --success-text: oklch(0.78 0.14 148);
+  --warning-solid: oklch(0.8 0.14 80);
+  --warning-solid-hover: oklch(0.84 0.14 80);
+  --warning-on-solid: oklch(0.2 0.03 80);
+  --warning-subtle-bg: oklch(0.29 0.045 80);
+  --warning-subtle-border: oklch(0.45 0.08 80);
+  --warning-text: oklch(0.78 0.14 80);
+  --danger-solid: oklch(0.7 0.16 27);
+  --danger-solid-hover: oklch(0.74 0.158 27);
+  --danger-on-solid: oklch(0.2 0.03 27);
+  --danger-subtle-bg: oklch(0.29 0.045 27);
+  --danger-subtle-border: oklch(0.45 0.08 27);
+  --danger-text: oklch(0.78 0.128 27);
+  --info-solid: oklch(0.72 0.13 255);
+  --info-solid-hover: oklch(0.76 0.124 255);
+  --info-on-solid: oklch(0.2 0.03 255);
+  --info-subtle-bg: oklch(0.29 0.045 255);
+  --info-subtle-border: oklch(0.45 0.08 255);
+  --info-text: oklch(0.78 0.112 255);
+  --neutral-solid: oklch(0.4 0.007 265);
+  --neutral-solid-hover: oklch(0.44 0.007 265);
+  --neutral-on-solid: var(--fg);
+  --neutral-subtle-bg: var(--surface-hover);
+  --neutral-subtle-border: var(--border-default);
+  --neutral-text: var(--fg-secondary);
+  /* Job and agent states: fg on its bg chip */
+  --state-idle-fg: var(--fg-muted);
+  --state-idle-bg: var(--surface-hover);
+  --state-queued-fg: var(--fg-secondary);
+  --state-queued-bg: var(--neutral-subtle-bg);
+  --state-running-fg: var(--accent-text);
+  --state-running-bg: var(--accent-subtle-bg);
+  --state-awaiting-approval-fg: var(--warning-text);
+  --state-awaiting-approval-bg: var(--warning-subtle-bg);
+  --state-done-fg: var(--success-text);
+  --state-done-bg: var(--success-subtle-bg);
+  --state-failed-fg: var(--danger-text);
+  --state-failed-bg: var(--danger-subtle-bg);
+  --state-cancelled-fg: var(--fg-muted);
+  --state-cancelled-bg: var(--neutral-subtle-bg);
+  /* Diff: text, row tint, 3D/gutter mark */
+  --diff-added-fg: oklch(0.8 0.16 128);
+  --diff-added-bg: oklch(0.285 0.05 128);
+  --diff-added-mark: oklch(0.78 0.18 128);
+  --diff-removed-fg: oklch(0.8 0.114 25);
+  --diff-removed-bg: oklch(0.285 0.05 25);
+  --diff-removed-mark: oklch(0.78 0.128 25);
+  --diff-changed-fg: oklch(0.8 0.14 95);
+  --diff-changed-bg: oklch(0.285 0.05 95);
+  --diff-changed-mark: oklch(0.78 0.16 95);
+  /* Lint severities */
+  --lint-error: var(--danger-text);
+  --lint-warning: var(--warning-text);
+  --lint-info: var(--info-text);
+  --lint-hint: var(--fg-secondary);
+  /* Axis gizmo X/Y/Z */
+  --axis-x: oklch(0.72 0.17 27);
+  --axis-y: oklch(0.72 0.17 145);
+  --axis-z: oklch(0.72 0.148 255);
+  /* Review pins */
+  --pin-open-fill: var(--accent-solid);
+  --pin-open-text: var(--accent-on-solid);
+  --pin-open-ring: var(--surface-bg);
+  --pin-selected-fill: var(--fg);
+  --pin-selected-text: var(--surface-bg);
+  --pin-selected-ring: var(--surface-bg);
+  --pin-resolved-fill: var(--neutral-solid);
+  --pin-resolved-text: var(--neutral-on-solid);
+  --pin-resolved-ring: var(--surface-bg);
+  /* Categorical (charts, check overlays): 8 hues, fixed order */
+  --cat-1: oklch(0.622 0.161 255.1);
+  --cat-2: oklch(0.622 0.173 40.1);
+  --cat-3: oklch(0.621 0.128 163.1);
+  --cat-4: oklch(0.664 0.141 73.2);
+  --cat-5: oklch(0.622 0.171 0.8);
+  --cat-6: oklch(0.529 0.18 142.5);
+  --cat-7: oklch(0.67 0.145 286.8);
+  --cat-8: oklch(0.669 0.159 22.3);
+  /* Elevation: shadow + 1px border-subtle ring on menus, popovers, dialogs, toasts */
+  --elevation-sm: 0 1px 2px oklch(0 0 0 / 40%);
+  --elevation-md: 0 4px 12px -2px oklch(0 0 0 / 45%);
+  --elevation-lg: 0 12px 32px -6px oklch(0 0 0 / 55%);
+  --elevation-xl: 0 24px 56px -12px oklch(0 0 0 / 65%);
+}
+:root {
+  /* Deepslate neutral ramp (absolute; roles above pick from it) */
+  --deepslate-0: oklch(1 0 265);
+  --deepslate-50: oklch(0.982 0.001 265);
+  --deepslate-100: oklch(0.962 0.001 265);
+  --deepslate-150: oklch(0.94 0.002 265);
+  --deepslate-200: oklch(0.905 0.003 265);
+  --deepslate-300: oklch(0.82 0.006 265);
+  --deepslate-400: oklch(0.7 0.007 265);
+  --deepslate-500: oklch(0.6 0.007 265);
+  --deepslate-600: oklch(0.5 0.007 265);
+  --deepslate-700: oklch(0.4 0.007 265);
+  --deepslate-750: oklch(0.33 0.007 265);
+  --deepslate-800: oklch(0.295 0.007 265);
+  --deepslate-850: oklch(0.262 0.007 265);
+  --deepslate-900: oklch(0.23 0.007 265);
+  --deepslate-925: oklch(0.205 0.006 265);
+  --deepslate-950: oklch(0.182 0.006 265);
+  --deepslate-975: oklch(0.158 0.005 265);
+}
+:root {
+  /* shadcn names, mapped onto the roles so the kit follows both themes */
+  --background: var(--surface-bg);
+  --foreground: var(--fg);
+  --card: var(--surface-raised);
+  --card-foreground: var(--fg);
+  --popover: var(--surface-overlay);
+  --popover-foreground: var(--fg);
+  --primary: var(--accent-solid);
+  --primary-foreground: var(--accent-on-solid);
+  --secondary: var(--surface-hover);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface-panel);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--surface-hover);
+  --accent-foreground: var(--fg);
+  --destructive: var(--danger-solid);
+  --destructive-foreground: var(--danger-on-solid);
+  --border: var(--border-default);
+  --input: var(--border-strong);
+  --ring: var(--focus-ring);
+  --chart-1: var(--cat-1);
+  --chart-2: var(--cat-2);
+  --chart-3: var(--cat-3);
+  --chart-4: var(--cat-4);
+  --chart-5: var(--cat-5);
+  --sidebar: var(--surface-panel);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--accent-solid);
+  --sidebar-primary-foreground: var(--accent-on-solid);
+  --sidebar-accent: var(--surface-hover);
+  --sidebar-accent-foreground: var(--fg);
+  --sidebar-border: var(--border-subtle);
+  --sidebar-ring: var(--focus-ring);
+}
+
+/* Older status names kept for current screens */
+:root {
+  --ok: var(--success-text);
+  --warn: var(--warning-text);
+  /* every panel floating over a 3D view or a layer plan: one glass surface */
+  --overlay: color-mix(in oklab, var(--surface-overlay) 92%, transparent);
+  --overlay-border: var(--border-default);
+  --shadow-overlay: var(--elevation-md);
+}
+
+/* Theme-dependent tokens exposed to Tailwind: bg-surface-raised, text-fg-muted, bg-success-subtle, text-diff-added, shadow-md, duration-base, z-modal */
+@theme inline {
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface: var(--surface-bg);
+  --color-surface-panel: var(--surface-panel);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-overlay: var(--surface-overlay);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-surface-viewer: var(--surface-viewer);
+  --color-surface-scrim: var(--surface-scrim);
+  --color-surface-inverse: var(--surface-inverse);
+  --color-fg: var(--fg);
+  --color-fg-secondary: var(--fg-secondary);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-disabled: var(--fg-disabled);
+  --color-fg-inverse: var(--fg-inverse);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-accent-solid: var(--accent-solid);
+  --color-accent-solid-hover: var(--accent-solid-hover);
+  --color-accent-solid-active: var(--accent-solid-active);
+  --color-accent-subtle: var(--accent-subtle-bg);
+  --color-accent-subtle-border: var(--accent-subtle-border);
+  --color-accent-on-solid: var(--accent-on-solid);
+  --color-accent-text: var(--accent-text);
+  --color-focus: var(--focus-ring);
+  --color-selection: var(--selection-bg);
+  --color-success-solid: var(--success-solid);
+  --color-success-solid-hover: var(--success-solid-hover);
+  --color-success-on-solid: var(--success-on-solid);
+  --color-success-subtle: var(--success-subtle-bg);
+  --color-success-subtle-border: var(--success-subtle-border);
+  --color-success-text: var(--success-text);
+  --color-warning-solid: var(--warning-solid);
+  --color-warning-solid-hover: var(--warning-solid-hover);
+  --color-warning-on-solid: var(--warning-on-solid);
+  --color-warning-subtle: var(--warning-subtle-bg);
+  --color-warning-subtle-border: var(--warning-subtle-border);
+  --color-warning-text: var(--warning-text);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-solid-hover: var(--danger-solid-hover);
+  --color-danger-on-solid: var(--danger-on-solid);
+  --color-danger-subtle: var(--danger-subtle-bg);
+  --color-danger-subtle-border: var(--danger-subtle-border);
+  --color-danger-text: var(--danger-text);
+  --color-info-solid: var(--info-solid);
+  --color-info-solid-hover: var(--info-solid-hover);
+  --color-info-on-solid: var(--info-on-solid);
+  --color-info-subtle: var(--info-subtle-bg);
+  --color-info-subtle-border: var(--info-subtle-border);
+  --color-info-text: var(--info-text);
+  --color-neutral-solid: var(--neutral-solid);
+  --color-neutral-solid-hover: var(--neutral-solid-hover);
+  --color-neutral-on-solid: var(--neutral-on-solid);
+  --color-neutral-subtle: var(--neutral-subtle-bg);
+  --color-neutral-subtle-border: var(--neutral-subtle-border);
+  --color-neutral-text: var(--neutral-text);
+  --color-state-idle: var(--state-idle-fg);
+  --color-state-idle-bg: var(--state-idle-bg);
+  --color-state-queued: var(--state-queued-fg);
+  --color-state-queued-bg: var(--state-queued-bg);
+  --color-state-running: var(--state-running-fg);
+  --color-state-running-bg: var(--state-running-bg);
+  --color-state-awaiting-approval: var(--state-awaiting-approval-fg);
+  --color-state-awaiting-approval-bg: var(--state-awaiting-approval-bg);
+  --color-state-done: var(--state-done-fg);
+  --color-state-done-bg: var(--state-done-bg);
+  --color-state-failed: var(--state-failed-fg);
+  --color-state-failed-bg: var(--state-failed-bg);
+  --color-state-cancelled: var(--state-cancelled-fg);
+  --color-state-cancelled-bg: var(--state-cancelled-bg);
+  --color-diff-added: var(--diff-added-fg);
+  --color-diff-added-bg: var(--diff-added-bg);
+  --color-diff-added-mark: var(--diff-added-mark);
+  --color-diff-removed: var(--diff-removed-fg);
+  --color-diff-removed-bg: var(--diff-removed-bg);
+  --color-diff-removed-mark: var(--diff-removed-mark);
+  --color-diff-changed: var(--diff-changed-fg);
+  --color-diff-changed-bg: var(--diff-changed-bg);
+  --color-diff-changed-mark: var(--diff-changed-mark);
+  --color-lint-error: var(--lint-error);
+  --color-lint-warning: var(--lint-warning);
+  --color-lint-info: var(--lint-info);
+  --color-lint-hint: var(--lint-hint);
+  --color-axis-x: var(--axis-x);
+  --color-axis-y: var(--axis-y);
+  --color-axis-z: var(--axis-z);
+  --color-pin-open: var(--pin-open-fill);
+  --color-pin-open-text: var(--pin-open-text);
+  --color-pin-open-ring: var(--pin-open-ring);
+  --color-pin-selected: var(--pin-selected-fill);
+  --color-pin-selected-text: var(--pin-selected-text);
+  --color-pin-selected-ring: var(--pin-selected-ring);
+  --color-pin-resolved: var(--pin-resolved-fill);
+  --color-pin-resolved-text: var(--pin-resolved-text);
+  --color-pin-resolved-ring: var(--pin-resolved-ring);
+  --color-cat-1: var(--cat-1);
+  --color-cat-2: var(--cat-2);
+  --color-cat-3: var(--cat-3);
+  --color-cat-4: var(--cat-4);
+  --color-cat-5: var(--cat-5);
+  --color-cat-6: var(--cat-6);
+  --color-cat-7: var(--cat-7);
+  --color-cat-8: var(--cat-8);
+  --color-deepslate-0: var(--deepslate-0);
+  --color-deepslate-50: var(--deepslate-50);
+  --color-deepslate-100: var(--deepslate-100);
+  --color-deepslate-150: var(--deepslate-150);
+  --color-deepslate-200: var(--deepslate-200);
+  --color-deepslate-300: var(--deepslate-300);
+  --color-deepslate-400: var(--deepslate-400);
+  --color-deepslate-500: var(--deepslate-500);
+  --color-deepslate-600: var(--deepslate-600);
+  --color-deepslate-700: var(--deepslate-700);
+  --color-deepslate-750: var(--deepslate-750);
+  --color-deepslate-800: var(--deepslate-800);
+  --color-deepslate-850: var(--deepslate-850);
+  --color-deepslate-900: var(--deepslate-900);
+  --color-deepslate-925: var(--deepslate-925);
+  --color-deepslate-950: var(--deepslate-950);
+  --color-deepslate-975: var(--deepslate-975);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-ok: var(--ok);
+  --color-warn: var(--warn);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+  --shadow-xl: var(--elevation-xl);
+  --transition-duration-instant: var(--dur-instant);
+  --transition-duration-fast: var(--dur-fast);
+  --transition-duration-base: var(--dur-base);
+  --transition-duration-slow: var(--dur-slow);
+  --z-index-sticky: var(--z-sticky);
+  --z-index-dock: var(--z-dock);
+  --z-index-floating: var(--z-floating);
+  --z-index-dropdown: var(--z-dropdown);
+  --z-index-overlay: var(--z-overlay);
+  --z-index-modal: var(--z-modal);
+  --z-index-popover: var(--z-popover);
+  --z-index-toast: var(--z-toast);
+  --z-index-tooltip: var(--z-tooltip);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    @apply h-full overflow-hidden;
+  }
+  /* Absolute children with no positioned ancestor (sr-only labels, hidden form inputs) anchor here and are
+     clipped. Without this they stretch the document, and focus or scrollIntoView scrolls the window and
+     pushes the title bar out of view. clip, unlike hidden, cannot be scrolled from script. */
+  #root {
+    position: relative;
+    overflow: clip;
+  }
+  body {
+    @apply bg-background text-base text-foreground antialiased;
+    user-select: none;
+  }
+  pre,
+  code,
+  input,
+  textarea {
+    user-select: text;
+  }
+  ::selection {
+    background: var(--selection-bg);
+  }
+  /* The whole UI grows with the window: every rem size (text, controls, panels) follows the root */
+  html {
+    font-size: clamp(var(--root-size-min), var(--root-size-fluid), var(--root-size-max));
+  }
+}
+
+/* slim scrollbars: the thumb only, tinted from the text colour */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
+::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: color-mix(in oklab, var(--fg) 18%, transparent);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklab, var(--fg) 32%, transparent);
+}
+
+/* the Shell header is the window's title bar (main: titleBarOverlay); the padding keeps clear of the OS buttons */
+.titlebar {
+  -webkit-app-region: drag;
+  padding-left: max(0.75rem, env(titlebar-area-x, 0px));
+  padding-right: max(
+    0.75rem,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
+  );
+}
+.titlebar :is(a, button) {
+  -webkit-app-region: no-drag;
+}
+
+.workspace {
+  container-name: workspace;
+  container-type: inline-size;
+}
+
+@container workspace (max-width: 1100px) {
+  .workspace-toolbar[data-comparing='true'] .workspace-version-select {
+    width: 6.5rem;
+  }
+  .workspace-toolbar[data-comparing='true'] [data-slot='slider'] {
+    width: 4rem;
+  }
+  .workspace-version-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.workspace :is(button, a, select, input, summary, pre):focus-visible,
+.workspace-menu [role='menuitem']:focus-visible {
+  outline: var(--focus-width) solid var(--ring);
+  outline-offset: var(--focus-offset);
+}
+
+@media (max-height: 500px) {
+  .workspace {
+    overflow-y: auto;
+  }
+  .workspace-body {
+    min-height: 360px;
+    flex-shrink: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workspace *,
+  .workspace-details,
+  .workspace-details *,
+  .workspace-draft,
+  .workspace-draft *,
+  .workspace-menu {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* the viewer glass (--overlay, above) as a component, so utilities can override */
+@layer components {
+  .viewer-overlay {
+    background: var(--overlay);
+    border: 1px solid var(--overlay-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-overlay);
+  }
+}
+
+/* the axis gizmo: its bubbles are buttons. Negative ends are tinted until hover or focus fills them and shows
+   their letter; the round backdrop shows while the pointer is over the gizmo. */
+.axis-gizmo {
+  cursor: grab;
+}
+.axis-gizmo:active {
+  cursor: grabbing;
+}
+.axis-gizmo [role='button'] {
+  cursor: pointer;
+  outline: none;
+}
+.axis-gizmo-backdrop {
+  fill: color-mix(in oklab, var(--fg) 8%, transparent);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.axis-gizmo:is(:hover, :focus-within) .axis-gizmo-backdrop {
+  opacity: 1;
+}
+.axis-gizmo-ring {
+  fill: none;
+  stroke: var(--focus-ring);
+  stroke-width: var(--focus-width);
+  opacity: 0;
+}
+.axis-gizmo-end:focus-visible .axis-gizmo-ring {
+  opacity: 1;
+}
+.axis-gizmo-minus .axis-gizmo-dot {
+  fill-opacity: 0.3;
+}
+.axis-gizmo-minus text {
+  opacity: 0;
+}
+.axis-gizmo-minus:is(:hover, :focus-visible) .axis-gizmo-dot {
+  fill-opacity: 1;
+}
+.axis-gizmo-minus:is(:hover, :focus-visible) text {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .axis-gizmo-backdrop {
+    transition: none;
+  }
+}
+
+/* DESIGN.md on the Design log screen */
+.markdown {
+  user-select: text;
+  & h1 {
+    @apply mb-4 text-2xl font-semibold;
+  }
+  & h2 {
+    @apply mt-8 mb-3 border-b pb-1 text-lg font-semibold;
+  }
+  & h3 {
+    @apply mt-6 mb-2 scroll-mt-4 font-semibold text-primary;
+  }
+  & h4 {
+    @apply mt-4 mb-1 font-semibold;
+  }
+  & p,
+  & ul,
+  & ol,
+  & table,
+  & pre {
+    @apply mb-3;
+  }
+  & ul {
+    @apply list-disc pl-5;
+  }
+  & ol {
+    @apply list-decimal pl-5;
+  }
+  & li {
+    @apply mb-0.5;
+  }
+  & code {
+    @apply rounded bg-muted px-1 font-mono text-[0.85em];
+  }
+  & pre {
+    @apply overflow-x-auto rounded bg-muted p-3;
+  }
+  & pre code {
+    @apply bg-transparent p-0;
+  }
+  & table {
+    @apply block overflow-x-auto text-xs;
+  }
+  & th,
+  & td {
+    @apply border px-2 py-1 text-left;
+  }
+  & a {
+    @apply text-primary underline;
+  }
+  & img {
+    @apply max-w-full rounded;
+  }
+  & blockquote {
+    @apply border-l-2 pl-3 text-muted-foreground;
+  }
+}
+
+/* agent replies: DESIGN.md's markdown at chat size */
+.markdown.chat {
+  & h1 {
+    @apply mb-2 text-lg;
+  }
+  & h2 {
+    @apply mt-4 mb-2 border-b-0 pb-0 text-base;
+  }
+  & h3 {
+    @apply mt-3 mb-1 text-foreground;
+  }
+  & p,
+  & ul,
+  & ol,
+  & table,
+  & pre {
+    @apply mb-2;
+  }
+  & > :last-child {
+    @apply mb-0;
+  }
+}
+
+/* consecutive tool rows sit tight under the transcript's space-y */
+.tool-row:has(+ .tool-row) {
+  margin-block-end: 2px;
+}
+
+/* the Agent panel's working status: a glowing dot and a shimmering label */
+.working-dot {
+  @apply size-2 shrink-0 rounded-full bg-primary;
+  animation: working-glow 1.4s ease-in-out infinite;
+}
+@keyframes working-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 8px 3px color-mix(in oklab, var(--primary) 45%, transparent);
+    opacity: 0.75;
+  }
+}
+.shimmer {
+  background: linear-gradient(
+      90deg,
+      var(--muted-foreground) 40%,
+      var(--foreground) 50%,
+      var(--muted-foreground) 60%
+    )
+    0 0 / 200% 100%;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 2s linear infinite;
+}
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .working-dot,
+  .shimmer {
+    animation: none;
+  }
+}
