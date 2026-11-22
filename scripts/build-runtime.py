@@ -108,7 +108,7 @@ def main():
             'version': runtime_version, 'appVersion': app_version, 'python': pin['pythonVersion'],
             'mcb': pin['engineVersion'], 'schematica': pin['schematicaVersion'], 'engine': provenance
         }, indent=2), encoding='utf-8')
-        artifact = out / f'builder-runtime-{runtime_version}-win-x64.zip'
+        artifact = out / f'builder-studio-engine-{pin["engineVersion"]}.zip'
         with zipfile.ZipFile(artifact, 'w', zipfile.ZIP_DEFLATED) as zipped:
             for path in sorted(target.rglob('*')):
                 if path.is_file() and '__pycache__' not in path.parts:

@@ -81,7 +81,9 @@ jobs:
       - name: Upload runtime to the draft
         shell: powershell
         run: |
-          $runtimeAssets = @('out/runtime/runtime-manifest.json', 'out/runtime/SHA256SUMS') + (Get-ChildItem -LiteralPath out/runtime -Filter 'builder-runtime-*.zip').FullName
+          $engineAsset = (Get-Content -Raw out/runtime/runtime-manifest.json | ConvertFrom-Json).engine.asset
+          if (!$engineAsset) { throw 'Missing engine.asset in out/runtime/runtime-manifest.json' }
+          $runtimeAssets = @('out/runtime/runtime-manifest.json', 'out/runtime/SHA256SUMS', (Resolve-Path -LiteralPath (Join-Path out/runtime $engineAsset)).Path)
           gh release upload $env:GITHUB_REF_NAME @runtimeAssets --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
