@@ -47,10 +47,11 @@ type Thread = {
   turns: { id: string; items: CodexItem[]; status: string; error: { message: string } | null }[]
 }
 type ThreadResult = { thread: Thread; model: string }
-// Auto never asks: the workspace-write sandbox (no network) still bounds what it can do. A variant lane asks for
-// every edit and every non-read-only command ('untrusted'), so laneGuard sees each one before it runs.
+// Auto and Plan never ask: the workspace-write sandbox (no network) still bounds what it can do, and Plan's
+// collaboration mode keeps it from editing. A variant lane asks for every edit and every non-read-only command
+// ('untrusted'), so laneGuard sees each one before it runs.
 const policy = (mode: AgentMode | undefined, lane: string | null): string =>
-  lane ? 'untrusted' : mode === 'auto' ? 'never' : 'on-request'
+  lane ? 'untrusted' : !mode || mode === 'default' ? 'on-request' : 'never'
 type Skill = { name: string; description: string; path: string; enabled: boolean }
 const Item = z.looseObject({ type: z.string(), id: z.string() })
 const tools = {
