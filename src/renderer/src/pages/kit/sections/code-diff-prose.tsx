@@ -74,7 +74,7 @@ export default function CodeDiffProse(): ReactElement {
       </Sub>
       <Sub
         title="Prose"
-        note="Markdown in three variants: docs (DESIGN.md, help), chat (replies, plans) and log (design-log rounds)."
+        note="Markdown in three variants: docs (DESIGN.md, help), chat (replies, plans) and log (design-log reviews)."
       >
         <Grid min="22rem">
           <Cell label="docs">

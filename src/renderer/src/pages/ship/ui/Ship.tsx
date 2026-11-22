@@ -226,12 +226,12 @@ function Export({ name }: { name: string }): ReactElement {
       label: 'Rejected variants to delete',
       status: !rejected.round ? 'skipped' : deleted !== null ? 'done' : 'idle',
       detail: !rejected.round
-        ? 'No review round with a pick yet, so nothing to delete.'
+        ? 'No review with a pick yet, so nothing to delete.'
         : deleted !== null
-          ? `round ${rejected.round.round} picked ${rejected.round.pick}: ${deleted} rejected ${deleted === 1 ? 'variant' : 'variants'} moved to the Recycle Bin`
+          ? `review ${rejected.round.round} picked ${rejected.round.pick}: ${deleted} rejected ${deleted === 1 ? 'variant' : 'variants'} moved to the Recycle Bin`
           : rejected.paths.length
-            ? `round ${rejected.round.round} picked ${rejected.round.pick}: ${rejected.paths.join(', ')}`
-            : `round ${rejected.round.round} picked ${rejected.round.pick}; nothing left to delete`,
+            ? `review ${rejected.round.round} picked ${rejected.round.pick}: ${rejected.paths.join(', ')}`
+            : `review ${rejected.round.round} picked ${rejected.round.pick}; nothing left to delete`,
       action: rejected.round
         ? act('Delete…', () => setConfirm('reject'), !rejected.paths.length || busy)
         : undefined

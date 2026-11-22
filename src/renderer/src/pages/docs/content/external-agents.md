@@ -23,13 +23,13 @@ The server's MCP instructions tell a connecting agent to call `guide` first.
 
 ## Tools
 
-| Tool | Does |
-|---|---|
-| `guide()` | Returns the workspace and runtime paths, the Python command, and the bundled build workflow (the embedded assistant's instructions) |
-| `show(path)` | Opens `builds/<name>/out/<file>.litematic` in the app |
-| `sheet(path)` | Shows a render sheet `builds/<name>/out/…/<file>.png` in the app |
-| `status()` | What's open (build, version, tab, picked block, review), running jobs, reviews waiting |
-| `request_review(build, question, variants[], parts?)` | Opens the Review screen and waits; returns the saved `round_N.json`, or `declined` |
+| Tool                                                  | Does                                                                                                                                |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `guide()`                                             | Returns the workspace and runtime paths, the Python command, and the bundled build workflow (the embedded assistant's instructions) |
+| `show(path)`                                          | Opens `builds/<name>/out/<file>.litematic` in the app                                                                               |
+| `sheet(path)`                                         | Shows a render sheet `builds/<name>/out/…/<file>.png` in the app                                                                    |
+| `status()`                                            | What's open (build, version, tab, picked block, review), running jobs, reviews waiting                                              |
+| `request_review(build, question, variants[], parts?)` | Opens the Review screen and waits; returns the saved `round_N.json`, or `declined`                                                  |
 
 ## Connect a client
 
@@ -81,5 +81,5 @@ localhost, so bridge with `mcp-remote`. Add this to `%APPDATA%\Claude\claude_des
 still gives up first, raise its tool timeout (Claude Code: start it with a larger `MCP_TOOL_TIMEOUT`,
 in milliseconds; Codex: `tool_timeout_sec` above).
 
-Without MCP, use **Save round** in Review and paste the copied `feedback in the app: <path>` line into
-the chat. The build workflow reads the newest round file either way.
+Without MCP, use **Save review** in Review and paste the copied `feedback in the app: <path>` line into
+the chat. The build workflow reads the newest review file either way.

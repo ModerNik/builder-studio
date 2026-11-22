@@ -21,14 +21,14 @@ const BUILDS = [
   {
     name: 'harbor_lighthouse',
     status: 'v5_copper_roof picked; export next',
-    meta: 'Round 5 · Exported v4 · 2 h ago',
+    meta: 'Review 5 · Exported v4 · 2 h ago',
     image: IMG,
     badge: <Badge variant="warning">Waiting for review</Badge>
   },
   {
     name: 'stone_bridge',
     status: 'v7: deeper arches over the canal',
-    meta: 'Round 6 · Exported v4 · now',
+    meta: 'Review 6 · Exported v4 · now',
     image: IMG2,
     badge: <Badge variant="info">Drafting · 42%</Badge>,
     progress: 42
@@ -36,20 +36,20 @@ const BUILDS = [
   {
     name: 'keepers_cottage_with_a_very_long_name_for_truncation',
     status: 'No Status block yet, so the line stays short and this one is long enough to clamp',
-    meta: 'Round 1 · never exported · yesterday',
+    meta: 'Review 1 · never exported · yesterday',
     image: null
   },
   {
     name: 'quarry_crane',
     status: 'v2: taller jib',
-    meta: 'Round 2 · never exported · 5 min ago',
+    meta: 'Review 2 · never exported · 5 min ago',
     image: IMG2,
     badge: <StatusBadge state="failed">Last job failed</StatusBadge>
   },
   {
     name: 'mill_house',
     status: 'Exported to schematics/',
-    meta: 'Round 3 · Exported v3 · 4 days ago',
+    meta: 'Review 3 · Exported v3 · 4 days ago',
     image: 'missing-file.png',
     badge: <Badge variant="success">Exported</Badge>
   }
@@ -73,7 +73,7 @@ export default function BuildCardSection(): ReactElement {
           <BuildCard
             name="oak_gate"
             status="Waiting for its first draft"
-            meta="Round 0"
+            meta="No reviews yet"
             progress={null}
             progressLabel="oak_gate: starting"
             onOpen={noop}

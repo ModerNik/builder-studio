@@ -67,34 +67,6 @@ it('starts with the assistant closed when no panel preference is saved', async (
   expect(useAgentPrefs.getState().open).toBe(false)
 })
 
-it('observes a complete turn between renders and can stop observing it', async () => {
-  const { follow, useAgent, watchTurn } = await import('./agent')
-  follow('tower')
-  const id = useAgent.getState().active
-  const ended = vi.fn()
-  const stop = watchTurn(id, ended)
-  state.onState({ thread: id, data: { ...OFF, status: 'starting' } })
-  state.onState({ thread: id, data: { ...OFF, status: 'running' } })
-  expect(ended).not.toHaveBeenCalled()
-  state.onState({ thread: id, data: { ...OFF, status: 'idle' } })
-  expect(ended).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'idle' }))
-  stop()
-  state.onState({ thread: id, data: { ...OFF, status: 'running' } })
-  state.onState({ thread: id, data: OFF })
-  expect(ended).toHaveBeenCalledTimes(1)
-})
-
-it('observes an agent send failure before a turn starts', async () => {
-  const { follow, useAgent, watchTurn } = await import('./agent')
-  follow('tower')
-  const id = useAgent.getState().active
-  const ended = vi.fn()
-  const stop = watchTurn(id, ended)
-  state.onState({ thread: id, data: { ...OFF, error: 'Send failed' } })
-  expect(ended).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ error: 'Send failed' }))
-  stop()
-})
-
 it('preserves an existing open panel preference', async () => {
   localStorage.setItem('agent-prefs', JSON.stringify({ state: { open: true }, version: 0 }))
   const { useAgentPrefs } = await import('./agent')

@@ -1,4 +1,4 @@
-// Sequences: the design log's round timeline, the setup stepper and the export checklist.
+// Sequences: the design log's review timeline, the setup stepper and the export checklist.
 import type { ReactElement, ReactNode } from 'react'
 import { Tip } from '@/shared/ui/common/Tip'
 import {
@@ -23,7 +23,7 @@ export type Round = {
   gist?: string
 }
 
-/** Review rounds newest first on a rail, each with its sheet; clicking one jumps to it. */
+/** Reviews newest first on a rail, each with its sheet; clicking one jumps to it. */
 export function Timeline({
   rounds,
   current,
@@ -66,13 +66,13 @@ export function Timeline({
               {r.sheet ? (
                 <img
                   src={r.sheet}
-                  alt={`Preview sheet of round ${r.n}`}
+                  alt={`Preview sheet of review ${r.n}`}
                   loading="lazy"
                   className="aspect-[16/7] w-full rounded-md border border-border-subtle bg-surface-viewer object-cover object-left-top"
                 />
               ) : (
                 <span className="flex aspect-[16/7] w-full items-center justify-center gap-1.5 rounded-md border border-dashed border-border-default bg-surface-sunken text-sm text-fg-muted">
-                  <ImageOff aria-hidden className="size-3.5" /> No sheet for this round
+                  <ImageOff aria-hidden className="size-3.5" /> No sheet for this review
                 </span>
               )}
             </span>

@@ -23,7 +23,3 @@ export function getBrief(md: string): string {
   const next = rest.search(/^## /m)
   return (next < 0 ? rest : rest.slice(0, next)).trim()
 }
-
-/** The highest `### Round N` in the process log, 0 if none. */
-export const lastRound = (md: string): number =>
-  Math.max(0, ...[...md.matchAll(/^### Round (\d+)/gm)].map((m) => Number(m[1])))

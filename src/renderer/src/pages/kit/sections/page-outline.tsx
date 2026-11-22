@@ -13,7 +13,7 @@ const ITEMS: OutlineItem[] = [
   { id: 'kit-otp-first', title: 'Your first build', level: 2 },
   {
     id: 'kit-otp-review',
-    title: 'Review rounds and pins, with a heading long enough to wrap',
+    title: 'Reviews and pins, with a heading long enough to wrap',
     level: 2
   },
   { id: 'kit-otp-export', title: 'Export to Minecraft', level: 2 }
@@ -44,7 +44,7 @@ export default function PageOutlineSection(): ReactElement {
                       {h.title}
                     </Tag>
                     <p className="text-base text-fg-secondary">
-                      A build is a folder with its drawing code, its rounds and its exports. The
+                      A build is a folder with its drawing code, its reviews and its exports. The
                       outline marks the heading at the top quarter of this pane, so the mark follows
                       what you are reading rather than what is at the very top.
                     </p>
