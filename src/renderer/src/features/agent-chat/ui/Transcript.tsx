@@ -5,6 +5,7 @@ import {
   lazy,
   Suspense,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentProps,
@@ -13,9 +14,11 @@ import {
 } from 'react'
 import type { PermissionAsk, Permit } from '@shared/api'
 import { activity, isBuildRun, jobSummary, type Item } from '@/features/agent-chat/model/transcript'
+import { planRevisions, type PlanRevisionInfo } from '@/features/agent-chat/model/plans'
 import { cn } from '@/shared/lib/utils'
+import { Prose } from '@/shared/ui/code/Prose'
 import { LoadingState } from '@/shared/ui/feedback/LoadingState'
-import { CommandPreview, PermissionCard, PlanCard, WorkingIndicator } from './Cards'
+import { CommandPreview, PermissionCard, PlanCard, QuestionCard, WorkingIndicator } from './Cards'
 import { AssistantMessage, MessageBubble, SystemNote, type Attachment } from './Messages'
 import { JobCard, SubagentCard, ToolCallRow, ToolResult, type ToolStatus } from './ToolCallRow'
 
@@ -49,8 +52,10 @@ export interface TranscriptProps {
   onSwitchToAuto?: () => void
   /** The mode an approved plan continues in. */
   planMode?: Permit['mode']
-  /** Codex plan text: "Implement plan". Omit where plans cannot be acted on. */
-  onImplementPlan?: () => void
+  /** Codex plan text: "Implement plan" (optional editedPlan if user edited before approving). */
+  onImplementPlan?: (editedPlan?: string) => void
+  /** Codex plan text: send revision comments or notes while staying in Plan mode. */
+  onRevisePlan?: (feedback: string) => void
   /** Show / Sheet on a build.py job card: the path it wrote and whether it is the sheet. */
   onShowFile?: (path: string, sheet: boolean) => void
   /** Lint problems in an @mcb lint event; every count by default. */
@@ -64,10 +69,17 @@ export interface TranscriptProps {
   className?: string
 }
 
+const renderPlanDiff = (before: string, after: string): ReactElement => (
+  <DiffView label="Plan revision diff" before={before} after={after} />
+)
+
 export function Transcript(props: TranscriptProps): ReactElement {
   const { items, asks, working = false, empty, children, className } = props
   const box = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  const activePlanAsk = asks.find((a) => a.tool === 'ExitPlanMode')
+  const plans = useMemo(() => planRevisions(items, activePlanAsk), [items, activePlanAsk])
+  const openAskIds = useMemo(() => new Set(asks.map((a) => a.id)), [asks])
   useEffect(() => {
     if (stick.current && box.current) box.current.scrollTop = box.current.scrollHeight
   }, [items, asks, working, children])
@@ -89,9 +101,20 @@ export function Transcript(props: TranscriptProps): ReactElement {
     >
       <div className="mx-auto flex max-w-[68ch] min-w-0 flex-col gap-3 px-3 py-4 wrap-anywhere">
         {!items.length && !asks.length && !working && empty}
-        <Items {...props} parent={null} />
+        <Items
+          {...props}
+          parent={null}
+          planById={plans.byId}
+          activeCodexPlanId={plans.activeCodexPlanId}
+          openAskIds={openAskIds}
+        />
         {asks.map((a) => (
-          <Ask key={a.id} ask={a} {...props} />
+          <Ask
+            key={a.id}
+            ask={a}
+            planMeta={a.tool === 'ExitPlanMode' ? plans.activeAsk : undefined}
+            {...props}
+          />
         ))}
         {working && <Working label={activity(items, asks.length)} />}
         {children}
@@ -106,8 +129,25 @@ function Working({ label }: { label: string }): ReactElement {
   return <WorkingIndicator label={label} startedAt={start} />
 }
 
-function Items(p: TranscriptProps & { parent: string | null }): ReactNode {
-  const { items, parent, fileUrl, onImplementPlan } = p
+function Items(
+  p: TranscriptProps & {
+    parent: string | null
+    planById: Map<string, PlanRevisionInfo>
+    activeCodexPlanId: string | null
+    openAskIds: Set<string>
+  }
+): ReactNode {
+  const {
+    items,
+    parent,
+    fileUrl,
+    onImplementPlan,
+    onRevisePlan,
+    working,
+    planById,
+    activeCodexPlanId,
+    openAskIds
+  } = p
   return items
     .filter((i) => (i.kind === 'user' || i.kind === 'note' ? parent === null : i.parent === parent))
     .map((i) => {
@@ -126,21 +166,30 @@ function Items(p: TranscriptProps & { parent: string | null }): ReactNode {
             {i.text}
           </SystemNote>
         )
-      if (i.kind === 'text' && i.plan && !i.live && onImplementPlan)
+      if (i.kind === 'text' && i.plan && !i.live) {
+        const meta = planById.get(i.id)
+        const active = i.id === activeCodexPlanId && !working && !!onImplementPlan
         return (
           <PlanCard
             key={i.id}
             plan={i.text}
+            revision={meta?.revision}
+            previousPlan={meta?.previousPlan}
+            renderDiff={renderPlanDiff}
             approveLabel="Implement plan"
-            onApprove={onImplementPlan}
+            onApprove={active ? onImplementPlan : undefined}
+            onRevise={active ? onRevisePlan : undefined}
           />
         )
+      }
       if (i.kind === 'text')
         return (
           <AssistantMessage key={i.id} streaming={i.live}>
             {i.text}
           </AssistantMessage>
         )
+      if ((i.name === 'ExitPlanMode' || i.name === 'AskUserQuestion') && openAskIds.has(i.id))
+        return null
       if (SUBAGENT.has(i.name))
         return (
           <SubagentCard
@@ -199,6 +248,32 @@ function ToolItem({
       </JobCard>
     )
   }
+  if (t.name === 'ExitPlanMode' && typeof t.input.plan === 'string' && t.input.plan) {
+    return (
+      <ToolCallRow name={t.name} input={t.input} status={status(t)}>
+        <Prose variant="chat">{t.input.plan}</Prose>
+        {result}
+      </ToolCallRow>
+    )
+  }
+  if (t.name === 'AskUserQuestion' && Array.isArray(t.input.questions)) {
+    const qs = t.input.questions.filter(
+      (q): q is { header?: string; question?: string } => !!q && typeof q === 'object'
+    )
+    return (
+      <ToolCallRow name={t.name} input={t.input} status={status(t)}>
+        <ul className="flex flex-col gap-1 text-sm text-fg-secondary">
+          {qs.map((q, idx) => (
+            <li key={idx} className="wrap-anywhere">
+              {q.header ? <span className="font-medium text-fg">{q.header}: </span> : null}
+              {q.question}
+            </li>
+          ))}
+        </ul>
+        {result}
+      </ToolCallRow>
+    )
+  }
   return (
     <ToolCallRow name={t.name} input={t.input} status={status(t)}>
       {change(t.name, t.input) ?? <ToolResult text={JSON.stringify(t.input, null, 2)} />}
@@ -209,17 +284,30 @@ function ToolItem({
 
 function Ask({
   ask,
+  planMeta,
   onPermit,
   onSwitchToAuto,
   planMode
-}: TranscriptProps & { ask: PermissionAsk }): ReactElement {
-  const permit = (decision: Permit['decision'], mode?: Permit['mode']): void =>
-    onPermit({ id: ask.id, decision, mode })
+}: TranscriptProps & { ask: PermissionAsk; planMeta?: PlanRevisionInfo }): ReactElement {
+  const permit = (decision: Permit['decision'], extra?: Omit<Permit, 'id' | 'decision'>): void =>
+    onPermit({ id: ask.id, decision, ...extra })
+  if (ask.kind === 'question' || (ask.questions && ask.questions.length > 0))
+    return (
+      <QuestionCard
+        questions={ask.questions ?? []}
+        onSubmit={(answers, annotations) => permit('allow', { answers, annotations })}
+        onSkip={() => permit('deny')}
+      />
+    )
   if (ask.tool === 'ExitPlanMode')
     return (
       <PlanCard
         plan={String(ask.input.plan ?? '')}
-        onApprove={() => permit('allow', planMode)}
+        revision={planMeta?.revision}
+        previousPlan={planMeta?.previousPlan}
+        renderDiff={renderPlanDiff}
+        onApprove={(editedPlan) => permit('allow', { mode: planMode, editedPlan })}
+        onRevise={(feedback) => permit('deny', { feedback })}
         onKeepPlanning={() => permit('deny')}
       />
     )

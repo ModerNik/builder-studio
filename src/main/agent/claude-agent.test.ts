@@ -350,3 +350,151 @@ it.each([
     agent.close()
   }
 })
+
+it('handles AskUserQuestion interactively even in auto mode, returning answers and annotations', async () => {
+  const agent = planner()
+  try {
+    await agent.send({ ...turn, mode: 'auto' })
+    const input = {
+      questions: [
+        {
+          header: 'Palette',
+          question: 'Which stone?',
+          multiSelect: false,
+          options: [
+            { label: 'Deepslate', description: 'Dark', preview: 'deepslate_bricks' },
+            { label: 'Stone', description: 'Light' }
+          ]
+        },
+        {
+          header: 'Details',
+          question: 'Which details?',
+          multiSelect: true,
+          options: [
+            { label: 'Lanterns', description: 'Warm glow' },
+            { label: 'Banners', description: 'Flags' }
+          ]
+        }
+      ]
+    }
+    const pending = sdk.canUseTool!('AskUserQuestion', input, {
+      toolUseID: 'ask-1',
+      signal: new AbortController().signal
+    } as never)
+    await vi.waitFor(() => expect(agent.pending()).toHaveLength(1))
+    expect(agent.pending()[0]).toMatchObject({
+      kind: 'question',
+      rule: null,
+      questions: [
+        expect.objectContaining({ id: 'Which stone?', header: 'Palette', allowOther: true }),
+        expect.objectContaining({ id: 'Which details?', multiSelect: true })
+      ]
+    })
+    agent.permit({
+      id: 'ask-1',
+      decision: 'allow',
+      answers: { 'Which stone?': ['Deepslate'], 'Which details?': ['Lanterns', 'Banners'] },
+      annotations: { 'Which stone?': { preview: 'deepslate_bricks' } }
+    })
+    expect(await pending).toEqual({
+      behavior: 'allow',
+      updatedInput: {
+        ...input,
+        answers: { 'Which stone?': 'Deepslate', 'Which details?': 'Lanterns, Banners' },
+        annotations: { 'Which stone?': { preview: 'deepslate_bricks' } }
+      }
+    })
+
+    // Skipping returns a friendly deny message
+    const skipped = sdk.canUseTool!('AskUserQuestion', input, {
+      toolUseID: 'ask-2',
+      signal: new AbortController().signal
+    } as never)
+    await vi.waitFor(() => expect(agent.pending()).toHaveLength(1))
+    agent.permit({ id: 'ask-2', decision: 'deny' })
+    expect(await skipped).toMatchObject({
+      behavior: 'deny',
+      message: expect.stringMatching(/skipped these questions/)
+    })
+  } finally {
+    agent.close()
+  }
+})
+
+it('passes ExitPlanMode revision feedback on deny and editedPlan on allow', async () => {
+  const agent = planner()
+  try {
+    await agent.send({ ...turn, mode: 'plan' })
+    const revise = sdk.canUseTool!('ExitPlanMode', { plan: '1. Old plan' }, {
+      toolUseID: 'plan-1',
+      signal: new AbortController().signal
+    } as never)
+    await vi.waitFor(() => expect(agent.pending()).toHaveLength(1))
+    agent.permit({ id: 'plan-1', decision: 'deny', feedback: 'Make the walls 20 blocks tall.' })
+    expect(await revise).toEqual({
+      behavior: 'deny',
+      message: 'Make the walls 20 blocks tall.'
+    })
+    expect(agent.state.mode).toBe('plan')
+
+    const approveEdited = sdk.canUseTool!('ExitPlanMode', { plan: '1. Revised plan' }, {
+      toolUseID: 'plan-2',
+      signal: new AbortController().signal
+    } as never)
+    await vi.waitFor(() => expect(agent.pending()).toHaveLength(1))
+    agent.permit({
+      id: 'plan-2',
+      decision: 'allow',
+      mode: 'auto',
+      editedPlan: '1. User edited plan'
+    })
+    expect(await approveEdited).toMatchObject({
+      behavior: 'allow',
+      updatedInput: { plan: '1. User edited plan' },
+      updatedPermissions: [{ type: 'setMode', mode: 'default', destination: 'session' }]
+    })
+    expect(agent.state.mode).toBe('auto')
+  } finally {
+    agent.close()
+  }
+})
+
+it('forwards prompt_suggestion messages as normalized suggestion events', async () => {
+  const events: { channel: string; payload: unknown }[] = []
+  const agent = new AgentService({
+    settings: () =>
+      SettingsSchema.parse({
+        workspace: 'workspace',
+        python: '',
+        claude: '',
+        jar: '',
+        pack: '',
+        schematics: ''
+      }),
+    emit: (channel, payload) => events.push({ channel, payload }),
+    addRule: vi.fn(),
+    apiKey: () => KEY,
+    tools: {} as never
+  })
+  try {
+    sdk.messages.push({
+      type: 'prompt_suggestion',
+      suggestion: 'Run build.py proto and check the sheet',
+      uuid: 'sug-1',
+      session_id: 's1'
+    })
+    await agent.send(turn)
+    await vi.waitFor(() =>
+      expect(events).toContainEqual({
+        channel: 'agent:msg',
+        payload: {
+          type: 'suggestion',
+          id: 'sug-1',
+          text: 'Run build.py proto and check the sheet'
+        }
+      })
+    )
+  } finally {
+    agent.close()
+  }
+})

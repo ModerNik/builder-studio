@@ -185,6 +185,11 @@ describe('transcript', () => {
       { kind: 'text', id: 'p1', text: '1. Walls, 2. Roof', parent: null, plan: true }
     ])
   })
+
+  it('ignores suggestion messages so they stay out of the transcript history', () => {
+    const base: Item[] = [{ kind: 'user', id: 'u1', text: 'hi' }]
+    expect(reduce(base, { type: 'suggestion', id: 's1', text: 'Next step' })).toBe(base)
+  })
 })
 
 describe('activity', () => {
@@ -202,6 +207,8 @@ describe('activity', () => {
     [[tool('Bash', { command: 'ls' })], 0, 'Running'],
     [[tool('Bash', { command: CHECK })], 0, 'Building'],
     [[tool('Grep')], 0, 'Searching'],
+    [[tool('AskUserQuestion')], 0, 'Asking'],
+    [[tool('ExitPlanMode')], 0, 'Planning'],
     [[tool('mcp__studio__request_review')], 0, 'Waiting for review'],
     [[tool('mcp__other__thing')], 0, 'Working'],
     [[tool('Edit', {}, 'ok')], 0, 'Thinking'],

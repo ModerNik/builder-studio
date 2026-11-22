@@ -21,6 +21,7 @@ import {
   SelectValue
 } from '@/shared/ui/primitives/select'
 import { cn } from '@/shared/lib/utils'
+import { Kbd } from '@/shared/ui/primitives/kbd'
 import { IconAction, Tip } from '@/shared/ui/common/Tip'
 import { DropOverlay } from '@/shared/ui/feedback/DropOverlay'
 import { matchCommands, type Command } from '../model/logic'
@@ -110,6 +111,8 @@ export function Composer({
   efforts,
   effort = '',
   onEffortChange,
+  suggestion = null,
+  onDismissSuggestion,
   initialText = '',
   variant = 'default',
   placeholder,
@@ -143,6 +146,9 @@ export function Composer({
   efforts?: Option[]
   effort?: string
   onEffortChange?: (effort: string) => void
+  /** Provider-predicted next prompt rendered as ghost text when empty (Tab edits, Enter sends, Escape dismisses). */
+  suggestion?: string | null
+  onDismissSuggestion?: () => void
   initialText?: string
   variant?: 'default' | 'compact'
   placeholder?: string
@@ -177,7 +183,9 @@ export function Composer({
   const at = Math.min(active, matches.length - 1)
   const uploading = attachments.some((a) => a.uploading)
   const selected = onCommand && !skillPicker ? parseChatCommand(text) : null
-  const canSend = !!text.trim() && (selected || (!running && !uploading && !disabledReason))
+  const showGhost = !compact && !!suggestion && !text && !running && !uploading && !disabledReason
+  const canSend =
+    (!!text.trim() && (selected || (!running && !uploading && !disabledReason))) || showGhost
   const sigil = sigils[0]
 
   const runCommand = ({ name, args }: NonNullable<ReturnType<typeof parseChatCommand>>): void => {
@@ -191,6 +199,11 @@ export function Composer({
   const send = (): void => {
     if (!canSend) return
     if (selected) return runCommand(selected)
+    if (!text.trim() && showGhost && suggestion) {
+      onSend(suggestion)
+      onDismissSuggestion?.()
+      return
+    }
     onSend(text.trim())
     setText('')
     setSkillPicker(false)
@@ -272,13 +285,36 @@ export function Composer({
             ))}
           </ul>
         )}
+        {showGhost && suggestion && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-0 flex items-start justify-between gap-2 overflow-hidden px-3 py-2"
+          >
+            <span className="line-clamp-2 min-w-0 flex-1 text-base text-fg-muted">
+              {suggestion}
+            </span>
+            <span className="flex shrink-0 items-center gap-1 pt-0.5">
+              <Kbd>Tab</Kbd>
+              <Kbd>↵</Kbd>
+            </span>
+          </div>
+        )}
+        {showGhost && suggestion && (
+          <span id={`${id}-suggestion`} className="sr-only">
+            Suggested prompt: {suggestion}. Press Tab to edit, Enter to send, or Escape to dismiss.
+          </span>
+        )}
         <textarea
           value={text}
           aria-label="Message the assistant"
           aria-autocomplete="list"
           aria-controls={open ? `${id}-list` : undefined}
           aria-activedescendant={open ? `${id}-opt-${at}` : undefined}
-          aria-describedby={disabledReason ? `${id}-why` : undefined}
+          aria-describedby={
+            [disabledReason && `${id}-why`, showGhost && `${id}-suggestion`]
+              .filter(Boolean)
+              .join(' ') || undefined
+          }
           onChange={(e) => {
             setText(e.target.value)
             if (!e.target.value.startsWith(sigil)) setSkillPicker(false)
@@ -317,6 +353,19 @@ export function Composer({
                 return setHidden(true)
               }
             }
+            if (showGhost && suggestion) {
+              if (e.key === 'Tab' && !e.shiftKey) {
+                e.preventDefault()
+                setText(suggestion)
+                onDismissSuggestion?.()
+                return
+              }
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                onDismissSuggestion?.()
+                return
+              }
+            }
             if (e.key === 'Tab' && e.shiftKey && modes && onModeChange && modes.length > 1) {
               e.preventDefault()
               const i = modes.findIndex((m) => m.value === mode)
@@ -328,12 +377,14 @@ export function Composer({
           }}
           rows={compact ? 1 : 2}
           placeholder={
-            running
-              ? compact
-                ? 'Working…'
-                : 'The assistant is working…'
-              : (placeholder ??
-                `Ask the assistant (Enter sends, Shift Enter for a new line, ${sigil} for skills)`)
+            showGhost
+              ? ''
+              : running
+                ? compact
+                  ? 'Working…'
+                  : 'The assistant is working…'
+                : (placeholder ??
+                  `Ask the assistant (Enter sends, Shift Enter for a new line, ${sigil} for skills)`)
           }
           className={cn(
             'block w-full resize-none rounded-lg border border-border-strong bg-surface-sunken px-3 text-base text-fg [field-sizing:content] placeholder:text-fg-muted focus-visible:border-focus focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',

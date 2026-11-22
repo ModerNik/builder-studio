@@ -187,3 +187,36 @@ it('keeps threads running while the panel follows other builds', async () => {
   expect(useAgent.getState().threads[tower]).toBeUndefined()
   expect(useAgent.getState().threads[useAgent.getState().active].build).toBe('tower')
 })
+
+it('manages prompt suggestion lifecycle and plan revision/implementation actions', async () => {
+  const { follow, useAgent, dismissSuggestion, send, revisePlan, implementPlan } =
+    await import('./agent')
+  follow('tower')
+  const id = useAgent.getState().active
+  state.onState({ thread: id, data: { ...OFF, build: 'tower', status: 'idle' } })
+  state.onMsg({ thread: id, data: { type: 'suggestion', id: 's1', text: 'Run proto build' } })
+  expect(useAgent.getState().threads[id].suggestion).toBe('Run proto build')
+  dismissSuggestion()
+  expect(useAgent.getState().threads[id].suggestion).toBeNull()
+
+  state.onMsg({ thread: id, data: { type: 'suggestion', id: 's2', text: 'Check lint' } })
+  await send('Do something else')
+  expect(useAgent.getState().threads[id].suggestion).toBeNull()
+
+  await revisePlan('Make the roof steeper')
+  expect(useAgent.getState().threads[id].mode).toBe('plan')
+  expect(state.api.send).toHaveBeenLastCalledWith(
+    id,
+    expect.objectContaining({ text: 'Make the roof steeper', mode: 'plan' })
+  )
+
+  await implementPlan('1. Custom edited plan')
+  expect(useAgent.getState().threads[id].mode).toBe('auto')
+  expect(state.api.send).toHaveBeenLastCalledWith(
+    id,
+    expect.objectContaining({
+      text: 'Implement this updated plan:\n\n1. Custom edited plan',
+      mode: 'auto'
+    })
+  )
+})

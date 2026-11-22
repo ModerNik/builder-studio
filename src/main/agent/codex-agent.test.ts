@@ -764,5 +764,99 @@ describe('Codex app-server provider', () => {
     t.complete()
     t.settings.ollamaEndpoint = 'http://127.0.0.1:11435'
     await expect(t.agent.history(ID)).rejects.toThrow('endpoint')
+    expect(t.conn.request).not.toHaveBeenCalledWith('thread/prediction/request', expect.anything())
+  })
+
+  it('answers item/tool/requestUserInput with mapped answers or empty answers when skipped', async () => {
+    const t = setup()
+    await t.agent.send(t.send)
+    t.notify(
+      'item/tool/requestUserInput',
+      {
+        itemId: 'q-item',
+        isBlocking: true,
+        autoResolutionMs: null,
+        questions: [
+          {
+            id: 'stone',
+            header: 'Stone',
+            question: 'Which stone?',
+            isOther: true,
+            isSecret: false,
+            options: [{ label: 'Deepslate', description: 'Dark slate' }]
+          },
+          {
+            id: 'secret_note',
+            header: 'Note',
+            question: 'Any secret key?',
+            isOther: false,
+            isSecret: true,
+            options: null
+          }
+        ]
+      },
+      71
+    )
+    expect(t.agent.pending()[0]).toMatchObject({
+      id: 'codex:71',
+      kind: 'question',
+      tool: 'request_user_input',
+      questions: [
+        { id: 'stone', header: 'Stone', allowOther: true, secret: false },
+        { id: 'secret_note', options: [], allowOther: true, secret: true }
+      ]
+    })
+    t.agent.permit({
+      id: 'codex:71',
+      decision: 'allow',
+      answers: { stone: ['Deepslate'], secret_note: ['abc'] }
+    })
+    await vi.waitFor(() =>
+      expect(t.conn.respond).toHaveBeenCalledWith(71, {
+        answers: { stone: { answers: ['Deepslate'] }, secret_note: { answers: ['abc'] } }
+      })
+    )
+
+    // Skipping responds with an empty answers object
+    t.notify(
+      'item/tool/requestUserInput',
+      {
+        itemId: 'q-item-2',
+        isBlocking: true,
+        autoResolutionMs: null,
+        questions: [
+          {
+            id: 'roof',
+            header: 'Roof',
+            question: 'Pitch?',
+            isOther: true,
+            isSecret: false,
+            options: [{ label: 'Steep', description: 'Tall' }]
+          }
+        ]
+      },
+      72
+    )
+    t.agent.permit({ id: 'codex:72', decision: 'deny' })
+    await vi.waitFor(() => expect(t.conn.respond).toHaveBeenCalledWith(72, { answers: {} }))
+  })
+
+  it('requests next-prompt predictions on completed Codex turns and emits suggestions', async () => {
+    const t = setup()
+    await t.agent.send(t.send)
+    t.complete()
+    expect(t.conn.request).toHaveBeenCalledWith('thread/prediction/request', {
+      threadId: ID,
+      sourceTurnId: 'turn-1'
+    })
+    t.notify('thread/prediction/updated', {
+      sourceTurnId: 'turn-1',
+      result: { type: 'completed', text: 'Run build.py proto next' }
+    })
+    expect(t.messages().at(-1)).toEqual({
+      type: 'suggestion',
+      id: 'pred:turn-1',
+      text: 'Run build.py proto next'
+    })
   })
 })

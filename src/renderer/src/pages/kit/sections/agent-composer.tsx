@@ -43,16 +43,19 @@ const COMMANDS = [
 
 function LiveComposer({
   running: startRunning = false,
-  narrow = false
+  narrow = false,
+  initialSuggestion = null
 }: {
   running?: boolean
   narrow?: boolean
+  initialSuggestion?: string | null
 }): ReactElement {
   const [mode, setMode] = useState(narrow ? 'acceptEdits' : 'default')
   const [model, setModel] = useState(narrow ? 'gpt-5.4-mini' : 'sonnet')
   const [effort, setEffort] = useState('medium')
   const [running, setRunning] = useState(startRunning)
   const [sent, setSent] = useState('')
+  const [suggestion, setSuggestion] = useState<string | null>(initialSuggestion)
   const [files, setFiles] = useState<Attachment[]>([
     { path: 'builds/stone_watchtower/attachments/pasted-1730662800.png', url: hero },
     { path: 'builds/stone_watchtower/attachments/gatehouse_notes.md' }
@@ -116,6 +119,8 @@ function LiveComposer({
         efforts={EFFORTS}
         effort={effort}
         onEffortChange={setEffort}
+        suggestion={suggestion}
+        onDismissSuggestion={() => setSuggestion(null)}
       />
       {sent && <p className="text-sm text-fg-muted">Sent (demo): “{sent}”</p>}
     </div>
@@ -188,6 +193,15 @@ export default function AgentComposer(): ReactElement {
           </Cell>
           <Cell label="Running: Stop instead of Send" surface="none" className="overflow-hidden">
             <LiveComposer running />
+          </Cell>
+          <Cell
+            label="Ghost-text suggestion (Tab edits, Enter sends, Esc dismisses)"
+            surface="none"
+            className="overflow-hidden"
+          >
+            <Narrow width={24}>
+              <LiveComposer initialSuggestion="Run build.py proto and show the render sheet" />
+            </Narrow>
           </Cell>
           <Cell
             label="Needs setup (disabled), Ollama: no effort"

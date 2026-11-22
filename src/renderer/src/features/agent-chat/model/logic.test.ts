@@ -32,6 +32,19 @@ describe('toolLook', () => {
       gist: 'Judge v3'
     })
     expect(toolLook('Mystery', {})).toMatchObject({ kind: 'other', verb: 'Mystery', gist: '' })
+    expect(
+      toolLook('AskUserQuestion', {
+        questions: [
+          { header: 'Palette', question: 'Stone?' },
+          { header: 'Roof', question: 'Pitch?' }
+        ]
+      })
+    ).toMatchObject({ kind: 'question', verb: 'Asked', gist: 'Palette, Roof' })
+    expect(toolLook('ExitPlanMode', { plan: '# Keep upgrade\n1. Walls' })).toMatchObject({
+      kind: 'todo',
+      verb: 'Proposed plan',
+      gist: 'Keep upgrade'
+    })
   })
 })
 

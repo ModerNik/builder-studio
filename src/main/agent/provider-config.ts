@@ -100,6 +100,7 @@ export function codexArgs(s: Settings, local: boolean): string[] {
     'windows.sandbox': 'unelevated',
     'shell_environment_policy.inherit': 'all',
     'features.multi_agent': false,
+    'features.default_mode_request_user_input': true,
     web_search: 'disabled'
   }
   if (local)
