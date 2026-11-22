@@ -157,7 +157,8 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     newest: !!version && version.path === build?.versions[0]?.path,
     minecraftVersion: a.minecraftVersion ?? minecraftVersion,
     pack: a.pack,
-    onSelect: a.onPick
+    onSelect: a.onPick,
+    selectParts: a.partsView
   })
   const [previousSource, setPreviousSource] = useState(a.source)
   if (previousSource !== a.source) {
