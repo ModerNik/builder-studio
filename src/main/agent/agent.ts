@@ -358,6 +358,13 @@ export class AgentService {
         for (const event of claudeEvents(m)) this.d.emit('agent:msg', event)
         if (m.type === 'system' && m.subtype === 'init')
           this.set({ sessionId: m.session_id, auth: m.apiKeySource, model: m.model })
+        if (
+          m.type === 'system' &&
+          m.subtype === 'status' &&
+          m.permissionMode === 'plan' &&
+          this.state.mode !== 'plan'
+        )
+          this.set({ mode: 'plan' })
         if (m.type === 'result') {
           this.reviewAbort.abort()
           if (this.checkpoint && this.state.sessionId)
@@ -489,11 +496,14 @@ export class AgentService {
     const build = this.state.build ?? ''
     const own = this.laneDenies(tool, input)
     if (own) return { behavior: 'deny', message: `Builder Studio: ${own}` }
+    const allow = (): { behavior: 'allow'; updatedInput: Record<string, unknown> } => {
+      if (tool === 'EnterPlanMode' && this.state.mode !== 'plan') this.set({ mode: 'plan' })
+      return { behavior: 'allow', updatedInput: input }
+    }
     // the plan card still shows: the agent can enter plan mode by itself
-    if (FREE.includes(this.state.mode) && tool !== 'ExitPlanMode')
-      return { behavior: 'allow', updatedInput: input }
+    if (FREE.includes(this.state.mode) && tool !== 'ExitPlanMode') return allow()
     if ((s.agentAllow[build] ?? []).some((r) => ruleAllows(r, tool, input, s.workspace)))
-      return { behavior: 'allow', updatedInput: input }
+      return allow()
     const g = guard(tool, input, s.workspace)
     const ask: PermissionAsk = {
       id: opts.toolUseID,
@@ -525,7 +535,7 @@ export class AgentService {
           : 'The user denied this in Builder Studio.'
       }
     if (decision === 'always' && ask.rule) this.d.addRule(build, ask.rule)
-    if (!plan) return { behavior: 'allow', updatedInput: input }
+    if (!plan) return allow()
     const next = mode && mode !== 'plan' ? mode : 'default'
     this.set({ mode: next })
     return {

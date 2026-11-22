@@ -469,7 +469,10 @@ describe('Codex app-server provider', () => {
     t.notify('item/plan/delta', { itemId: 'plan-1', delta: '1. Walls' })
     expect(t.messages().at(-1)).toMatchObject({ id: 'plan-1', delta: true, plan: true })
     t.complete()
-    await expect(t.agent.setMode('plan')).resolves.toBeUndefined()
+    // Switching mode to Auto before sending (as "Implement plan" and the mode picker do) still
+    // sends collaborationMode: default so Codex leaves sticky plan mode.
+    await expect(t.agent.setMode('auto')).resolves.toBeUndefined()
+    expect(t.agent.state.mode).toBe('auto')
     expect(turns()[0]).toMatchObject({ approvalPolicy: 'never' })
     // plan -> auto: the collaboration mode goes back to default, and Auto never asks
     await t.agent.send({ ...t.send, mode: 'auto' })
@@ -481,6 +484,14 @@ describe('Codex app-server provider', () => {
     await t.agent.send(t.send)
     expect(turns()[2]).not.toHaveProperty('collaborationMode')
     expect(turns()[2]).toMatchObject({ approvalPolicy: 'on-request' })
+    t.complete()
+    // Resuming a session in Auto also sends collaborationMode: default in case it ended in plan mode.
+    t.agent.close()
+    await t.agent.send({ ...t.send, resume: { provider: 'codex', id: ID }, mode: 'auto' })
+    expect(turns()[3]).toMatchObject({
+      collaborationMode: { mode: 'default' },
+      approvalPolicy: 'never'
+    })
     // only the turn with $tokens looks skills up
     expect(vi.mocked(t.conn.request).mock.calls.filter(([m]) => m === 'skills/list')).toHaveLength(
       1
