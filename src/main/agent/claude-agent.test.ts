@@ -16,6 +16,7 @@ const sdk = vi.hoisted(() => ({
   history: vi.fn(),
   fork: vi.fn(),
   tag: vi.fn(),
+  setPermissionMode: vi.fn(),
   fail: (error: Error): void => {
     throw error
   }
@@ -52,7 +53,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
       },
       interrupt: vi.fn(),
       close: vi.fn(),
-      setPermissionMode: vi.fn()
+      setPermissionMode: sdk.setPermissionMode
     }
   }
 }))
@@ -243,6 +244,60 @@ it.each([
     }
   }
 )
+
+it('tracks self-entered plan mode so switching back to Auto updates the CLI mode', async () => {
+  const agent = planner()
+  sdk.setPermissionMode.mockClear()
+  try {
+    await agent.send({
+      provider: 'claude',
+      build: 'tower',
+      text: 'build it',
+      resume: null,
+      model: null,
+      effort: null,
+      mode: 'auto'
+    })
+    expect(agent.state.mode).toBe('auto')
+    const allowed = await sdk.canUseTool!('EnterPlanMode', {}, {
+      toolUseID: 'enter',
+      signal: new AbortController().signal
+    } as never)
+    expect(allowed).toMatchObject({ behavior: 'allow' })
+    expect(agent.state.mode).toBe('plan')
+
+    await agent.send({
+      provider: 'claude',
+      build: 'tower',
+      text: 'implement the plan',
+      resume: null,
+      model: null,
+      effort: null,
+      mode: 'auto'
+    })
+    expect(sdk.setPermissionMode).toHaveBeenCalledWith('default')
+    expect(agent.state.mode).toBe('auto')
+    agent.close()
+
+    sdk.setPermissionMode.mockClear()
+    sdk.messages.push({ type: 'system', subtype: 'status', status: null, permissionMode: 'plan' })
+    await agent.send({
+      provider: 'claude',
+      build: 'tower',
+      text: 'plan again',
+      resume: null,
+      model: null,
+      effort: null,
+      mode: 'auto'
+    })
+    await vi.waitFor(() => expect(agent.state.mode).toBe('plan'))
+    await agent.setMode('auto')
+    expect(sdk.setPermissionMode).toHaveBeenCalledWith('default')
+    expect(agent.state.mode).toBe('auto')
+  } finally {
+    agent.close()
+  }
+})
 
 it('lists skills from SKILL.md frontmatter, the workspace before the user', () => {
   const root = mkdtempSync(join(tmpdir(), 'studio-skills-'))

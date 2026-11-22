@@ -93,6 +93,7 @@ export class CodexAgent {
   private loginStarting = false
   private disabled = new Set<string>() // MCP servers switched off for this thread (mcpToggle)
   private edits = new Map<string, string[]>() // fileChange item id -> its paths, for laneGuard
+  private threadPlanMode = false // true while the live Codex thread may be in sticky plan collaboration mode
 
   /** lane: a parallel variant (main/variants.ts), held to its own files; null for the Agent panel. */
   constructor(
@@ -352,6 +353,8 @@ export class CodexAgent {
         const id = z.uuid().parse(result.thread.id)
         const title = a.resume ? this.owned(id).title : (a.title ?? a.text.slice(0, 100))
         this.remember(id, tag, title)
+        // A resumed thread may still carry sticky plan collaboration mode from an earlier session.
+        this.threadPlanMode = !!a.resume
         this.set({ build: a.build, sessionId: id, model: result.model, context: null, usage: null })
         this.emit({
           type: 'note',
@@ -369,8 +372,9 @@ export class CodexAgent {
       const skills = names.size ? (await this.skills(rpc)).filter((k) => names.has(k.name)) : []
       if (epoch !== this.epoch) throw new Error('Agent start cancelled')
       const mode = a.mode ?? 'default'
-      // Collaboration mode sticks to the thread, so leaving plan mode is sent too.
-      const collaboration = (mode === 'plan' || this.state.mode === 'plan') && {
+      // Collaboration mode sticks to the thread, so leaving plan mode is sent too — even when
+      // setMode() already updated state.mode before this turn, or a resumed thread ended in plan mode.
+      const collaboration = (mode === 'plan' || this.threadPlanMode) && {
         collaborationMode: {
           mode: mode === 'plan' ? 'plan' : 'default',
           settings: {
@@ -381,6 +385,7 @@ export class CodexAgent {
         }
       }
       this.abort = new AbortController()
+      this.threadPlanMode = mode === 'plan'
       this.set({ status: 'running', effort: a.effort, mode })
       const result = await rpc.request<{ turn: { id: string } }>('turn/start', {
         threadId: this.state.sessionId,
@@ -457,6 +462,7 @@ export class CodexAgent {
     this.loginId = null
     this.loginStarting = false
     this.edits.clear()
+    this.threadPlanMode = false
     this.set(this.off())
   }
   async interrupt(): Promise<void> {
@@ -815,6 +821,7 @@ export class CodexAgent {
       throw new Error('Wait for the agent before switching MCP servers.')
     if (enabled) this.disabled.delete(name)
     else this.disabled.add(name)
+    const wasPlan = this.threadPlanMode
     this.close()
     // reopen with the project's target, as send() does, so the thread keeps its Minecraft version
     const s = this.d.projectSettings?.(build) ?? this.d.settings()
@@ -828,6 +835,7 @@ export class CodexAgent {
         threadId: sessionId
       })
       if (epoch !== this.epoch) throw new Error('Agent start cancelled')
+      this.threadPlanMode = wasPlan
       this.set({ status: 'idle', build, sessionId, mode, model: result.model, effort })
     } catch (e) {
       if (epoch === this.epoch) this.fail(e)
