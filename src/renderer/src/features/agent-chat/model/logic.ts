@@ -1,4 +1,4 @@
-// Pure helpers behind the agent composites: tool rows, the composer's skill picker and the usage meter.
+// Pure helpers behind the agent composites: tool rows and the composer's skill picker.
 
 export type ToolKind =
   'edit' | 'read' | 'search' | 'run' | 'web' | 'todo' | 'agent' | 'mcp' | 'other'
@@ -65,19 +65,4 @@ export function matchCommands(
     else if (name.includes(q) || c.description?.toLowerCase().includes(q)) rest.push(c)
   }
   return { query: q, matches: [...prefix, ...rest] }
-}
-
-/** Context thresholds from docs/ai-assistant.md: amber from 150k tokens, red from 200k. */
-export const CONTEXT_AMBER = 150_000
-export const CONTEXT_RED = 200_000
-
-export function contextTone(tokens: number): 'ok' | 'warning' | 'danger' {
-  return tokens >= CONTEXT_RED ? 'danger' : tokens >= CONTEXT_AMBER ? 'warning' : 'ok'
-}
-
-/** Tokens as "48k", "1.2M". */
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
-  if (n >= 1000) return `${Math.round(n / 1000)}k`
-  return String(n)
 }

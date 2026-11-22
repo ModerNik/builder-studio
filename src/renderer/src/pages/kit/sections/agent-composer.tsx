@@ -3,13 +3,12 @@ import { Boxes, Images } from 'lucide-react'
 import { Composer, type Option } from '@/features/agent-chat/ui/Composer'
 import { ContextChip, type Attachment } from '@/features/agent-chat/ui/Messages'
 import { ThreadListItem } from '@/features/agent-chat/ui/ThreadListItem'
-import { UsageMeter } from '@/features/agent-chat/ui/UsageMeter'
 import { ContextDialog, RewindDialog } from '@/features/agent-chat/ui/CommandDialogs'
 import { Button } from '@/shared/ui/primitives/button'
 import hero from '../../../../../../.github/assets/hero.svg?url'
 import { Cell, Grid, Narrow, Sub, Touch } from '../composites-demo'
 
-export const meta = { group: 'Agent', title: 'Composer, meter and threads' }
+export const meta = { group: 'Agent', title: 'Composer and threads' }
 
 const MODES: Option[] = [
   { value: 'default', label: 'Manual', description: 'Asks before each edit and command' },
@@ -225,67 +224,6 @@ export default function AgentComposer(): ReactElement {
         note="Rewind shows the affected build files before restoration. Context uses aligned token counts."
       >
         <CommandDialogsDemo />
-      </Sub>
-      <Sub
-        title="UsageMeter"
-        note="Status (named: session: ready), context tokens on a thin bar with the 150k and 200k marks (amber and red, with an icon), Compact from amber, sign-in kind, parallel variants and the cost as the CLI reports it."
-      >
-        <div className="flex flex-col gap-3">
-          <Cell label="Under 150k" surface="none" className="overflow-hidden">
-            <UsageMeter
-              status="ready"
-              tokens={48_400}
-              max={200_000}
-              cost={0.42}
-              auth="auth: ANTHROPIC_API_KEY"
-            />
-          </Cell>
-          <Cell
-            label="Amber, with Compact and a variant running"
-            surface="none"
-            className="overflow-hidden"
-          >
-            <UsageMeter
-              status="working"
-              tokens={162_000}
-              max={200_000}
-              cost={1.87}
-              auth="auth: ANTHROPIC_API_KEY"
-              variants={1}
-              onCompact={() => undefined}
-              compactDisabled
-            />
-          </Cell>
-          <Cell label="Red" surface="none" className="overflow-hidden">
-            <UsageMeter
-              status="ready"
-              tokens={214_000}
-              max={1_000_000}
-              cost={4.1}
-              variants={2}
-              onCompact={() => undefined}
-            />
-          </Cell>
-          <Cell
-            label="No context yet, cost unavailable (Ollama)"
-            surface="none"
-            className="overflow-hidden"
-          >
-            <UsageMeter status="off" cost={null} />
-          </Cell>
-          <Cell label="Narrow" surface="none" className="overflow-hidden">
-            <Narrow width={18.75}>
-              <UsageMeter
-                status="working"
-                tokens={176_000}
-                max={200_000}
-                cost={2.05}
-                auth="auth: ANTHROPIC_API_KEY"
-                onCompact={() => undefined}
-              />
-            </Narrow>
-          </Cell>
-        </div>
       </Sub>
       <Sub
         title="ThreadListItem"

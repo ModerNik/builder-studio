@@ -1,5 +1,5 @@
 // The Agent panel (G6.1 A, docked conversation) in the Assistant dock: the thread switcher, MCP and New thread,
-// the round lifecycle, the active thread's transcript with its asks above the composer, and the usage meter.
+// the round lifecycle, and the active thread's transcript with its asks above the composer.
 // On phones New thread, Brief and Approve round fold into a More menu in the header.
 // Main runs each thread's query; this renders lib/agent's store with the kit's chat parts.
 import { useEffect, useState, type ReactElement } from 'react'
@@ -31,7 +31,6 @@ import {
 } from '@/shared/ui/primitives/dialog'
 import { Input } from '@/shared/ui/primitives/input'
 import { Transcript as KitTranscript } from '@/features/agent-chat/ui/Transcript'
-import { UsageMeter } from '@/features/agent-chat/ui/UsageMeter'
 import { SystemNote } from '@/features/agent-chat/ui/Messages'
 import { buildUrl } from '@/shared/lib/urls'
 import { useShow } from '@/entities/build/model/builds'
@@ -52,7 +51,6 @@ import {
   renameThread,
   useRewind
 } from '@/features/agent-chat/model/panel'
-import { useVariants } from '@/features/agent-chat/model/variants'
 import type { Item } from '@/features/agent-chat/model/transcript'
 import type { AgentMode, PermissionAsk, Permit, SessionRef } from '@shared/api'
 import { lintProblems } from '@/shared/lib/format'
@@ -150,7 +148,7 @@ function BuildAgent({ build }: { build: string }): ReactElement {
     }
   }
   return (
-    <div className="flex h-full min-w-0 flex-col">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <div className="flex h-(--density-control) shrink-0 items-center gap-1 border-b border-border-subtle px-1.5">
         <AgentThreads
           open={panel === 'threads'}
@@ -193,7 +191,6 @@ function BuildAgent({ build }: { build: string }): ReactElement {
       {life.row}
       <ActiveTranscript build={build} />
       <AgentComposer onCommand={command} />
-      <Meter />
       {panel === 'context' && <ContextDialog context={state.context} onClose={close} />}
       {panel === 'rewind' && ref && (
         <ActiveRewind key={ref.id} refId={ref} build={build} onClose={close} />
@@ -380,30 +377,5 @@ export function Transcript({
     >
       {children}
     </KitTranscript>
-  )
-}
-
-function Meter(): ReactElement {
-  const state = useThread((t) => t.state)
-  const lanes = Object.values(useVariants((s) => s.lanes)).flatMap((l) =>
-    l.state ? [l.state] : []
-  )
-  const laneCost = lanes.reduce((a, l) => a + (l.cost ?? 0), 0)
-  const c = state.context
-  return (
-    <UsageMeter
-      status={state.status}
-      tokens={c?.tokens}
-      max={c?.max}
-      cost={
-        state.cost === null ? null : state.cost + laneCost > 0 ? state.cost + laneCost : undefined
-      }
-      auth={state.auth ? `auth: ${state.auth}` : undefined}
-      variants={lanes.filter(busy).length}
-      onCompact={
-        state.capabilities.compact && c ? () => void send('/compact', { command: true }) : undefined
-      }
-      compactDisabled={busy(state)}
-    />
   )
 }

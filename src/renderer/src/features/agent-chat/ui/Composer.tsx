@@ -61,7 +61,7 @@ function Picker({
         <SelectTrigger
           size="sm"
           aria-label={label}
-          className={cn('w-auto max-w-44 shrink-0 font-mono text-sm', className)}
+          className={cn('w-30 shrink-0 font-mono text-sm @max-[26rem]:w-22', className)}
         >
           <SelectValue>{triggerValue}</SelectValue>
         </SelectTrigger>
@@ -450,8 +450,8 @@ export function Composer({
               triggerValue={
                 mode === 'acceptEdits' ? (
                   <>
-                    <span className="@max-[22rem]:hidden">{current?.label}</span>
-                    <span className="hidden @max-[22rem]:inline">Edits</span>
+                    <span className="@max-[26rem]:hidden">{current?.label}</span>
+                    <span className="hidden @max-[26rem]:inline">Edits</span>
                   </>
                 ) : undefined
               }
@@ -468,13 +468,13 @@ export function Composer({
                     variant="outline"
                     disabled={running}
                     aria-label={selectionLabel}
-                    className="h-(--density-control-sm) min-w-0 shrink justify-start gap-1.5 px-2 font-normal"
+                    className="h-(--density-control-sm) w-44 min-w-0 shrink justify-start gap-1.5 px-2 font-normal"
                   >
                     <span className="min-w-0 truncate">{modelLabel}</span>
                     {effortLabel && (
                       <span className="shrink-0 text-fg-secondary">{effortLabel}</span>
                     )}
-                    <ChevronDown className="shrink-0 text-fg-secondary" aria-hidden />
+                    <ChevronDown className="ml-auto shrink-0 text-fg-secondary" aria-hidden />
                   </Button>
                 </DropdownMenuTrigger>
               </Tip>
