@@ -140,7 +140,7 @@ export function Shell(): ReactElement {
     badgeTone: 'attention',
     content: <AgentPanel />
   }
-  const panels: WorkbenchPanel[] = page ? [assistant] : [assistant, ...screenPanels]
+  const panels: WorkbenchPanel[] = page ? [assistant] : [...screenPanels, assistant]
 
   return (
     <>
