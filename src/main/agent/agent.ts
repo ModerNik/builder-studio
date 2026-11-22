@@ -31,6 +31,7 @@ import type {
   AgentModel,
   AgentMode,
   AgentMsg,
+  AgentQuestion,
   AgentRewindPoint,
   AgentSend,
   AgentSession,
@@ -52,8 +53,35 @@ import { claudePrerequisites } from './provider-config'
 import { filesText, imageType, splitAttachments } from '../workspace/refs'
 import { toolPath } from '../workspace/paths'
 
-// AskUserQuestion has no card here (the agent asks in text); the companion server is for the terminal agent only
-const DISALLOWED = ['AskUserQuestion', 'mcp__builder-studio']
+// the companion server is for the terminal agent only; AskUserQuestion renders as QuestionCard
+const DISALLOWED = ['mcp__builder-studio']
+
+function parseClaudeQuestions(input: Record<string, unknown>): AgentQuestion[] {
+  if (!Array.isArray(input.questions)) return []
+  return input.questions
+    .filter((q): q is Record<string, unknown> => !!q && typeof q === 'object')
+    .map((q) => {
+      const question = String(q.question ?? '')
+      const options = Array.isArray(q.options)
+        ? q.options
+            .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
+            .map((o) => ({
+              label: String(o.label ?? ''),
+              description: String(o.description ?? ''),
+              ...(typeof o.preview === 'string' && o.preview ? { preview: o.preview } : {})
+            }))
+        : []
+      return {
+        id: question,
+        header: String(q.header ?? ''),
+        question,
+        options,
+        multiSelect: Boolean(q.multiSelect),
+        allowOther: true
+      }
+    })
+    .filter((q) => q.question.length > 0)
+}
 // the studio tools that only show things or wait for the user; log_round writes DESIGN.md, so it asks
 const AUTO = ['show_in_viewer', 'show_sheet', 'status', 'request_review'].map(
   (t) => `mcp__studio__${t}`
@@ -316,6 +344,8 @@ export class AgentService {
         hooks: { PreToolUse: [{ hooks: [this.alwaysAsk] }] },
         includePartialMessages: true,
         forwardSubagentText: true,
+        promptSuggestions: !this.lane,
+        toolConfig: { askUserQuestion: { previewFormat: 'markdown' } },
         mcpServers: { studio },
         allowedTools: AUTO,
         // a variant lane leaves the viewer, the log and Review to the Variants screen
@@ -500,38 +530,74 @@ export class AgentService {
       if (tool === 'EnterPlanMode' && this.state.mode !== 'plan') this.set({ mode: 'plan' })
       return { behavior: 'allow', updatedInput: input }
     }
-    // the plan card still shows: the agent can enter plan mode by itself
-    if (FREE.includes(this.state.mode) && tool !== 'ExitPlanMode') return allow()
-    if ((s.agentAllow[build] ?? []).some((r) => ruleAllows(r, tool, input, s.workspace)))
+    const plan = tool === 'ExitPlanMode'
+    const question = tool === 'AskUserQuestion'
+    const interactive = plan || question
+    // plan and question cards still show in Auto/Accept edits: the agent can enter plan mode or ask by itself
+    if (FREE.includes(this.state.mode) && !interactive) return allow()
+    if (
+      !interactive &&
+      (s.agentAllow[build] ?? []).some((r) => ruleAllows(r, tool, input, s.workspace))
+    )
       return allow()
     const g = guard(tool, input, s.workspace)
     const ask: PermissionAsk = {
       id: opts.toolUseID,
       build,
       tool,
+      kind: plan ? 'plan' : question ? 'question' : 'permission',
       input,
+      ...(question ? { questions: parseClaudeQuestions(input) } : {}),
       title: opts.title ?? null,
       reason: opts.decisionReason ?? null,
       guard: g,
       rule:
-        g || opts.suppressAlwaysAllowRule || tool === 'ExitPlanMode'
+        g || opts.suppressAlwaysAllowRule || interactive
           ? null
           : suggestRule(tool, input, s.workspace),
       agent: opts.agentID ?? null
     }
-    const { decision, mode } = await new Promise<Permit>((done) => {
-      this.asks.set(ask.id, { ask, done })
-      opts.signal.addEventListener('abort', () => done({ id: ask.id, decision: 'deny' }))
-      this.d.emit('agent:ask', ask)
-    })
+    const { decision, mode, feedback, editedPlan, answers, annotations } =
+      await new Promise<Permit>((done) => {
+        this.asks.set(ask.id, { ask, done })
+        opts.signal.addEventListener('abort', () => done({ id: ask.id, decision: 'deny' }))
+        this.d.emit('agent:ask', ask)
+      })
     this.asks.delete(ask.id)
     this.d.emit('agent:ask', { done: ask.id })
-    const plan = tool === 'ExitPlanMode'
+    if (question) {
+      if (decision === 'deny')
+        return {
+          behavior: 'deny',
+          message:
+            'The user skipped these questions. Continue using your best judgment or ask in chat.'
+        }
+      const flatAnswers = Object.fromEntries(
+        Object.entries(answers ?? {})
+          .map(([k, v]) => [
+            k,
+            v
+              .map((part) => part.trim())
+              .filter(Boolean)
+              .join(', ')
+          ])
+          .filter(([, v]) => v.length > 0)
+      )
+      return {
+        behavior: 'allow',
+        updatedInput: {
+          ...input,
+          answers: flatAnswers,
+          ...(annotations && Object.keys(annotations).length ? { annotations } : {})
+        }
+      }
+    }
     if (decision === 'deny')
       return {
         behavior: 'deny',
         message: plan
-          ? 'The user wants to keep planning. Wait for their feedback before you change the plan.'
+          ? feedback?.trim() ||
+            'The user wants to keep planning. Wait for their feedback before you change the plan.'
           : 'The user denied this in Builder Studio.'
       }
     if (decision === 'always' && ask.rule) this.d.addRule(build, ask.rule)
@@ -540,7 +606,7 @@ export class AgentService {
     this.set({ mode: next })
     return {
       behavior: 'allow',
-      updatedInput: input,
+      updatedInput: editedPlan !== undefined ? { ...input, plan: editedPlan } : input,
       updatedPermissions: [{ type: 'setMode', mode: cli(next), destination: 'session' }]
     }
   }

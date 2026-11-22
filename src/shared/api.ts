@@ -703,12 +703,30 @@ export interface AgentState {
   error: string | null
 }
 
-/** A tool call the CLI asks the app about (canUseTool). */
+export interface QuestionOption {
+  label: string
+  description: string
+  preview?: string
+}
+
+export interface AgentQuestion {
+  id: string // Claude: question text; Codex: question.id
+  header: string
+  question: string
+  options: QuestionOption[] // empty => free-text question
+  multiSelect: boolean
+  allowOther: boolean
+  secret?: boolean
+}
+
+/** A tool call or interactive prompt the CLI asks the app about (canUseTool / requestUserInput). */
 export interface PermissionAsk {
   id: string // the tool_use id
   build: string
   tool: string
+  kind?: 'permission' | 'plan' | 'question'
   input: Record<string, unknown>
+  questions?: AgentQuestion[]
   title: string | null // the CLI's own sentence, when it gives one
   reason: string | null // why the CLI asks
   guard: string | null // why it can never be allowed "Always"
@@ -719,7 +737,13 @@ export interface PermissionAsk {
 export const PermitSchema = z.object({
   id: z.string(),
   decision: z.enum(['allow', 'always', 'deny']),
-  mode: z.enum(MODES).optional() // an approved plan continues in this mode
+  mode: z.enum(MODES).optional(), // an approved plan continues in this mode
+  feedback: z.string().max(50_000).optional(), // plan revision feedback when denying ExitPlanMode
+  editedPlan: z.string().max(200_000).optional(), // user-edited plan text when approving ExitPlanMode
+  answers: z.record(z.string(), z.array(z.string())).optional(), // question answers keyed by AgentQuestion.id
+  annotations: z
+    .record(z.string(), z.object({ preview: z.string().optional(), notes: z.string().optional() }))
+    .optional()
 })
 export type Permit = z.infer<typeof PermitSchema>
 
@@ -771,6 +795,7 @@ export type AgentMsg =
     }
   | { type: 'tool-result'; id: string; text: string; error: boolean }
   | { type: 'note' | 'turn-end'; id: string; text: string; error?: boolean }
+  | { type: 'suggestion'; id: string; text: string | null }
 
 /** What each empty settings path field resolves to on this machine; null when nothing is found. */
 export type Detected = {

@@ -8,6 +8,7 @@ import {
   type AgentCommand,
   type AgentMode,
   type AgentMsg,
+  type AgentQuestion,
   type AgentSend,
   type AgentSession,
   type AgentState,
@@ -87,8 +88,9 @@ export class CodexAgent {
   private connecting: Promise<CodexConnection> | null = null
   private epoch = 0
   private turn: string | null = null
+  private lastCompletedTurn: string | null = null
   private abort = new AbortController()
-  private asks = new Map<string, { ask: PermissionAsk; done(allow: boolean): void }>()
+  private asks = new Map<string, { ask: PermissionAsk; done(p: Permit): void }>()
   private loginId: string | null = null
   private loginStarting = false
   private disabled = new Set<string>() // MCP servers switched off for this thread (mcpToggle)
@@ -384,6 +386,7 @@ export class CodexAgent {
           }
         }
       }
+      this.lastCompletedTurn = null
       this.abort = new AbortController()
       this.threadPlanMode = mode === 'plan'
       this.set({ status: 'running', effort: a.effort, mode })
@@ -454,11 +457,12 @@ export class CodexAgent {
   close(): void {
     ++this.epoch
     this.abort.abort()
-    for (const ask of this.asks.values()) ask.done(false)
+    for (const [id, ask] of this.asks) ask.done({ id, decision: 'deny' })
     this.rpc?.close()
     this.rpc = null
     this.connecting = null
     this.turn = null
+    this.lastCompletedTurn = null
     this.loginId = null
     this.loginStarting = false
     this.edits.clear()
@@ -467,7 +471,8 @@ export class CodexAgent {
   }
   async interrupt(): Promise<void> {
     this.abort.abort()
-    for (const ask of this.asks.values()) ask.done(false)
+    this.lastCompletedTurn = null
+    for (const [id, ask] of this.asks) ask.done({ id, decision: 'deny' })
     if (this.turn && this.rpc) {
       await this.rpc.request('turn/interrupt', {
         threadId: this.state.sessionId,
@@ -495,7 +500,7 @@ export class CodexAgent {
     return [...this.asks.values()].map((x) => x.ask)
   }
   permit(p: Permit): void {
-    this.asks.get(p.id)?.done(p.decision === 'allow')
+    this.asks.get(p.id)?.done(p)
   }
 
   /** Why the lane may not run this approval request, or null. An edit whose paths are unknown is refused. */
@@ -523,21 +528,89 @@ export class CodexAgent {
     if (signal.aborted) return Promise.resolve(false)
     const key = `codex:${id}`
     return new Promise((resolve) => {
-      const abort = (): void => done(false)
-      const done = (allow: boolean): void => {
+      const abort = (): void => done({ id: key, decision: 'deny' })
+      const done = (p: Permit): void => {
         if (!this.asks.delete(key)) return
         signal.removeEventListener('abort', abort)
         this.d.emit('agent:ask', { done: key })
-        resolve(allow)
+        resolve(p.decision === 'allow')
       }
       const ask: PermissionAsk = {
         id: key,
         build: this.state.build ?? '',
         tool,
+        kind: 'permission',
         input,
         title: null,
         reason: typeof input.reason === 'string' ? input.reason : null,
         guard: 'Codex approvals apply once',
+        rule: null,
+        agent: null
+      }
+      this.asks.set(key, { ask, done })
+      signal.addEventListener('abort', abort, { once: true })
+      this.d.emit('agent:ask', ask)
+    })
+  }
+
+  private userInput(
+    id: string | number,
+    input: Record<string, unknown>,
+    signal: AbortSignal
+  ): Promise<{ answers: Record<string, { answers: string[] }> }> {
+    if (signal.aborted) return Promise.resolve({ answers: {} })
+    const raw = Array.isArray(input.questions) ? input.questions : []
+    const questions: AgentQuestion[] = raw
+      .filter((q): q is Record<string, unknown> => !!q && typeof q === 'object')
+      .map((q) => {
+        const options = Array.isArray(q.options)
+          ? q.options
+              .filter((o): o is Record<string, unknown> => !!o && typeof o === 'object')
+              .map((o) => ({
+                label: String(o.label ?? ''),
+                description: String(o.description ?? '')
+              }))
+          : []
+        return {
+          id: String(q.id ?? ''),
+          header: String(q.header ?? ''),
+          question: String(q.question ?? ''),
+          options,
+          multiSelect: false,
+          allowOther: Boolean(q.isOther) || options.length === 0,
+          secret: Boolean(q.isSecret)
+        }
+      })
+      .filter((q) => q.id.length > 0 && q.question.length > 0)
+    if (!questions.length) return Promise.resolve({ answers: {} })
+    const key = `codex:${id}`
+    return new Promise((resolve) => {
+      const abort = (): void => done({ id: key, decision: 'deny' })
+      const done = (p: Permit): void => {
+        if (!this.asks.delete(key)) return
+        signal.removeEventListener('abort', abort)
+        this.d.emit('agent:ask', { done: key })
+        if (p.decision !== 'allow' || !p.answers) {
+          resolve({ answers: {} })
+          return
+        }
+        const answers = Object.fromEntries(
+          Object.entries(p.answers)
+            .map(([qid, list]) => [qid, { answers: list.map((s) => s.trim()).filter(Boolean) }])
+            .filter(([, v]) => (v as { answers: string[] }).answers.length > 0)
+        ) as Record<string, { answers: string[] }>
+        resolve({ answers })
+      }
+      const ask: PermissionAsk = {
+        id: key,
+        build: this.state.build ?? '',
+        tool: 'request_user_input',
+        kind: 'question',
+        input,
+        questions,
+        title: null,
+        reason: null,
+        guard: null,
         rule: null,
         agent: null
       }
@@ -632,6 +705,9 @@ export class CodexAgent {
           ((!!this.lane && (!shell || this.state.mode === 'auto')) ||
             (await this.approval(m.id, shell ? 'shell' : 'file changes', p, this.abort.signal)))
         if (rpc === this.rpc) rpc.respond(m.id, { decision: allowed ? 'accept' : 'decline' })
+      } else if (m.method === 'item/tool/requestUserInput') {
+        const response = await this.userInput(m.id, p, this.abort.signal)
+        if (rpc === this.rpc) rpc.respond(m.id, response)
       } else if (m.method === 'mcpServer/elicitation/request') {
         // shortcut: form elicitations are accepted with no content, add a form card if a server needs one
         const allowed = await this.approval(
@@ -699,6 +775,21 @@ export class CodexAgent {
           : null
       })
     }
+    if (m.method === 'thread/prediction/updated') {
+      const result = p.result as { type?: string; text?: string | null } | undefined
+      if (
+        this.state.status === 'idle' &&
+        p.sourceTurnId === this.lastCompletedTurn &&
+        result?.type === 'completed' &&
+        typeof result.text === 'string' &&
+        result.text.trim()
+      )
+        this.emit({
+          type: 'suggestion',
+          id: `pred:${String(p.sourceTurnId)}`,
+          text: result.text.trim()
+        })
+    }
     if (m.method === 'error') {
       const e = p.error as { message: string }
       this.emit({ type: 'note', id: `error:${Date.now()}`, text: e.message, error: true })
@@ -723,6 +814,21 @@ export class CodexAgent {
         text: error ?? turn.status,
         error: turn.status !== 'completed'
       })
+      if (
+        this.provider === 'codex' &&
+        !this.lane &&
+        turn.status === 'completed' &&
+        this.state.mode !== 'plan' &&
+        this.state.sessionId
+      ) {
+        this.lastCompletedTurn = turn.id
+        void rpc
+          .request('thread/prediction/request', {
+            threadId: this.state.sessionId,
+            sourceTurnId: turn.id
+          })
+          .catch(() => undefined)
+      }
     }
   }
 

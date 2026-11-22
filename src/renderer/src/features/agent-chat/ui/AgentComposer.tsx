@@ -15,6 +15,7 @@ import { useAvailability } from '@/entities/availability/model/availability'
 import { errorMessage } from '@/shared/ui/feedback/errors'
 import {
   busy,
+  dismissSuggestion,
   effortLabel,
   interrupt,
   resolveAgentPrefs,
@@ -66,6 +67,7 @@ export function AgentComposer({
   const mode = useThread((t) => t.mode)
   const running = useThread((t) => busy(t.state))
   const live = useThread((t) => t.state.status !== 'off')
+  const suggestion = useThread((t) => (t.asks.length ? null : t.suggestion))
   const capabilities = useThread((t) => t.state.capabilities)
   const provider = useThread((t) => t.state.provider)
   const prefs = useAgentPrefs()
@@ -218,6 +220,8 @@ export function AgentComposer({
       efforts={resolved.efforts.map((e) => ({ value: e, label: effortLabel(e) }))}
       effort={resolved.effort ?? undefined}
       onEffortChange={(effort) => pick({ effort: effort as Effort })}
+      suggestion={suggestion}
+      onDismissSuggestion={dismissSuggestion}
       placeholder={`Ask the agent (/ for commands${provider === 'claude' ? '' : ', $ for skills'})`}
     />
   )

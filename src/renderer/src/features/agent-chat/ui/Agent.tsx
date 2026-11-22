@@ -37,7 +37,9 @@ import { useShow } from '@/entities/build/model/builds'
 import {
   busy,
   follow,
+  implementPlan,
   newThread,
+  revisePlan,
   send,
   setMode,
   useAgent,
@@ -288,7 +290,8 @@ function ActiveTranscript({ build, onBrief }: { build: string; onBrief(): void }
       onSwitchToAuto={
         state.provider === 'claude' && mode !== 'auto' ? () => void setMode('auto') : undefined
       }
-      onImplementPlan={() => void setMode(workMode()).then(() => send('Implement the plan.'))}
+      onImplementPlan={(editedPlan) => void implementPlan(editedPlan)}
+      onRevisePlan={(feedback) => void revisePlan(feedback)}
       empty={
         loading ? (
           <LoadingState label="Loading the conversation" layout="transcript" rows={5} />
@@ -346,6 +349,7 @@ export function Transcript({
   onPermit,
   onSwitchToAuto,
   onImplementPlan,
+  onRevisePlan,
   empty,
   children
 }: {
@@ -354,7 +358,8 @@ export function Transcript({
   working?: boolean
   onPermit?: (p: Permit) => void
   onSwitchToAuto?: () => void
-  onImplementPlan?: () => void
+  onImplementPlan?: (editedPlan?: string) => void
+  onRevisePlan?: (feedback: string) => void
   empty?: React.ReactNode
   children?: React.ReactNode
 }): ReactElement {
@@ -368,6 +373,7 @@ export function Transcript({
       onSwitchToAuto={onSwitchToAuto}
       planMode={workMode()}
       onImplementPlan={onImplementPlan}
+      onRevisePlan={onRevisePlan}
       onShowFile={(path, sheet) => {
         const build = /^builds\/(.+?)\/out\//.exec(path)?.[1]
         if (!build) return

@@ -1,58 +1,13 @@
-// What the assistant asks the builder: a plan to approve and a tool call to permit; and its working status.
+// What the assistant asks the builder: a plan to approve, questions to answer, a tool call to permit, and working status.
 import { useId, type ReactElement, type ReactNode } from 'react'
-import { ListTodo, ShieldAlert, ShieldQuestion } from 'lucide-react'
+import { ShieldAlert, ShieldQuestion } from 'lucide-react'
 import { Button } from '@/shared/ui/primitives/button'
 import { cn } from '@/shared/lib/utils'
-import { Prose } from '@/shared/ui/code/Prose'
 import { formatElapsed, useElapsed } from '@/shared/ui/common/time'
 import { Tip } from '@/shared/ui/common/Tip'
 
-/** A plan the assistant proposes (Claude's plan mode, or Codex plan text), with its decision buttons. */
-export function PlanCard({
-  plan,
-  onApprove,
-  onKeepPlanning,
-  approveLabel = 'Approve plan',
-  className
-}: {
-  plan: string
-  onApprove: () => void
-  /** Omit for Codex, whose plans are text: only "Implement plan" applies. */
-  onKeepPlanning?: () => void
-  approveLabel?: string
-  className?: string
-}): ReactElement {
-  const id = useId()
-  return (
-    <section
-      aria-labelledby={id}
-      className={cn(
-        'flex min-w-0 flex-col gap-2 rounded-lg border border-accent-subtle-border bg-surface-raised p-3',
-        className
-      )}
-    >
-      <h3 id={id} className="flex items-center gap-1.5 text-base font-medium text-accent-text">
-        <ListTodo aria-hidden className="size-3.5" /> Plan
-      </h3>
-      <Prose variant="chat">{plan}</Prose>
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        <Button size="sm" className="h-(--density-control-sm)" onClick={onApprove}>
-          {approveLabel}
-        </Button>
-        {onKeepPlanning && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-(--density-control-sm)"
-            onClick={onKeepPlanning}
-          >
-            Keep planning
-          </Button>
-        )}
-      </div>
-    </section>
-  )
-}
+export { PlanCard, type PlanCardProps } from './PlanCard'
+export { QuestionCard, type QuestionCardProps } from './QuestionCard'
 
 export type PermitDecision = 'allow' | 'allow-auto' | 'always' | 'deny'
 

@@ -37,6 +37,7 @@ it('keeps Ollama in process overrides without shell interpretation or global con
   expect(args).toContain('model_providers.builder_ollama.wire_api="responses"')
   expect(args).toContain('approval_policy="on-request"')
   expect(args).toContain('sandbox_workspace_write.network_access=false')
+  expect(args).toContain('features.default_mode_request_user_input=true')
   expect(args.join(' ')).not.toMatch(/--oss|ollama launch|ollama pull|config\.toml/)
 })
 

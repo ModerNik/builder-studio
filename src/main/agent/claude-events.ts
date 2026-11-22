@@ -81,6 +81,8 @@ export function claudeEvents(m: Native): AgentMsg[] {
       result.push({ type: 'user', id: `${id}:0`, text: said })
     return result
   }
+  if (m.type === 'prompt_suggestion' && typeof m.suggestion === 'string' && m.suggestion.trim())
+    return [{ type: 'suggestion', id, text: m.suggestion.trim() }]
   if (m.type === 'result') {
     const ok = m.subtype === 'success' && !m.is_error
     return [
