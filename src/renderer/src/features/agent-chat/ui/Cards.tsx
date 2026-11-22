@@ -97,12 +97,15 @@ export function PermissionCard({
       )}
     >
       <div className="flex min-w-0 flex-col gap-0.5">
-        <h3 id={id} className="flex items-center gap-1.5 text-base font-medium text-fg">
+        <h3
+          id={id}
+          className="flex min-w-0 flex-wrap items-center gap-1.5 text-base font-medium wrap-anywhere text-fg"
+        >
           <Icon aria-hidden className="size-4 shrink-0 text-warning-text" />
           Allow {tool}?
           {subagent && <span className="font-normal text-fg-secondary">· from a subagent</span>}
         </h3>
-        {title && <p className="pl-5.5 text-sm text-fg-secondary">{title}</p>}
+        {title && <p className="pl-5.5 text-sm wrap-anywhere text-fg-secondary">{title}</p>}
       </div>
       {children}
       {guard && (

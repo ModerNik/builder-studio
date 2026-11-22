@@ -91,7 +91,7 @@ export function AgentThreads({
             variant="ghost"
             size="sm"
             aria-label={`Threads and sessions: ${label(active, list.data)}`}
-            className="h-(--density-control-sm) min-w-0 gap-1 px-1.5 font-medium"
+            className="h-(--density-control-sm) min-w-0 shrink gap-1 px-1.5 font-medium"
           >
             <span className="truncate">{label(active, list.data)}</span>
             {running > 0 && (

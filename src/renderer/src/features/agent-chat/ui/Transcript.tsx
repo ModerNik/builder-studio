@@ -85,9 +85,9 @@ export function Transcript(props: TranscriptProps): ReactElement {
         const el = e.currentTarget
         stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
       }}
-      className={cn('min-h-0 flex-1 overflow-y-auto', className)}
+      className={cn('min-h-0 flex-1 overflow-x-hidden overflow-y-auto', className)}
     >
-      <div className="mx-auto flex max-w-[68ch] min-w-0 flex-col gap-3 px-3 py-4">
+      <div className="mx-auto flex max-w-[68ch] min-w-0 flex-col gap-3 px-3 py-4 wrap-anywhere">
         {!items.length && !asks.length && !working && empty}
         <Items {...props} parent={null} />
         {asks.map((a) => (
