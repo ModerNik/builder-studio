@@ -39,7 +39,9 @@ const Toaster = ({ toastOptions, ...props }: ToasterProps): React.ReactElement =
       toastOptions={{
         ...toastOptions,
         classNames: {
-          toast: 'font-sans! text-base! shadow-md! gap-2.5! items-start! px-3! py-2.5!',
+          // Only Sonner's own styled toasts get box chrome; toast.custom() sets data-styled="false" and draws its own card.
+          toast:
+            'font-sans! text-base! data-[styled=true]:items-start! data-[styled=true]:gap-2.5! data-[styled=true]:px-3! data-[styled=true]:py-2.5! data-[styled=true]:shadow-md!',
           title: 'font-medium! wrap-anywhere',
           description: 'text-sm! text-fg-secondary! wrap-anywhere',
           icon: 'mt-0.5!',

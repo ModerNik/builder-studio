@@ -99,7 +99,7 @@ function SetupToast({
   return (
     <div
       role="status"
-      className="flex w-95 max-w-[calc(100vw-2rem)] items-start gap-3 rounded-lg border border-border-default bg-surface-overlay py-3.5 ps-4 pe-2 text-fg shadow-lg max-sm:items-center max-sm:gap-2 max-sm:py-1.5 max-sm:ps-3"
+      className="flex w-95 max-w-[calc(100vw-2rem)] items-start gap-3 rounded-lg border border-border-default bg-surface-overlay py-3.5 ps-4 pe-2 text-fg shadow-md max-sm:items-center max-sm:gap-2 max-sm:py-1.5 max-sm:ps-3"
     >
       <TriangleAlert aria-hidden className="mt-0.5 size-4 shrink-0 text-warning-text max-sm:mt-0" />
       {/* on a phone the toast is one line, title and fix, so it covers little; the chip menu has the rest */}
