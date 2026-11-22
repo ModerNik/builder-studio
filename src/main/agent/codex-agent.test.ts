@@ -470,7 +470,7 @@ describe('Codex app-server provider', () => {
     expect(t.messages().at(-1)).toMatchObject({ id: 'plan-1', delta: true, plan: true })
     t.complete()
     await expect(t.agent.setMode('plan')).resolves.toBeUndefined()
-    expect(turns()[0]).toMatchObject({ approvalPolicy: 'on-request' })
+    expect(turns()[0]).toMatchObject({ approvalPolicy: 'never' })
     // plan -> auto: the collaboration mode goes back to default, and Auto never asks
     await t.agent.send({ ...t.send, mode: 'auto' })
     expect(turns()[1]).toMatchObject({
