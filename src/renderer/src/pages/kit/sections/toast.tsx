@@ -74,6 +74,21 @@ export default function ToastSection(): ReactElement {
         >
           Persistent + close
         </Button>
+        <Button
+          variant="outline"
+          onClick={() =>
+            toast.custom((id) => (
+              <div className="flex w-95 max-w-[calc(100vw-2rem)] items-center justify-between gap-3 rounded-lg border border-border-default bg-surface-overlay px-3.5 py-2.5 text-fg shadow-md">
+                <span className="text-sm font-medium">Custom notification card</span>
+                <Button size="sm" variant="ghost" onClick={() => toast.dismiss(id)}>
+                  Dismiss
+                </Button>
+              </div>
+            ))
+          }
+        >
+          Custom
+        </Button>
       </div>
       <Guidance>
         Toasts confirm what just happened and offer one undo; they never carry the only copy of an error the
