@@ -33,7 +33,7 @@ export default function BreadcrumbSection(): ReactElement {
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem>
-              <BreadcrumbPage>Review round 2</BreadcrumbPage>
+              <BreadcrumbPage>Review 2</BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
@@ -47,7 +47,10 @@ export default function BreadcrumbSection(): ReactElement {
             <BreadcrumbSeparator />
             <BreadcrumbItem>
               <DropdownMenu>
-                <DropdownMenuTrigger className="focus-ring cursor-pointer rounded-xs" aria-label="Show hidden levels">
+                <DropdownMenuTrigger
+                  className="focus-ring cursor-pointer rounded-xs"
+                  aria-label="Show hidden levels"
+                >
                   <BreadcrumbEllipsis />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>

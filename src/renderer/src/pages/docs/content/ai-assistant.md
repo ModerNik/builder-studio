@@ -9,11 +9,11 @@ AI is optional. Everything else in Builder Studio works without it.
 
 Choose one in **Settings → AI assistant** (or setup step 5).
 
-| Provider | Runs | Sign-in | Notes |
-|---|---|---|---|
-| **Claude** | Online (Anthropic) | Your own Anthropic API key, entered in Settings → AI | Default. Runs through the `claude` CLI |
-| **Codex** | Online (OpenAI) | **Sign in with ChatGPT** opens your browser | Uses the `codex` CLI |
-| **Ollama** | On your PC | None | Runs through the Codex CLI against your Ollama server. Set **Server address** (default `http://127.0.0.1:11434`) and **Model**, an already-installed model. Builder Studio never downloads models |
+| Provider   | Runs               | Sign-in                                              | Notes                                                                                                                                                                                             |
+| ---------- | ------------------ | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Claude** | Online (Anthropic) | Your own Anthropic API key, entered in Settings → AI | Default. Runs through the `claude` CLI                                                                                                                                                            |
+| **Codex**  | Online (OpenAI)    | **Sign in with ChatGPT** opens your browser          | Uses the `codex` CLI                                                                                                                                                                              |
+| **Ollama** | On your PC         | None                                                 | Runs through the Codex CLI against your Ollama server. Set **Server address** (default `http://127.0.0.1:11434`) and **Model**, an already-installed model. Builder Studio never downloads models |
 
 Each provider card shows **Ready**, **API key needed**, **Sign-in needed** or **Not connected**, with
 **Check again**.
@@ -52,12 +52,12 @@ added alongside the workspace's own `CLAUDE.md`, skills and hooks.
 
 ### Permission modes
 
-| Mode | Behavior |
-|---|---|
-| **Manual** | Asks before each edit and command |
-| **Accept edits** | Runs edits and commands without asking |
-| **Auto** | Claude: a classifier approves calls for you and risky calls still ask. Codex and Ollama: never asks, bounded by the sandbox |
-| **Plan** | Plans first and asks before it edits |
+| Mode             | Behavior                                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **Manual**       | Asks before each edit and command                                                                                           |
+| **Accept edits** | Runs edits and commands without asking                                                                                      |
+| **Auto**         | Claude: a classifier approves calls for you and risky calls still ask. Codex and Ollama: never asks, bounded by the sandbox |
+| **Plan**         | Plans first and asks before it edits. **Implement plan** switches the thread to **Auto** and starts the work                |
 
 **Shift Tab** in the input cycles modes.
 
@@ -100,18 +100,18 @@ sign-in kind as the CLI reports it, and the session cost as the CLI reports it. 
 Type `/` to filter commands. Enter runs the highlighted command. Tab completes its name so you can
 add arguments. Claude skills appear in the same menu. Use `$` for Codex and Ollama skills.
 
-| Command | Action |
-| --- | --- |
-| `/clear` | Start a fresh thread for the current build and keep the previous conversation in history. |
-| `/fork` | Open a new thread with a copy of the current conversation. |
-| `/rewind` | Select a turn and continue from just before it in a new thread. Choose **Conversation only** or review the affected paths and choose **Conversation and files**. |
-| `/compact` | Summarize the existing conversation to free context. Claude also accepts an optional focus after the command. |
-| `/context` | Show context usage and the provider’s breakdown when available. |
-| `/skills` | Browse the current provider’s available skills. |
-| `/mcp` | Open the MCP server panel. |
-| `/resume` | Open the thread and saved conversation picker. |
-| `/rename [name]` | Name the current conversation. With no name, opens the rename dialog. |
-| `/model` | Open the model and effort menu. Choose the Ollama model in AI settings. |
+| Command          | Action                                                                                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/clear`         | Start a fresh thread for the current build and keep the previous conversation in history.                                                                        |
+| `/fork`          | Open a new thread with a copy of the current conversation.                                                                                                       |
+| `/rewind`        | Select a turn and continue from just before it in a new thread. Choose **Conversation only** or review the affected paths and choose **Conversation and files**. |
+| `/compact`       | Summarize the existing conversation to free context. Claude also accepts an optional focus after the command.                                                    |
+| `/context`       | Show context usage and the provider’s breakdown when available.                                                                                                  |
+| `/skills`        | Browse the current provider’s available skills.                                                                                                                  |
+| `/mcp`           | Open the MCP server panel.                                                                                                                                       |
+| `/resume`        | Open the thread and saved conversation picker.                                                                                                                   |
+| `/rename [name]` | Name the current conversation. With no name, opens the rename dialog.                                                                                            |
+| `/model`         | Open the model and effort menu. Choose the Ollama model in AI settings.                                                                                          |
 
 File rewind uses checkpoints from up to eight recent turns captured while Builder Studio is open.
 It covers regular source files inside the build folder, including changes made by shell tools during
@@ -124,26 +124,26 @@ rewind remains available for older saved conversations.
 The plug icon lists the live status of each server from `<workspace>/.mcp.json`, plus the built-in
 `studio` server, with an on/off switch where the provider supports it.
 
-## Round workflow
+## Brief
 
-- **Brief**: writes your text as `## 1. Brief (date)` in DESIGN.md (Status untouched), starts a new
-  session, and sends it as the first message. Attach references here too.
-- **Approve round**: asks the assistant to update only the `## Status` block (the app never edits
-  Status itself). When that turn ends, a confirm shows `git status` of `builds/<name>` and an editable
-  message. **Commit** commits that folder only, nothing is pushed, and the next message starts a new
-  session titled `<build> · round N+1`.
+One conversation per build is enough: ask, let the assistant plan (in **Plan** mode) and implement,
+and keep going in the same thread. Start another thread only when you want a fresh context.
+
+**Brief** (the page icon in the panel header, or **Write a brief** in an empty thread) writes your text
+as `## 1. Brief (date)` in DESIGN.md (Status untouched), starts a new thread, and sends it as the first
+message. Attach references here too. Commit a build's folder with **Export → Git commit**.
 
 ## Studio tools
 
 The embedded assistant gets an in-process MCP server named `studio`:
 
-| Tool | Does |
-|---|---|
-| `show_in_viewer(path)` | Opens a `.litematic` version in the workspace view |
-| `show_sheet(path)` | Shows a render sheet |
-| `status()` | What's open: build, version, tab, picked block, review; running jobs |
-| `request_review(...)` | Opens Review and waits; returns the saved round when you send it |
-| `log_round(build, markdown)` | Appends a `### Round N` gist to DESIGN.md (asks first) |
+| Tool                         | Does                                                                 |
+| ---------------------------- | -------------------------------------------------------------------- |
+| `show_in_viewer(path)`       | Opens a `.litematic` version in the workspace view                   |
+| `show_sheet(path)`           | Shows a render sheet                                                 |
+| `status()`                   | What's open: build, version, tab, picked block, review; running jobs |
+| `request_review(...)`        | Opens Review and waits; returns the saved round when you send it     |
+| `log_round(build, markdown)` | Appends a `### Round N` gist to DESIGN.md (asks first)               |
 
 The localhost companion server for [external agents](external-agents.md) is a separate server and is
 not given to the embedded assistant.

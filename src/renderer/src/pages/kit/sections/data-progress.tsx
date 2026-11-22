@@ -90,7 +90,7 @@ function ReviewRail(): ReactElement {
   const [round, setRound] = useState(3)
   return (
     <div className="flex w-72 flex-col gap-4">
-      <Field label="Question for this round" hint="Shown above the sheet in Review.">
+      <Field label="Question for this review" hint="Shown above the sheet in Review.">
         <Textarea rows={2} defaultValue="Does the taller keep still read as one building?" />
       </Field>
       <Timeline
@@ -116,10 +116,10 @@ export default function DataProgress(): ReactElement {
     <div>
       <Sub
         title="Timeline"
-        note="Review rounds newest first, each with its sheet; click one to jump to it in the log."
+        note="Reviews newest first, each with its sheet; click one to jump to it in the log."
       >
         <Grid min="18rem">
-          <Cell label="Design log rounds">
+          <Cell label="Design log reviews">
             <Timeline
               current={round}
               onSelect={setRound}
@@ -234,7 +234,7 @@ export default function DataProgress(): ReactElement {
                 n={10}
                 label="Rejected variants"
                 status="skipped"
-                detail="no round with a pick"
+                detail="no review with a pick"
               />
             </Checklist>
           </Cell>
@@ -295,8 +295,8 @@ export default function DataProgress(): ReactElement {
         </Cell>
       </Sub>
       <Sub
-        title="Review round rail (composed)"
-        note="Field and a two-line Textarea for the round's question, then the round Timeline. No component of its own."
+        title="Review rail (composed)"
+        note="Field and a two-line Textarea for the review's question, then the review Timeline. No component of its own."
       >
         <Cell label="Review A rail">
           <ReviewRail />

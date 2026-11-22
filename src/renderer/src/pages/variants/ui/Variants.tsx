@@ -116,7 +116,7 @@ export function Variants(): ReactElement {
         </div>
         {!phone && (
           <Button variant="outline" disabled={working} onClick={() => setSetup(true)}>
-            New round
+            New variants
           </Button>
         )}
         {sendButton}

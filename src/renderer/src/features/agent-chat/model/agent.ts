@@ -128,20 +128,6 @@ export async function requestAgentPrefs(
 
 export const busy = (s: AgentState): boolean => s.status === 'running' || s.status === 'starting'
 
-/** Observe the next turn before sending it, including turns that finish between React renders. */
-export function watchTurn(id: string, ended: (state: AgentState | undefined) => void): () => void {
-  let started = false
-  const initialError = useAgent.getState().threads[id]?.state.error
-  return useAgent.subscribe(({ threads }) => {
-    const state = threads[id]?.state
-    if (state && busy(state)) started = true
-    else if (started || !state || (state.error && state.error !== initialError)) {
-      started = false
-      ended(state)
-    }
-  })
-}
-
 /** The remembered mode, where this provider offers it. */
 export const startMode = (primary: AgentState): AgentMode => {
   const { mode } = useAgentPrefs.getState()

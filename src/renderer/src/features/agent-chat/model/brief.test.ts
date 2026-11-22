@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { getBrief, lastRound, setBrief } from './brief'
+import { getBrief, setBrief } from './brief'
 
 const MD = `# Narkina 5
 
@@ -37,10 +37,5 @@ describe('brief', () => {
       /## Status\n[^#]*\n## 1\. Brief \(d\)\n\nB\n\n## 2\./
     )
     expect(setBrief('', 'n', 'B', 'd')).toBe('# n\n\n## 1. Brief (d)\n\nB\n\n')
-  })
-
-  it('finds the last round', () => {
-    expect(lastRound(MD)).toBe(3)
-    expect(lastRound('')).toBe(0)
   })
 })

@@ -41,7 +41,7 @@ Works with any AI assistant (Claude, Codex or Ollama).
   nothing else. Builder Studio denies any other write, any Git change and any other build name,
   whatever the prompt says.
 - Lanes sit side by side, each with its job cards, permission asks and a follow-up box.
-- **Send N to Review** opens one Review round with each lane's newest `*_L` file.
+- **Send N to Review** opens one Review with each lane's newest `*_L` file.
 - **Settings → AI assistant → Variants drafted at once** sets how many run at once (2–6, default 3).
   More is faster but uses more of your plan; the meter adds up their cost.
 

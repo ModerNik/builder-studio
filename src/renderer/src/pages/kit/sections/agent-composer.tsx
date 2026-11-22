@@ -37,7 +37,7 @@ const EFFORTS: Option[] = [
 const COMMANDS = [
   { name: 'compact', description: 'Summarize the conversation to free context' },
   { name: 'build-review', description: 'Render a sheet and judge it against the brief' },
-  { name: 'review', hint: '[question]', description: 'Open Review and wait for the round' },
+  { name: 'review', hint: '[question]', description: 'Open Review and wait for the review' },
   { name: 'log-round', description: 'Append a Round gist to DESIGN.md' }
 ]
 

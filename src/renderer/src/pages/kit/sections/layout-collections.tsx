@@ -38,7 +38,7 @@ const Card = ({ name, tall }: { name: string; tall?: boolean }): ReactElement =>
       }
     />
     <h3 className="font-mono text-sm">{name}</h3>
-    <p className="text-sm text-fg-secondary">Round 3 · 176 blocks</p>
+    <p className="text-sm text-fg-secondary">Review 3 · 176 blocks</p>
   </article>
 )
 
@@ -70,7 +70,7 @@ export default function CollectionsDemo(): ReactElement {
             </ul>
           }
           second={
-            <p className="p-4 text-fg-secondary">stone_bridge: 5 parts, 176 blocks, round 3.</p>
+            <p className="p-4 text-fg-secondary">stone_bridge: 5 parts, 176 blocks, review 3.</p>
           }
         />
       </Specimen>

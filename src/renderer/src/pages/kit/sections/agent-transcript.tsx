@@ -27,7 +27,7 @@ const PLAN = `1. Raise the keep's walls from 18 to 22 blocks and add a cobblesto
 3. Run \`build.py proto\` and send the sheet for review`
 
 const ITEMS: Item[] = [
-  { kind: 'note', id: 'n', text: 'New session · stone_watchtower · round 4' },
+  { kind: 'note', id: 'n', text: 'New session · stone_watchtower' },
   { kind: 'user', id: 'u', text: 'Make the keep taller and give it a darker roof.' },
   { kind: 'text', id: 't', parent: null, text: 'I will raise the keep and swap the roof.' },
   {
@@ -69,7 +69,7 @@ export default function AgentTranscript(): ReactElement {
       >
         <Grid min="22rem">
           <Cell label="A short exchange" className="flex flex-col gap-3">
-            <SystemNote>New session · stone_watchtower · round 4</SystemNote>
+            <SystemNote>New session · stone_watchtower</SystemNote>
             <MessageBubble
               attachments={[
                 { path: 'builds/stone_watchtower/attachments/pasted-1730662800.png', url: hero },

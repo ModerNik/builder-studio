@@ -87,7 +87,7 @@ export function Review(): ReactElement {
     {
       id: 'review',
       side: 'right',
-      title: 'Review round',
+      title: 'Review',
       icon: ClipboardCheck,
       keys: 'Ctrl+I',
       size: '--dock-review',
@@ -207,7 +207,7 @@ export function Review(): ReactElement {
           content:
             tab === 'diff' ? (
               <span className="flex flex-wrap items-center gap-1.5 text-sm text-fg-secondary">
-                {lastPick ? `vs round ${picked!.round}'s pick` : 'No earlier round with a pick'}
+                {lastPick ? `vs review ${picked!.round}'s pick` : 'No earlier review with a pick'}
                 {lastPick &&
                   files
                     .filter((v) => v.path !== lastPick.path)
@@ -250,7 +250,7 @@ export function Review(): ReactElement {
               </span>
             )}
             <DropdownMenu>
-              <Tip label="More: Decline, Discard draft, Rounds saved">
+              <Tip label="More: Decline, Discard draft, Saved reviews">
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" aria-label="More">
                     <Ellipsis />
@@ -265,7 +265,7 @@ export function Review(): ReactElement {
                 <DropdownMenuItem
                   disabled={!rounds.data?.length}
                   onSelect={() =>
-                    toast(`Rounds saved here: ${rounds.data?.length ?? 0}`, {
+                    toast(`Reviews saved here: ${rounds.data?.length ?? 0}`, {
                       description: [...(rounds.data ?? [])]
                         .reverse()
                         .slice(0, 5)
@@ -274,7 +274,7 @@ export function Review(): ReactElement {
                     })
                   }
                 >
-                  Rounds saved
+                  Saved reviews
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -325,8 +325,8 @@ export function Review(): ReactElement {
         {lastPick
           ? 'Choose a variant other than the last pick.'
           : picked
-            ? `Round ${picked.round}’s pick ${picked.pick} is no longer in out/.`
-            : 'No earlier round has a pick yet.'}
+            ? `Review ${picked.round}’s pick ${picked.pick} is no longer in out/.`
+            : 'No earlier review has a pick yet.'}
       </EmptyState>
     )
   ) : files.length ? (
@@ -360,9 +360,9 @@ export function Review(): ReactElement {
   )
 
   const rail = (
-    <section aria-label="Review round" className="flex h-full min-h-0 flex-col">
+    <section aria-label="Review" className="flex h-full min-h-0 flex-col">
       <header className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-2">
-        <h2 className="font-medium">Round {nextRound}</h2>
+        <h2 className="font-medium">Review {nextRound}</h2>
         {d.requestId && <StatusBadge state="awaiting-approval">The agent is waiting</StatusBadge>}
       </header>
       {!build ? (
@@ -373,12 +373,12 @@ export function Review(): ReactElement {
         </div>
       ) : (
         <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-3">
-          <Field label="Question for this round">
+          <Field label="Question for this review">
             <Textarea
               rows={2}
               value={d.question}
               onChange={(e) => patch({ question: e.target.value })}
-              placeholder="What should this round answer?"
+              placeholder="What should this review answer?"
             />
           </Field>
           <RailGroup title="Variants · up to four">
@@ -473,13 +473,13 @@ export function Review(): ReactElement {
                   )
                 })}
                 <p className="text-sm text-fg-muted">
-                  From the job that wrote each file, or an older round. Edit if unknown.
+                  From the job that wrote each file, or an older review. Edit if unknown.
                 </p>
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="rounds">
               <AccordionTrigger>
-                Rounds saved here{' '}
+                Reviews saved here{' '}
                 <span className="ms-1 text-fg-muted">{rounds.data?.length ?? 0}</span>
               </AccordionTrigger>
               <AccordionContent>
@@ -494,7 +494,7 @@ export function Review(): ReactElement {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-sm text-fg-muted">No rounds saved yet.</p>
+                  <p className="text-sm text-fg-muted">No reviews saved yet.</p>
                 )}
               </AccordionContent>
             </AccordionItem>
@@ -503,7 +503,7 @@ export function Review(): ReactElement {
       )}
       <footer className="flex shrink-0 flex-col gap-2 border-t border-border-subtle p-3">
         <Button onClick={() => void save()} disabled={saving || !files.length}>
-          {saving ? `Saving round ${nextRound}…` : d.requestId ? 'Save and send' : 'Save round'}
+          {saving ? `Saving review ${nextRound}…` : d.requestId ? 'Save and send' : 'Save review'}
         </Button>
         <div className="flex gap-2">
           {d.requestId && (
@@ -535,7 +535,7 @@ export function Review(): ReactElement {
 function ChooseVariants(): ReactElement {
   return (
     <EmptyState icon={Layers} size="panel" title="Choose the variants to review">
-      Pick up to four. The two newest are chosen for you when a round starts.
+      Pick up to four. The two newest are chosen for you when a review starts.
     </EmptyState>
   )
 }

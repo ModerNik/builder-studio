@@ -46,13 +46,13 @@ export function ago(ms: number, now = Date.now()): string {
   return d === 1 ? 'yesterday' : `${d} days ago`
 }
 
-/** "Round 4 · 3 versions · 12 min ago", or "Round 4 · Exported v3 · 12 min ago". */
+/** "Review 4 · 3 versions · 12 min ago", or "Review 4 · Exported v3 · 12 min ago". */
 export function buildMeta(b: BuildSummary, now = Date.now()): string {
   const round = b.rounds.at(-1)
   const n = b.versions.length
   const shipped = exportedVersion(b)
   return [
-    round ? `Round ${round.n}` : 'No rounds yet',
+    round ? `Review ${round.n}` : 'No reviews yet',
     shipped
       ? `Exported ${shipped}`
       : n
