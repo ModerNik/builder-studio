@@ -267,7 +267,7 @@ The scale uses Tailwind's `text-*` names; each step carries its own line height,
 
 A 4px spacing base (Tailwind's `p-1` is 4px; raw `--space-*` for plain CSS). Gaps inside a control are 4 to 8px, between related controls 8px, between groups 16px, between sections 24 to 32px.
 
-**Window growth.** The root size is fluid: 16px up to a 1440px-wide window, 18px at 1920, 20px from 2400 (`--root-size-min`, `--root-size-max`, `--root-size-fluid` in `main.css`). Type, density, spacing, shell and container tokens are rem, so text, controls and panels grow together; hairlines, radii, breakpoints and the 36px title bar stay px. Setting `--root-size-max` to `--root-size-min` turns growth off. Users also scale the whole UI with Ctrl − / Ctrl + / Ctrl 0 (67–200%, saved as `appearance.scale`). Pixel values below are at a 16px root.
+**Window growth.** Off: the root size is a fixed 16px at every window width (`--root-size-max` is set to `--root-size-min` in `main.css`). Type, density, spacing, shell and container tokens are rem, so text, controls and panels still follow the root together; hairlines, radii, breakpoints and the 36px title bar stay px. Raising `--root-size-max` (it was `1.25rem`) turns growth back on along `--root-size-fluid`: 16px at a 1440px-wide window, plus 1px per 240px. Users also scale the whole UI with Ctrl − / Ctrl + / Ctrl 0 (67–200%, saved as `appearance.scale`). Pixel values below are at a 16px root.
 
 **Density.** Compact on fine pointers: `--density-control` 36px, `--density-control-sm` 30px, `--density-row` 36px, `--density-icon-button` 36px, `--density-gap` 8px, `--density-text` 16px. Under `(pointer: coarse)` the same tokens become 44 / 40 / 48 / 44px, gap 12px, text 16px. Components size from these tokens, never from literals.
 
