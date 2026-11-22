@@ -1,4 +1,4 @@
-// Dock panels the open screen adds to the shell (after the Assistant): set on mount, cleared on unmount.
+// Dock panels the open screen adds to the shell (before the Assistant, so they sit left of it): set on mount, cleared on unmount.
 import { useSyncExternalStore } from 'react'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
 
