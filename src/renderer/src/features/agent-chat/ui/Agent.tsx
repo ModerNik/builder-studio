@@ -1,10 +1,10 @@
-// The Agent panel (G6.1 A, docked conversation) in the Assistant dock: the thread switcher, MCP and New thread,
-// the round lifecycle, the active thread's transcript with its asks above the composer, and the usage meter.
-// On phones New thread, Brief and Approve round fold into a More menu in the header.
+// The Agent panel (G6.1 A, docked conversation) in the Assistant dock: one header row with the thread switcher, MCP,
+// Brief and New thread, then the active thread's transcript with its asks above the composer.
+// On phones Brief and New thread fold into a More menu in the header.
 // Main runs each thread's query; this renders lib/agent's store with the kit's chat parts.
 import { useEffect, useState, type ReactElement } from 'react'
 import { useNavigate } from '@tanstack/react-router'
-import { Bot, CircleCheck, FileText, MoreHorizontal, Plus } from 'lucide-react'
+import { Bot, FileText, MoreHorizontal, Plus } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/shared/ui/primitives/button'
 import {
@@ -31,17 +31,17 @@ import {
 } from '@/shared/ui/primitives/dialog'
 import { Input } from '@/shared/ui/primitives/input'
 import { Transcript as KitTranscript } from '@/features/agent-chat/ui/Transcript'
-import { UsageMeter } from '@/features/agent-chat/ui/UsageMeter'
 import { SystemNote } from '@/features/agent-chat/ui/Messages'
 import { buildUrl } from '@/shared/lib/urls'
 import { useShow } from '@/entities/build/model/builds'
 import {
   busy,
   follow,
+  implementPlan,
   newThread,
+  revisePlan,
   send,
   setMode,
-  startMode,
   useAgent,
   useSiblingBusy,
   useThread
@@ -52,12 +52,11 @@ import {
   renameThread,
   useRewind
 } from '@/features/agent-chat/model/panel'
-import { useVariants } from '@/features/agent-chat/model/variants'
 import type { Item } from '@/features/agent-chat/model/transcript'
 import type { AgentMode, PermissionAsk, Permit, SessionRef } from '@shared/api'
 import { lintProblems } from '@/shared/lib/format'
 import { useCurrentBuild } from '@/entities/build/model/current-build'
-import { useLifecycle } from './AgentLifecycle'
+import { useBriefDialog } from './BriefDialog'
 import { AgentThreads } from './AgentThreads'
 import { AgentComposer } from './AgentComposer'
 import { McpButton } from './AgentMcp'
@@ -83,7 +82,8 @@ export function AgentPanel(): ReactElement {
 }
 
 function BuildAgent({ build }: { build: string }): ReactElement {
-  const life = useLifecycle(build)
+  const brief = useBriefDialog(build)
+  const running = useThread((t) => busy(t.state))
   const [panel, setPanel] = useState<'threads' | 'mcp' | 'context' | 'rename' | 'rewind' | null>(
     null
   )
@@ -150,7 +150,7 @@ function BuildAgent({ build }: { build: string }): ReactElement {
     }
   }
   return (
-    <div className="flex h-full min-w-0 flex-col">
+    <div className="flex h-full min-w-0 flex-col overflow-hidden">
       <div className="flex h-(--density-control) shrink-0 items-center gap-1 border-b border-border-subtle px-1.5">
         <AgentThreads
           open={panel === 'threads'}
@@ -158,42 +158,35 @@ function BuildAgent({ build }: { build: string }): ReactElement {
         />
         <span className="flex-1" />
         <McpButton open={panel === 'mcp'} setOpen={(open) => setPanel(open ? 'mcp' : null)} />
-        <span className="max-sm:hidden">
+        <span className="flex items-center gap-1 max-sm:hidden">
+          <IconAction
+            label="Brief"
+            tip="Brief: write DESIGN.md §1 and start a new thread with it"
+            icon={FileText}
+            disabled={running}
+            onClick={() => void brief.openBrief()}
+          />
           <IconAction label="New thread" icon={Plus} onClick={() => void newThread(build)} />
         </span>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <IconButton
-              label="More: New thread, Brief, Approve round"
-              size="icon-sm"
-              className="sm:hidden"
-            >
+            <IconButton label="More: Brief, New thread" size="icon-sm" className="sm:hidden">
               <MoreHorizontal aria-hidden />
             </IconButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => void newThread(build)}>
-              <Plus aria-hidden /> New thread
-            </DropdownMenuItem>
-            <DropdownMenuItem disabled={life.running} onSelect={() => void life.openBrief()}>
+            <DropdownMenuItem disabled={running} onSelect={() => void brief.openBrief()}>
               <FileText aria-hidden /> Brief…
             </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={life.running || life.approving}
-              onSelect={() => void life.approve()}
-            >
-              <CircleCheck aria-hidden />
-              {life.approving
-                ? 'Waiting for the Status update…'
-                : `Approve round${life.round ? ` ${life.round}` : ''}`}
+            <DropdownMenuItem onSelect={() => void newThread(build)}>
+              <Plus aria-hidden /> New thread
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      {life.row}
-      <ActiveTranscript build={build} />
+      {brief.dialog}
+      <ActiveTranscript build={build} onBrief={() => void brief.openBrief()} />
       <AgentComposer onCommand={command} />
-      <Meter />
       {panel === 'context' && <ContextDialog context={state.context} onClose={close} />}
       {panel === 'rewind' && ref && (
         <ActiveRewind key={ref.id} refId={ref} build={build} onClose={close} />
@@ -277,11 +270,11 @@ function ActiveRewind({
   )
 }
 
-// the mode an approved plan continues in: the remembered one
-const workMode = (): AgentMode => startMode(useAgent.getState().primary)
+// an approved plan is implemented in Auto, which every provider offers
+const workMode = (): AgentMode => 'auto'
 
 /** The active thread's transcript, bound to the store. */
-function ActiveTranscript({ build }: { build: string }): ReactElement {
+function ActiveTranscript({ build, onBrief }: { build: string; onBrief(): void }): ReactElement {
   const items = useThread((t) => t.items)
   const asks = useThread((t) => t.asks)
   const state = useThread((t) => t.state)
@@ -297,13 +290,23 @@ function ActiveTranscript({ build }: { build: string }): ReactElement {
       onSwitchToAuto={
         state.provider === 'claude' && mode !== 'auto' ? () => void setMode('auto') : undefined
       }
-      onImplementPlan={() => void setMode(workMode()).then(() => send('Implement the plan.'))}
+      onImplementPlan={(editedPlan) => void implementPlan(editedPlan)}
+      onRevisePlan={(feedback) => void revisePlan(feedback)}
       empty={
         loading ? (
           <LoadingState label="Loading the conversation" layout="transcript" rows={5} />
         ) : (
-          <EmptyState icon={Bot} size="panel" title={`Talk to the agent about ${build}`}>
-            Write a brief to start a round, or ask a question below.
+          <EmptyState
+            icon={Bot}
+            size="panel"
+            title={`Talk to the agent about ${build}`}
+            action={
+              <Button variant="outline" disabled={busy(state)} onClick={onBrief}>
+                <FileText aria-hidden /> Write a brief
+              </Button>
+            }
+          >
+            Write a brief, or ask anything below.
           </EmptyState>
         )
       }
@@ -346,6 +349,7 @@ export function Transcript({
   onPermit,
   onSwitchToAuto,
   onImplementPlan,
+  onRevisePlan,
   empty,
   children
 }: {
@@ -354,7 +358,8 @@ export function Transcript({
   working?: boolean
   onPermit?: (p: Permit) => void
   onSwitchToAuto?: () => void
-  onImplementPlan?: () => void
+  onImplementPlan?: (editedPlan?: string) => void
+  onRevisePlan?: (feedback: string) => void
   empty?: React.ReactNode
   children?: React.ReactNode
 }): ReactElement {
@@ -368,6 +373,7 @@ export function Transcript({
       onSwitchToAuto={onSwitchToAuto}
       planMode={workMode()}
       onImplementPlan={onImplementPlan}
+      onRevisePlan={onRevisePlan}
       onShowFile={(path, sheet) => {
         const build = /^builds\/(.+?)\/out\//.exec(path)?.[1]
         if (!build) return
@@ -380,30 +386,5 @@ export function Transcript({
     >
       {children}
     </KitTranscript>
-  )
-}
-
-function Meter(): ReactElement {
-  const state = useThread((t) => t.state)
-  const lanes = Object.values(useVariants((s) => s.lanes)).flatMap((l) =>
-    l.state ? [l.state] : []
-  )
-  const laneCost = lanes.reduce((a, l) => a + (l.cost ?? 0), 0)
-  const c = state.context
-  return (
-    <UsageMeter
-      status={state.status}
-      tokens={c?.tokens}
-      max={c?.max}
-      cost={
-        state.cost === null ? null : state.cost + laneCost > 0 ? state.cost + laneCost : undefined
-      }
-      auth={state.auth ? `auth: ${state.auth}` : undefined}
-      variants={lanes.filter(busy).length}
-      onCompact={
-        state.capabilities.compact && c ? () => void send('/compact', { command: true }) : undefined
-      }
-      compactDisabled={busy(state)}
-    />
   )
 }

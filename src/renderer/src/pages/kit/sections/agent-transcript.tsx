@@ -3,6 +3,7 @@ import {
   CommandPreview,
   PermissionCard,
   PlanCard,
+  QuestionCard,
   WorkingIndicator,
   type PermitDecision
 } from '@/features/agent-chat/ui/Cards'
@@ -15,19 +16,57 @@ import {
 } from '@/features/agent-chat/ui/ToolCallRow'
 import { Transcript } from '@/features/agent-chat/ui/Transcript'
 import { DiffView } from '@/shared/ui/code/DiffView'
-import type { PermissionAsk } from '@shared/api'
+import type { AgentQuestion, PermissionAsk } from '@shared/api'
 import type { Item } from '@/features/agent-chat/model/transcript'
 import hero from '../../../../../../.github/assets/hero.svg?url'
 import { Cell, Grid, Narrow, Sub } from '../composites-demo'
 
 export const meta = { group: 'Agent', title: 'Transcript items' }
 
-const PLAN = `1. Raise the keep's walls from 18 to 22 blocks and add a cobblestone wall ring
+const PLAN_V1 = `1. Raise the keep's walls from 18 to 22 blocks and add a cobblestone wall ring
 2. Replace the spruce roof with dark oak and stairs on the eaves
 3. Run \`build.py proto\` and send the sheet for review`
 
+const PLAN = `1. Raise the keep's walls from 18 to 24 blocks with deepslate quoins
+2. Replace the spruce roof with steep dark oak gables and dormers
+3. Run \`build.py proto\` and send the sheet for review`
+
+const QUIZ: AgentQuestion[] = [
+  {
+    id: 'palette',
+    header: 'Palette',
+    question: 'Which stone palette should the watchtower walls use?',
+    multiSelect: false,
+    allowOther: true,
+    options: [
+      {
+        label: 'Weathered Deepslate',
+        description: 'Dark slate base with cobbled accents and mossy trim',
+        preview: '```text\n[deepslate_bricks] [cobbled_deepslate] [mossy_stone_bricks]\n```'
+      },
+      {
+        label: 'Classic Stone Brick',
+        description: 'Lighter medieval stone with cracked brick variation',
+        preview: '```text\n[stone_bricks] [cracked_stone_bricks] [andesite]\n```'
+      }
+    ]
+  },
+  {
+    id: 'details',
+    header: 'Details',
+    question: 'Which exterior details should be included?',
+    multiSelect: true,
+    allowOther: true,
+    options: [
+      { label: 'Machicolations', description: 'Overhanging battlements along the parapet' },
+      { label: 'Banner pennants', description: 'Hanging wool flags on the upper windows' },
+      { label: 'Torch sconces', description: 'Iron wall brackets with warm lanterns' }
+    ]
+  }
+]
+
 const ITEMS: Item[] = [
-  { kind: 'note', id: 'n', text: 'New session · stone_watchtower · round 4' },
+  { kind: 'note', id: 'n', text: 'New session · stone_watchtower' },
   { kind: 'user', id: 'u', text: 'Make the keep taller and give it a darker roof.' },
   { kind: 'text', id: 't', parent: null, text: 'I will raise the keep and swap the roof.' },
   {
@@ -59,7 +98,8 @@ const ASKS: PermissionAsk[] = [
 
 export default function AgentTranscript(): ReactElement {
   const [decided, setDecided] = useState<PermitDecision | null>(null)
-  const [plan, setPlan] = useState<'open' | 'approved' | 'planning'>('open')
+  const [plan, setPlan] = useState<string>('open')
+  const [quizResult, setQuizResult] = useState<string | null>(null)
   const [started] = useState(() => Date.now() - 47_000)
   return (
     <div>
@@ -69,7 +109,7 @@ export default function AgentTranscript(): ReactElement {
       >
         <Grid min="22rem">
           <Cell label="A short exchange" className="flex flex-col gap-3">
-            <SystemNote>New session · stone_watchtower · round 4</SystemNote>
+            <SystemNote>New session · stone_watchtower</SystemNote>
             <MessageBubble
               attachments={[
                 { path: 'builds/stone_watchtower/attachments/pasted-1730662800.png', url: hero },
@@ -206,25 +246,60 @@ export default function AgentTranscript(): ReactElement {
         </Grid>
       </Sub>
       <Sub
-        title="PlanCard and PermissionCard"
-        note="What the assistant asks the builder to decide. Permission asks carry the warning tone."
+        title="PlanCard, QuestionCard and PermissionCard"
+        note="What the assistant asks the builder to decide: plans (with revisions, selection comments and inline edits), structured question quizzes, and tool permissions."
       >
         <Grid min="24rem">
           <Cell
             label={
               plan === 'open'
-                ? 'Plan to approve'
-                : `Plan: ${plan === 'approved' ? 'approved' : 'keep planning'} (demo)`
+                ? 'Plan Rev 2 (select text to comment, toggle Diff or Edit)'
+                : `Plan: ${plan} (demo)`
             }
           >
             <PlanCard
               plan={PLAN}
-              onApprove={() => setPlan('approved')}
-              onKeepPlanning={() => setPlan('planning')}
+              revision={2}
+              previousPlan={PLAN_V1}
+              renderDiff={(before, after) => (
+                <DiffView label="Plan changes" before={before} after={after} collapse={false} />
+              )}
+              onApprove={(edited) => setPlan(edited ? 'approved edited plan' : 'approved')}
+              onRevise={(feedback) => setPlan(`revision sent (${feedback.slice(0, 48)})`)}
+              onKeepPlanning={() => setPlan('keep planning')}
             />
           </Cell>
-          <Cell label="Codex plan text">
-            <PlanCard plan={PLAN} approveLabel="Implement plan" onApprove={() => undefined} />
+          <Cell label="Codex plan (active) and superseded read-only plan">
+            <div className="flex flex-col gap-3">
+              <PlanCard
+                plan={PLAN}
+                approveLabel="Implement plan"
+                onApprove={() => undefined}
+                onRevise={() => undefined}
+              />
+              <PlanCard plan={PLAN_V1} revision={1} />
+            </div>
+          </Cell>
+          <Cell
+            label={
+              quizResult
+                ? `QuestionCard: ${quizResult} (demo)`
+                : 'QuestionCard: multi-step quiz with previews and Other'
+            }
+          >
+            <Narrow width={23.25}>
+              <QuestionCard
+                questions={QUIZ}
+                onSubmit={(answers) =>
+                  setQuizResult(
+                    Object.entries(answers)
+                      .map(([k, v]) => `${k}=${v.join(', ')}`)
+                      .join(' · ')
+                  )
+                }
+                onSkip={() => setQuizResult('skipped')}
+              />
+            </Narrow>
           </Cell>
           <Cell label={decided ? `Bash ask: ${decided} (demo)` : 'Bash, with an Always rule'}>
             <PermissionCard

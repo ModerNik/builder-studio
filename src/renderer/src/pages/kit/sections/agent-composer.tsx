@@ -3,13 +3,12 @@ import { Boxes, Images } from 'lucide-react'
 import { Composer, type Option } from '@/features/agent-chat/ui/Composer'
 import { ContextChip, type Attachment } from '@/features/agent-chat/ui/Messages'
 import { ThreadListItem } from '@/features/agent-chat/ui/ThreadListItem'
-import { UsageMeter } from '@/features/agent-chat/ui/UsageMeter'
 import { ContextDialog, RewindDialog } from '@/features/agent-chat/ui/CommandDialogs'
 import { Button } from '@/shared/ui/primitives/button'
 import hero from '../../../../../../.github/assets/hero.svg?url'
 import { Cell, Grid, Narrow, Sub, Touch } from '../composites-demo'
 
-export const meta = { group: 'Agent', title: 'Composer, meter and threads' }
+export const meta = { group: 'Agent', title: 'Composer and threads' }
 
 const MODES: Option[] = [
   { value: 'default', label: 'Manual', description: 'Asks before each edit and command' },
@@ -38,22 +37,25 @@ const EFFORTS: Option[] = [
 const COMMANDS = [
   { name: 'compact', description: 'Summarize the conversation to free context' },
   { name: 'build-review', description: 'Render a sheet and judge it against the brief' },
-  { name: 'review', hint: '[question]', description: 'Open Review and wait for the round' },
+  { name: 'review', hint: '[question]', description: 'Open Review and wait for the review' },
   { name: 'log-round', description: 'Append a Round gist to DESIGN.md' }
 ]
 
 function LiveComposer({
   running: startRunning = false,
-  narrow = false
+  narrow = false,
+  initialSuggestion = null
 }: {
   running?: boolean
   narrow?: boolean
+  initialSuggestion?: string | null
 }): ReactElement {
   const [mode, setMode] = useState(narrow ? 'acceptEdits' : 'default')
   const [model, setModel] = useState(narrow ? 'gpt-5.4-mini' : 'sonnet')
   const [effort, setEffort] = useState('medium')
   const [running, setRunning] = useState(startRunning)
   const [sent, setSent] = useState('')
+  const [suggestion, setSuggestion] = useState<string | null>(initialSuggestion)
   const [files, setFiles] = useState<Attachment[]>([
     { path: 'builds/stone_watchtower/attachments/pasted-1730662800.png', url: hero },
     { path: 'builds/stone_watchtower/attachments/gatehouse_notes.md' }
@@ -117,6 +119,8 @@ function LiveComposer({
         efforts={EFFORTS}
         effort={effort}
         onEffortChange={setEffort}
+        suggestion={suggestion}
+        onDismissSuggestion={() => setSuggestion(null)}
       />
       {sent && <p className="text-sm text-fg-muted">Sent (demo): “{sent}”</p>}
     </div>
@@ -191,6 +195,15 @@ export default function AgentComposer(): ReactElement {
             <LiveComposer running />
           </Cell>
           <Cell
+            label="Ghost-text suggestion (Tab edits, Enter sends, Esc dismisses)"
+            surface="none"
+            className="overflow-hidden"
+          >
+            <Narrow width={24}>
+              <LiveComposer initialSuggestion="Run build.py proto and show the render sheet" />
+            </Narrow>
+          </Cell>
+          <Cell
             label="Needs setup (disabled), Ollama: no effort"
             surface="none"
             className="overflow-hidden"
@@ -225,67 +238,6 @@ export default function AgentComposer(): ReactElement {
         note="Rewind shows the affected build files before restoration. Context uses aligned token counts."
       >
         <CommandDialogsDemo />
-      </Sub>
-      <Sub
-        title="UsageMeter"
-        note="Status (named: session: ready), context tokens on a thin bar with the 150k and 200k marks (amber and red, with an icon), Compact from amber, sign-in kind, parallel variants and the cost as the CLI reports it."
-      >
-        <div className="flex flex-col gap-3">
-          <Cell label="Under 150k" surface="none" className="overflow-hidden">
-            <UsageMeter
-              status="ready"
-              tokens={48_400}
-              max={200_000}
-              cost={0.42}
-              auth="auth: ANTHROPIC_API_KEY"
-            />
-          </Cell>
-          <Cell
-            label="Amber, with Compact and a variant running"
-            surface="none"
-            className="overflow-hidden"
-          >
-            <UsageMeter
-              status="working"
-              tokens={162_000}
-              max={200_000}
-              cost={1.87}
-              auth="auth: ANTHROPIC_API_KEY"
-              variants={1}
-              onCompact={() => undefined}
-              compactDisabled
-            />
-          </Cell>
-          <Cell label="Red" surface="none" className="overflow-hidden">
-            <UsageMeter
-              status="ready"
-              tokens={214_000}
-              max={1_000_000}
-              cost={4.1}
-              variants={2}
-              onCompact={() => undefined}
-            />
-          </Cell>
-          <Cell
-            label="No context yet, cost unavailable (Ollama)"
-            surface="none"
-            className="overflow-hidden"
-          >
-            <UsageMeter status="off" cost={null} />
-          </Cell>
-          <Cell label="Narrow" surface="none" className="overflow-hidden">
-            <Narrow width={18.75}>
-              <UsageMeter
-                status="working"
-                tokens={176_000}
-                max={200_000}
-                cost={2.05}
-                auth="auth: ANTHROPIC_API_KEY"
-                onCompact={() => undefined}
-              />
-            </Narrow>
-          </Cell>
-        </div>
       </Sub>
       <Sub
         title="ThreadListItem"

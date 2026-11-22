@@ -469,8 +469,11 @@ describe('Codex app-server provider', () => {
     t.notify('item/plan/delta', { itemId: 'plan-1', delta: '1. Walls' })
     expect(t.messages().at(-1)).toMatchObject({ id: 'plan-1', delta: true, plan: true })
     t.complete()
-    await expect(t.agent.setMode('plan')).resolves.toBeUndefined()
-    expect(turns()[0]).toMatchObject({ approvalPolicy: 'on-request' })
+    // Switching mode to Auto before sending (as "Implement plan" and the mode picker do) still
+    // sends collaborationMode: default so Codex leaves sticky plan mode.
+    await expect(t.agent.setMode('auto')).resolves.toBeUndefined()
+    expect(t.agent.state.mode).toBe('auto')
+    expect(turns()[0]).toMatchObject({ approvalPolicy: 'never' })
     // plan -> auto: the collaboration mode goes back to default, and Auto never asks
     await t.agent.send({ ...t.send, mode: 'auto' })
     expect(turns()[1]).toMatchObject({
@@ -481,6 +484,14 @@ describe('Codex app-server provider', () => {
     await t.agent.send(t.send)
     expect(turns()[2]).not.toHaveProperty('collaborationMode')
     expect(turns()[2]).toMatchObject({ approvalPolicy: 'on-request' })
+    t.complete()
+    // Resuming a session in Auto also sends collaborationMode: default in case it ended in plan mode.
+    t.agent.close()
+    await t.agent.send({ ...t.send, resume: { provider: 'codex', id: ID }, mode: 'auto' })
+    expect(turns()[3]).toMatchObject({
+      collaborationMode: { mode: 'default' },
+      approvalPolicy: 'never'
+    })
     // only the turn with $tokens looks skills up
     expect(vi.mocked(t.conn.request).mock.calls.filter(([m]) => m === 'skills/list')).toHaveLength(
       1
@@ -753,5 +764,99 @@ describe('Codex app-server provider', () => {
     t.complete()
     t.settings.ollamaEndpoint = 'http://127.0.0.1:11435'
     await expect(t.agent.history(ID)).rejects.toThrow('endpoint')
+    expect(t.conn.request).not.toHaveBeenCalledWith('thread/prediction/request', expect.anything())
+  })
+
+  it('answers item/tool/requestUserInput with mapped answers or empty answers when skipped', async () => {
+    const t = setup()
+    await t.agent.send(t.send)
+    t.notify(
+      'item/tool/requestUserInput',
+      {
+        itemId: 'q-item',
+        isBlocking: true,
+        autoResolutionMs: null,
+        questions: [
+          {
+            id: 'stone',
+            header: 'Stone',
+            question: 'Which stone?',
+            isOther: true,
+            isSecret: false,
+            options: [{ label: 'Deepslate', description: 'Dark slate' }]
+          },
+          {
+            id: 'secret_note',
+            header: 'Note',
+            question: 'Any secret key?',
+            isOther: false,
+            isSecret: true,
+            options: null
+          }
+        ]
+      },
+      71
+    )
+    expect(t.agent.pending()[0]).toMatchObject({
+      id: 'codex:71',
+      kind: 'question',
+      tool: 'request_user_input',
+      questions: [
+        { id: 'stone', header: 'Stone', allowOther: true, secret: false },
+        { id: 'secret_note', options: [], allowOther: true, secret: true }
+      ]
+    })
+    t.agent.permit({
+      id: 'codex:71',
+      decision: 'allow',
+      answers: { stone: ['Deepslate'], secret_note: ['abc'] }
+    })
+    await vi.waitFor(() =>
+      expect(t.conn.respond).toHaveBeenCalledWith(71, {
+        answers: { stone: { answers: ['Deepslate'] }, secret_note: { answers: ['abc'] } }
+      })
+    )
+
+    // Skipping responds with an empty answers object
+    t.notify(
+      'item/tool/requestUserInput',
+      {
+        itemId: 'q-item-2',
+        isBlocking: true,
+        autoResolutionMs: null,
+        questions: [
+          {
+            id: 'roof',
+            header: 'Roof',
+            question: 'Pitch?',
+            isOther: true,
+            isSecret: false,
+            options: [{ label: 'Steep', description: 'Tall' }]
+          }
+        ]
+      },
+      72
+    )
+    t.agent.permit({ id: 'codex:72', decision: 'deny' })
+    await vi.waitFor(() => expect(t.conn.respond).toHaveBeenCalledWith(72, { answers: {} }))
+  })
+
+  it('requests next-prompt predictions on completed Codex turns and emits suggestions', async () => {
+    const t = setup()
+    await t.agent.send(t.send)
+    t.complete()
+    expect(t.conn.request).toHaveBeenCalledWith('thread/prediction/request', {
+      threadId: ID,
+      sourceTurnId: 'turn-1'
+    })
+    t.notify('thread/prediction/updated', {
+      sourceTurnId: 'turn-1',
+      result: { type: 'completed', text: 'Run build.py proto next' }
+    })
+    expect(t.messages().at(-1)).toEqual({
+      type: 'suggestion',
+      id: 'pred:turn-1',
+      text: 'Run build.py proto next'
+    })
   })
 })

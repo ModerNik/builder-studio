@@ -23,7 +23,7 @@ export default function FeedbackAlerts(): ReactElement {
           </Alert>
           <Alert
             tone="success"
-            title="Round 3 saved"
+            title="Review 3 saved"
             action={
               <Button size="sm" variant="outline">
                 Copy feedback line

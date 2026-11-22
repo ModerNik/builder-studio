@@ -72,7 +72,7 @@ export default function PageLayoutDemo(): ReactElement {
         the Review question stays usable at 1280 with a dock open. Toolbars keep one row and move
         whole groups into More, measured by their own width; or they wrap.
       </p>
-      <Specimen label="Review header with the round question" resizable className="w-[68.75rem]">
+      <Specimen label="Review header with the review question" resizable className="w-[68.75rem]">
         <PageHeader
           title="Review"
           back={{ label: 'Back to the workspace', onClick: noop }}
@@ -86,7 +86,7 @@ export default function PageLayoutDemo(): ReactElement {
           }
           field={
             <Input
-              aria-label="The question for this round"
+              aria-label="The question for this review"
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
             />

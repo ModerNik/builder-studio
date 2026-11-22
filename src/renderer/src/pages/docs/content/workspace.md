@@ -32,13 +32,13 @@ sorts builds by their newest version or preview sheet.
 ```
 builds/<name>/
   build.py                    the generator script the engine runs
-  DESIGN.md                   brief, status, round log and results (see below)
+  DESIGN.md                   brief, status, review log and results (see below)
   minecraft.json              project Minecraft version target (optional; defaults to 26.3)
   data/edits.json             hand edits applied in the Editor (optional)
   data/terrain.npz            terrain written by Build location (optional)
   data/schematics/            imported source files, normalized blocks and placement metadata
   refs/                       reference board: images plus index.json
-  review/round_N.json         one saved review round each
+  review/round_N.json         one saved review each
   out/                        generated output; not tracked by Git
     <stem>.litematic          a version (draft or full build)
     <stem>.parts.npz          named parts of that version, when the script uses c.op
@@ -72,13 +72,13 @@ their Minecraft version, and projects created before this setting use 26.3.
 
 ### DESIGN.md
 
-`DESIGN.md` is the build's notebook: the brief, a `## Status` block, and a log of review rounds
+`DESIGN.md` is the build's notebook: the brief, a `## Status` block, and a log of reviews
 (`### Round N: title`). The **Design log** screen renders it.
 
 The `## Status` block belongs to the assistant. The app never edits it, and every DESIGN.md write
-checks that Status came through unchanged. **Approve round** asks the assistant to update Status
-instead. A manual **Edit** in the Design log saves the whole file but refuses a change to Status, or a
-file that changed on disk since you opened it.
+checks that Status came through unchanged; ask the assistant when Status should change. A manual
+**Edit** in the Design log saves the whole file but refuses a change to Status, or a file that changed
+on disk since you opened it.
 
 ## Deleting a build
 
@@ -97,7 +97,7 @@ if there is none. Builder Studio:
 - adds its exclusions to `.git/info/exclude`, not your `.gitignore`, so `out/`, caches, `.venv/`,
   `assets/`, `.claude/`, `.codex/` and `.env*` stay untracked;
 - commits only one build folder at a time, after showing `git status` and an editable message
-  (**Approve round**, **Export → Git commit**), and never pushes.
+  (**Export → Git commit**), and never pushes.
 
 **Settings → Build tools** can fill a missing workspace-local commit identity (name and email). Global
 configuration and credentials are left alone. **Initialize workspace Git** retries setup after Git is

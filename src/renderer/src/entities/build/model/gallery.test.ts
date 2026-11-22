@@ -35,9 +35,9 @@ test('meta line and relative time', () => {
   const now = 10_000_000
   expect(ago(now - 30_000, now)).toBe('just now')
   expect(ago(now - 5 * 60_000, now)).toBe('5 min ago')
-  expect(buildMeta(b('x', now - 2 * 3600_000, 4, 1), now)).toBe('Round 4 · 1 version · 2 h ago')
-  expect(buildMeta(b('x', 0), now)).toBe('No rounds yet · No versions yet')
-  expect(buildMeta(b('x', 0, 2, 3, ['v3']), now)).toBe('Round 2 · Exported v3')
+  expect(buildMeta(b('x', now - 2 * 3600_000, 4, 1), now)).toBe('Review 4 · 1 version · 2 h ago')
+  expect(buildMeta(b('x', 0), now)).toBe('No reviews yet · No versions yet')
+  expect(buildMeta(b('x', 0, 2, 3, ['v3']), now)).toBe('Review 2 · Exported v3')
 })
 
 test('filters by name and state, sorts by change, name or state', () => {

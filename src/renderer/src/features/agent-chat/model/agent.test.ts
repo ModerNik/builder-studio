@@ -67,34 +67,6 @@ it('starts with the assistant closed when no panel preference is saved', async (
   expect(useAgentPrefs.getState().open).toBe(false)
 })
 
-it('observes a complete turn between renders and can stop observing it', async () => {
-  const { follow, useAgent, watchTurn } = await import('./agent')
-  follow('tower')
-  const id = useAgent.getState().active
-  const ended = vi.fn()
-  const stop = watchTurn(id, ended)
-  state.onState({ thread: id, data: { ...OFF, status: 'starting' } })
-  state.onState({ thread: id, data: { ...OFF, status: 'running' } })
-  expect(ended).not.toHaveBeenCalled()
-  state.onState({ thread: id, data: { ...OFF, status: 'idle' } })
-  expect(ended).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ status: 'idle' }))
-  stop()
-  state.onState({ thread: id, data: { ...OFF, status: 'running' } })
-  state.onState({ thread: id, data: OFF })
-  expect(ended).toHaveBeenCalledTimes(1)
-})
-
-it('observes an agent send failure before a turn starts', async () => {
-  const { follow, useAgent, watchTurn } = await import('./agent')
-  follow('tower')
-  const id = useAgent.getState().active
-  const ended = vi.fn()
-  const stop = watchTurn(id, ended)
-  state.onState({ thread: id, data: { ...OFF, error: 'Send failed' } })
-  expect(ended).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ error: 'Send failed' }))
-  stop()
-})
-
 it('preserves an existing open panel preference', async () => {
   localStorage.setItem('agent-prefs', JSON.stringify({ state: { open: true }, version: 0 }))
   const { useAgentPrefs } = await import('./agent')
@@ -214,4 +186,37 @@ it('keeps threads running while the panel follows other builds', async () => {
   expect(state.api.close).toHaveBeenCalledWith(tower)
   expect(useAgent.getState().threads[tower]).toBeUndefined()
   expect(useAgent.getState().threads[useAgent.getState().active].build).toBe('tower')
+})
+
+it('manages prompt suggestion lifecycle and plan revision/implementation actions', async () => {
+  const { follow, useAgent, dismissSuggestion, send, revisePlan, implementPlan } =
+    await import('./agent')
+  follow('tower')
+  const id = useAgent.getState().active
+  state.onState({ thread: id, data: { ...OFF, build: 'tower', status: 'idle' } })
+  state.onMsg({ thread: id, data: { type: 'suggestion', id: 's1', text: 'Run proto build' } })
+  expect(useAgent.getState().threads[id].suggestion).toBe('Run proto build')
+  dismissSuggestion()
+  expect(useAgent.getState().threads[id].suggestion).toBeNull()
+
+  state.onMsg({ thread: id, data: { type: 'suggestion', id: 's2', text: 'Check lint' } })
+  await send('Do something else')
+  expect(useAgent.getState().threads[id].suggestion).toBeNull()
+
+  await revisePlan('Make the roof steeper')
+  expect(useAgent.getState().threads[id].mode).toBe('plan')
+  expect(state.api.send).toHaveBeenLastCalledWith(
+    id,
+    expect.objectContaining({ text: 'Make the roof steeper', mode: 'plan' })
+  )
+
+  await implementPlan('1. Custom edited plan')
+  expect(useAgent.getState().threads[id].mode).toBe('auto')
+  expect(state.api.send).toHaveBeenLastCalledWith(
+    id,
+    expect.objectContaining({
+      text: 'Implement this updated plan:\n\n1. Custom edited plan',
+      mode: 'auto'
+    })
+  )
 })

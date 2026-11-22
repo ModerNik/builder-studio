@@ -29,6 +29,7 @@ export const isBuildRun = (input: Record<string, unknown>): boolean =>
   /\bbuild\.py\b/.test(String(input.command ?? ''))
 
 export function reduce(items: Item[], m: AgentMsg): Item[] {
+  if (m.type === 'suggestion') return items
   if (m.type === 'tool-result') {
     const at = items.findIndex((x) => x.kind === 'tool' && x.id === m.id)
     if (at < 0) return items
@@ -88,7 +89,8 @@ const VERBS: [RegExp, string][] = [
   [/^(Grep|Glob|LS|ToolSearch)$/, 'Searching'],
   [/^Web(Fetch|Search)$/, 'Browsing'],
   [/^(Agent|Task)$/, 'Delegating'],
-  [/^TodoWrite$/, 'Planning'],
+  [/^(TodoWrite|ExitPlanMode)$/, 'Planning'],
+  [/^(AskUserQuestion|request_user_input)$/, 'Asking'],
   [/__request_review$/, 'Waiting for review']
 ]
 

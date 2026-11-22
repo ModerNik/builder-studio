@@ -1,7 +1,7 @@
-// Pure helpers behind the agent composites: tool rows, the composer's skill picker and the usage meter.
+// Pure helpers behind the agent composites: tool rows and the composer's skill picker.
 
 export type ToolKind =
-  'edit' | 'read' | 'search' | 'run' | 'web' | 'todo' | 'agent' | 'mcp' | 'other'
+  'edit' | 'read' | 'search' | 'run' | 'web' | 'todo' | 'question' | 'agent' | 'mcp' | 'other'
 
 const TOOLS: [RegExp, ToolKind, string][] = [
   [/^(Edit|MultiEdit|NotebookEdit)$/, 'edit', 'Edited'],
@@ -11,6 +11,8 @@ const TOOLS: [RegExp, ToolKind, string][] = [
   [/^Bash$/, 'run', 'Ran'],
   [/^Web(Fetch|Search)$/, 'web', 'Browsed'],
   [/^TodoWrite$/, 'todo', 'Updated todos'],
+  [/^ExitPlanMode$/, 'todo', 'Proposed plan'],
+  [/^(AskUserQuestion|request_user_input)$/, 'question', 'Asked'],
   [/^(Agent|Task)$/, 'agent', 'Subagent']
 ]
 
@@ -28,14 +30,37 @@ export function toolLook(
     kind === 'agent'
       ? String(input.subagent_type ?? 'Subagent')
       : (hit?.[2] ?? (mcp ? `${mcp[1]} · ${mcp[2]}` : name))
+  const questionGist = Array.isArray(input.questions)
+    ? input.questions
+        .map((q) =>
+          q && typeof q === 'object'
+            ? String(
+                (q as { header?: unknown; question?: unknown }).header ||
+                  (q as { question?: unknown }).question ||
+                  ''
+              )
+            : ''
+        )
+        .filter(Boolean)
+        .join(', ')
+    : ''
+  const planGist =
+    name === 'ExitPlanMode' && typeof input.plan === 'string'
+      ? (input.plan
+          .split('\n')
+          .map((l) => l.replace(/^#+\s*/, '').trim())
+          .find(Boolean) ?? '')
+      : ''
   const gist = String(
-    input.command ??
-      input.file_path ??
-      input.pattern ??
-      input.path ??
-      input.description ??
-      input.url ??
-      input.query ??
+    questionGist ||
+      planGist ||
+      input.command ||
+      input.file_path ||
+      input.pattern ||
+      input.path ||
+      input.description ||
+      input.url ||
+      input.query ||
       ''
   ).split('\n')[0]
   const added = count(name === 'Write' ? input.content : input.new_string)
@@ -65,19 +90,4 @@ export function matchCommands(
     else if (name.includes(q) || c.description?.toLowerCase().includes(q)) rest.push(c)
   }
   return { query: q, matches: [...prefix, ...rest] }
-}
-
-/** Context thresholds from docs/ai-assistant.md: amber from 150k tokens, red from 200k. */
-export const CONTEXT_AMBER = 150_000
-export const CONTEXT_RED = 200_000
-
-export function contextTone(tokens: number): 'ok' | 'warning' | 'danger' {
-  return tokens >= CONTEXT_RED ? 'danger' : tokens >= CONTEXT_AMBER ? 'warning' : 'ok'
-}
-
-/** Tokens as "48k", "1.2M". */
-export function formatTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(n >= 10_000_000 ? 0 : 1)}M`
-  if (n >= 1000) return `${Math.round(n / 1000)}k`
-  return String(n)
 }

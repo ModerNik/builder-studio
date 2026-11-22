@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contextTone, formatTokens, matchCommands, toolLook } from './logic'
+import { matchCommands, toolLook } from './logic'
 
 describe('toolLook', () => {
   it('names edits with their line counts', () => {
@@ -32,6 +32,19 @@ describe('toolLook', () => {
       gist: 'Judge v3'
     })
     expect(toolLook('Mystery', {})).toMatchObject({ kind: 'other', verb: 'Mystery', gist: '' })
+    expect(
+      toolLook('AskUserQuestion', {
+        questions: [
+          { header: 'Palette', question: 'Stone?' },
+          { header: 'Roof', question: 'Pitch?' }
+        ]
+      })
+    ).toMatchObject({ kind: 'question', verb: 'Asked', gist: 'Palette, Roof' })
+    expect(toolLook('ExitPlanMode', { plan: '# Keep upgrade\n1. Walls' })).toMatchObject({
+      kind: 'todo',
+      verb: 'Proposed plan',
+      gist: 'Keep upgrade'
+    })
   })
 })
 
@@ -54,18 +67,5 @@ describe('matchCommands', () => {
     ])
     expect(matchCommands('$SUMM', ['$', '/'], cmds).matches.map((c) => c.name)).toEqual(['compact'])
     expect(matchCommands('/zzz', ['/'], cmds)).toEqual({ query: 'zzz', matches: [] })
-  })
-})
-
-describe('usage meter', () => {
-  it('turns amber at 150k and red at 200k', () => {
-    expect(contextTone(149_999)).toBe('ok')
-    expect(contextTone(150_000)).toBe('warning')
-    expect(contextTone(200_000)).toBe('danger')
-  })
-  it('abbreviates tokens', () => {
-    expect(formatTokens(812)).toBe('812')
-    expect(formatTokens(48_400)).toBe('48k')
-    expect(formatTokens(1_250_000)).toBe('1.3M')
   })
 })

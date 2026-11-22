@@ -147,7 +147,7 @@ function Editor(): ReactElement {
 function Assistant(): ReactElement {
   return (
     <div className="flex h-full flex-col">
-      <Placeholder title="stone_bridge · round 3">
+      <Placeholder title="stone_bridge · review 3">
         <p className="rounded-lg bg-surface-raised p-2.5">
           Put a lantern on every fourth post instead of every fifth, and keep the railings spruce
           fence.
@@ -195,7 +195,7 @@ function ActivityPane(): ReactElement {
 }
 function Feedback(): ReactElement {
   return (
-    <Placeholder title="Round 3 · Pins (2)">
+    <Placeholder title="Review 3 · Pins (2)">
       <p>Every fourth post is right. The oak deck is too bright next to the stone.</p>
       <ol className="space-y-2">
         <li>

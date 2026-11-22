@@ -122,11 +122,11 @@
   --z-popover: 1300;
   --z-toast: 1400;
   --z-tooltip: 1500;
-  /* Root size: 16px up to a 1440px-wide window, 18px at 1920, 20px from 2400. Sizes below are rem so they
-     grow with it; px stays for hairlines, radii and the title bar (the OS draws its buttons at a fixed height).
-     To turn growth off set --root-size-max to --root-size-min; to retune, change the fluid line (16px + 1px per 240px) */
+  /* Root size: a fixed 16px; window growth is off (max = min). Sizes below are rem so they follow the root;
+     px stays for hairlines, radii and the title bar (the OS draws its buttons at a fixed height).
+     To turn growth back on raise --root-size-max (it was 1.25rem); the fluid line gives 16px + 1px per 240px over 1440 */
   --root-size-min: 1rem;
-  --root-size-max: 1.25rem;
+  --root-size-max: var(--root-size-min);
   --root-size-fluid: calc(0.625rem + 0.4167vw);
   /* Workbench shell (S3): title bar, document tabs, status bar, dock sizes and limits */
   --shell-titlebar: 36px;

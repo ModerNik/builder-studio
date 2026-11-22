@@ -158,7 +158,7 @@ function Log({ name }: { name: string }): ReactElement {
   const rail = (
     <section aria-labelledby="rounds-heading" className="flex flex-col gap-3">
       <h2 id="rounds-heading" className="flex items-baseline gap-2">
-        <span className="font-medium">Rounds</span>
+        <span className="font-medium">Reviews</span>
         <span className="font-mono text-sm text-fg-muted tabular-nums">{count}</span>
         <span className="ml-auto text-sm text-fg-muted">Newest first</span>
       </h2>
@@ -168,7 +168,7 @@ function Log({ name }: { name: string }): ReactElement {
         <EmptyState
           icon={History}
           size="panel"
-          title="No review rounds yet"
+          title="No reviews yet"
           action={
             <Button
               variant="outline"
@@ -178,8 +178,7 @@ function Log({ name }: { name: string }): ReactElement {
             </Button>
           }
         >
-          Save a round in Review and it appears here with its sheet. Click a round to jump to it in
-          the log.
+          Save a review and it appears here with its sheet. Click a review to jump to it in the log.
         </EmptyState>
       )}
     </section>
@@ -243,8 +242,8 @@ function Log({ name }: { name: string }): ReactElement {
   else if (!md.data)
     body = (
       <EmptyState icon={FileText} size="page" title={`No DESIGN.md for ${name} yet`}>
-        The agent starts the log with the brief, and each round you save in Review adds to it. It
-        lives at builds/{name}/DESIGN.md.
+        The agent starts the log with the brief, and each review you save adds to it. It lives at
+        builds/{name}/DESIGN.md.
       </EmptyState>
     )
   else if (draft)
@@ -318,7 +317,7 @@ function Log({ name }: { name: string }): ReactElement {
       ? `${path} · not created yet`
       : draft
         ? `${path} · editing${dirty ? ', unsaved changes' : ''}`
-        : `${path} · ${count} ${count === 1 ? 'round' : 'rounds'}`
+        : `${path} · ${count} ${count === 1 ? 'review' : 'reviews'}`
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -330,7 +329,7 @@ function Log({ name }: { name: string }): ReactElement {
           <>
             {narrow && (
               <Button variant="outline" onClick={() => setRailOpen(true)}>
-                <History /> Rounds
+                <History /> Reviews
               </Button>
             )}
             {draft ? (
@@ -374,7 +373,7 @@ function Log({ name }: { name: string }): ReactElement {
         </div>
         {!narrow && (
           <aside
-            aria-label="Review rounds"
+            aria-label="Reviews"
             className="w-90 shrink-0 overflow-auto border-l border-border-subtle p-4"
           >
             {rail}
@@ -384,7 +383,7 @@ function Log({ name }: { name: string }): ReactElement {
       <Sheet open={railOpen} onOpenChange={setRailOpen}>
         <SheetContent side="bottom" className="overflow-auto">
           <SheetHeader>
-            <SheetTitle>Review rounds</SheetTitle>
+            <SheetTitle>Reviews</SheetTitle>
           </SheetHeader>
           <div className="px-4 pb-4">{rail}</div>
         </SheetContent>

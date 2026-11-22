@@ -129,7 +129,8 @@ export function useBlockEditor({
   newest,
   minecraftVersion,
   pack,
-  onSelect
+  onSelect,
+  selectParts = false
 }: {
   build: string
   /** The shown file: the selection is cleared when it changes. */
@@ -145,6 +146,8 @@ export function useBlockEditor({
   pack: string | null | undefined
   /** A click the Select tool passes on (inspecting a block, picking parts). */
   onSelect?: (p: ViewerPick) => void
+  /** Coloured by parts: Select clicks only pick parts and leave no block or box selected. */
+  selectParts?: boolean
 }): BlockEditor {
   const registry = useBlockRegistry(minecraftVersion)
   const icon = useBlockIcons(pack)
@@ -182,6 +185,7 @@ export function useBlockEditor({
     setHover(null)
     setEnds(null)
   }
+  if (selectParts && selection) setSelection(null)
   // Transform's moves, turns and flips, waiting for Apply; a new selection starts them afresh
   const [moves, setMoves] = useState<Moves>(STILL)
   const [movesFor, setMovesFor] = useState(selection)
@@ -312,6 +316,7 @@ export function useBlockEditor({
     }
     if (!editable || tool === 'select') {
       onSelect?.(p)
+      if (selectParts) return
       setSelection((s) =>
         p.add && s
           ? { ...s, ...boxOf(s.anchor, p.cell) }
@@ -620,7 +625,7 @@ export function useBlockEditor({
   const said = !editable
     ? selection && selected // read-only: clicks still select
     : tool === 'select'
-      ? selected
+      ? !selectParts && selected // the parts toolbar has its own hint
       : tool === 'ruler'
         ? measure
           ? `${spanOf(measure).join('×')} · ${distanceOf(measure).toFixed(1)}`

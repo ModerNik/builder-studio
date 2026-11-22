@@ -28,7 +28,7 @@
 ## How it works
 
 <p align="center">
-  <img src=".github/assets/workflow.svg" alt="Brief, Draft, Edit, Review, Export, then the next round goes back to Draft" width="100%">
+  <img src=".github/assets/workflow.svg" alt="Brief, Draft, Edit, Review, Export, then the next iteration goes back to Draft" width="100%">
 </p>
 
 Every build is a small Python script executed by a dedicated build engine. Because the geometry lives in code, builds stay exact, editable, and repeatable: change a roof pitch, wall height, or material palette and regenerate in seconds.
@@ -47,13 +47,13 @@ Inspect every version in a live Three.js 3D viewport rendered with your own Mine
 
 Work with **Claude** (using your own Anthropic API key), **Codex** (ChatGPT sign-in), or a local **Ollama** model in a docked side panel. The assistant edits build scripts, runs drafts, and displays results directly in the transcript. Every action is gated by clear permission modes (`Manual`, `Accept edits`, `Auto`, `Plan`), interactive approval cards, per-build `Always` rules, and turn-level file rewind checkpoints. AI is completely optional — every other feature works without it.
 
-### 📌 Visual review rounds
+### 📌 Visual reviews
 
-Compare up to four versions side by side, pick a favourite, approve finished parts so later rounds preserve them, and drop numbered pins directly on blocks or preview sheets with notes. Saving a round writes structured feedback (`round_N.json` + `DESIGN.md` gist) and sends it straight back to the assistant.
+Compare up to four versions side by side, pick a favourite, approve finished parts so later drafts preserve them, and drop numbered pins directly on blocks or preview sheets with notes. Saving a review writes structured feedback (`round_N.json` + `DESIGN.md` gist) and sends it straight back to the assistant.
 
 ### 🔀 Parallel variants
 
-Explore 2 to 6 directions simultaneously from a single brief or round of feedback. Each lane runs in isolation on its own script copy, and you can send every finished variant into one Review round to pick the winner.
+Explore 2 to 6 directions simultaneously from a single brief or review. Each lane runs in isolation on its own script copy, and you can send every finished variant into one Review to pick the winner.
 
 ### 🗺️ Fit builds to your world
 
@@ -73,7 +73,7 @@ The 10-step **Export** checklist verifies tool availability, requires zero lint 
 
 ### 📜 Plain files, Git history, and external agents (MCP)
 
-There is no proprietary database and no vendor lock-in: builds are plain files in a workspace folder you choose, with local Git history for every round. Want to use **Claude Code**, **Codex CLI**, or **Claude Desktop** outside the app (including with a Claude subscription)? Builder Studio exposes a loopback-only MCP server at `http://127.0.0.1:7341/mcp` so external agents can view builds and open review rounds directly inside the app.
+There is no proprietary database and no vendor lock-in: builds are plain files in a workspace folder you choose, with local Git history for every build. Want to use **Claude Code**, **Codex CLI**, or **Claude Desktop** outside the app (including with a Claude subscription)? Builder Studio exposes a loopback-only MCP server at `http://127.0.0.1:7341/mcp` so external agents can view builds and open reviews directly inside the app.
 
 ---
 
@@ -108,7 +108,7 @@ Full documentation lives in [`src/renderer/src/pages/docs/content/`](src/rendere
 | [Getting started](src/renderer/src/pages/docs/content/getting-started.md)                 | Installation, first-run setup, build tools, updates                              |
 | [Workspace and files](src/renderer/src/pages/docs/content/workspace.md)                   | Workspace layout, build files, `DESIGN.md`, Git history, importing builds        |
 | [Building and viewing](src/renderer/src/pages/docs/content/building.md)                   | Gallery, 3D viewer, hand editor, Compare/Diff, Parts, Checks, keyboard shortcuts |
-| [Review, design log and export](src/renderer/src/pages/docs/content/review-and-export.md) | Visual review rounds, block pins, Design log, 10-step Export checklist           |
+| [Review, design log and export](src/renderer/src/pages/docs/content/review-and-export.md) | Visual reviews, block pins, Design log, 10-step Export checklist                 |
 | [Planning tools](src/renderer/src/pages/docs/content/planning-tools.md)                   | Build location (site picker), References board, parallel Variants, Labs          |
 | [AI assistant](src/renderer/src/pages/docs/content/ai-assistant.md)                       | Claude, Codex, Ollama, permissions, sessions, slash commands, studio tools       |
 | [External agents (MCP)](src/renderer/src/pages/docs/content/external-agents.md)           | Loopback MCP server setup for Claude Code, Codex CLI, and Claude Desktop         |
@@ -164,7 +164,7 @@ npm run build:win
 
 In **Settings → Advanced**, set **Python runtime** to `out/runtime/engine/runtime/python.exe` (or set `BS_ENGINE_PYTHON` in your environment to enable engine-backed tests).
 
-Releases are built and published automatically from `main` by `.github/workflows/release.yml` when a `v*` tag is pushed (`npm version <patch|minor|major> && git push --follow-tags`).
+Pushing a `v*` tag (`npm version <patch|minor|major> && git push --follow-tags`) makes `.github/workflows/release.yml` build the release from `main` and upload it as a draft GitHub release. Publish the draft by hand as a full release marked latest: installed copies only update from the latest published release.
 
 ---
 

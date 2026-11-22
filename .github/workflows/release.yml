@@ -1,12 +1,13 @@
-# A pushed v* tag on main (npm version patch; git push --follow-tags) builds the Windows installer and publishes the
-# GitHub release that installed copies update from (src/main/app/updater.ts). This is the only pipeline: nothing runs
-# on branches or pull requests.
+# A pushed v* tag on main (npm version patch; git push --follow-tags) builds the Windows installer and leaves a draft
+# GitHub release with every file in it. Publishing is manual: installed copies update from releases/latest
+# (src/main/app/updater.ts), which skips drafts and pre-releases, so publish it as a full release marked latest.
+# This is the only pipeline: nothing runs on branches or pull requests.
 name: release
 on:
   push:
     tags: ['v*']
 permissions:
-  contents: write # GITHUB_TOKEN drafts the release, uploads the assets and publishes it
+  contents: write # GITHUB_TOKEN drafts the release and uploads the assets
 jobs:
   release:
     runs-on: windows-latest
@@ -61,7 +62,7 @@ jobs:
           BS_ENGINE_PYTHON: ${{ github.workspace }}/out/runtime/engine/runtime/python.exe
       # the acceptance test needs only out/runtime, so it runs while the app builds, packs and uploads; the release
       # stays a draft until both pass. Not --prepackaged: that skips afterPack, which writes app-update.yml.
-      - name: Publish installer while verifying real runtime activation and fallbacks
+      - name: Upload installer to the draft while verifying real runtime activation and fallbacks
         shell: bash
         run: |
           npx vitest run src/main/runtime/runtime-integration.test.ts > "$RUNNER_TEMP/acceptance.log" 2>&1 &
@@ -77,29 +78,20 @@ jobs:
           BS_ACCEPTANCE_ROOT: ${{ github.workspace }}/out/acceptance
       - name: Verify packaged files and runtime artifact integrity
         run: node scripts/check-package.mts
-      - name: Upload runtime before publishing
+      - name: Upload runtime to the draft
         shell: powershell
         run: |
-          $runtimeAssets = @('out/runtime/runtime-manifest.json', 'out/runtime/SHA256SUMS') + (Get-ChildItem -LiteralPath out/runtime -Filter 'builder-runtime-*.zip').FullName
+          $engineAsset = (Get-Content -Raw out/runtime/runtime-manifest.json | ConvertFrom-Json).engine.asset
+          if (!$engineAsset) { throw 'Missing engine.asset in out/runtime/runtime-manifest.json' }
+          $runtimeAssets = @('out/runtime/runtime-manifest.json', 'out/runtime/SHA256SUMS', (Resolve-Path -LiteralPath (Join-Path out/runtime $engineAsset)).Path)
           gh release upload $env:GITHUB_REF_NAME @runtimeAssets --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # installs read latest.yml from the latest release; never publish one that lacks it or names another version
+      # installs read latest.yml from the latest release; fail the run rather than leave a draft that lacks it or names
+      # another version
       - name: Update metadata matches the tag
         shell: bash
         run: |
           gh release download "$GITHUB_REF_NAME" -p latest.yml -O - | grep -qx "version: ${GITHUB_REF_NAME#v}[[:space:]]*"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      # installs only see published releases, so it goes live once every file is in. Always stable: the updater
-      # reads releases/latest, which skips pre-releases
-      - name: Publish release
-        shell: bash
-        run: gh release edit "$GITHUB_REF_NAME" --draft=false --prerelease=false --latest
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: Installs see this release as the latest
-        shell: bash
-        run: test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)" = "$GITHUB_REF_NAME"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

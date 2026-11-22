@@ -97,7 +97,7 @@ export interface BuildCardProps {
   name: string
   /** The current line of the build's Status block. */
   status?: ReactNode
-  /** "Round 6 · Exported v4 · 2 h ago". */
+  /** "Review 6 · Exported v4 · 2 h ago". */
   meta?: ReactNode
   /** The newest preview sheet. */
   image?: string | null

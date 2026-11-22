@@ -8,6 +8,7 @@ import {
   Globe,
   ListTodo,
   LoaderCircle,
+  MessageCircleQuestion,
   Plug,
   Search,
   Terminal,
@@ -27,6 +28,7 @@ const ICON: Record<ToolKind, LucideIcon> = {
   run: Terminal,
   web: Globe,
   todo: ListTodo,
+  question: MessageCircleQuestion,
   agent: Bot,
   mcp: Plug,
   other: Wrench

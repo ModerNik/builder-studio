@@ -59,7 +59,7 @@ export function useReviewRound(name: string) {
     }
     for (const r of [...(rounds.data ?? [])].reverse()) {
       const f = r.files.find((f) => f.path === path)
-      if (f?.paste) return { xyz: f.paste, from: `round ${r.round}` }
+      if (f?.paste) return { xyz: f.paste, from: `review ${r.round}` }
     }
     return { xyz: null, from: 'unknown' }
   }
@@ -100,9 +100,9 @@ export function useReviewRound(name: string) {
       const saved = await studio.review.save(round, d.requestId)
       const line = `feedback in the app: ${saved.path}`
       const n = saved.round.round
-      const message = d.requestId ? `Round ${n} saved · Sent to the agent.` : `Round ${n} saved`
+      const message = d.requestId ? `Review ${n} saved · Sent to the agent.` : `Review ${n} saved`
       setStatus((s) => ({ message, at: s.at + 1 }))
-      toast.success(`Round ${n} saved`, {
+      toast.success(`Review ${n} saved`, {
         description: d.requestId ? 'Sent to the agent.' : saved.path,
         action: d.requestId
           ? undefined
@@ -112,7 +112,7 @@ export function useReviewRound(name: string) {
       set(name, blank(d.files))
       void queryClient.invalidateQueries({ queryKey: ['rounds', name] })
     } catch (e) {
-      toast.error(`Couldn’t save the round: ${errorMessage(e)}`)
+      toast.error(`Couldn’t save the review: ${errorMessage(e)}`)
     } finally {
       setSaving(false)
     }
@@ -122,7 +122,7 @@ export function useReviewRound(name: string) {
     if (!d.requestId) return
     await studio.review.cancel(d.requestId)
     patch({ requestId: null })
-    toast('Request declined: the agent gets no round.')
+    toast('Request declined: the agent gets no review.')
   }
 
   return {

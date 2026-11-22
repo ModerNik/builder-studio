@@ -25,6 +25,7 @@ export type Thread = {
   title: string | null // the next new session's title
   items: Item[]
   asks: PermissionAsk[]
+  suggestion: string | null
   state: AgentState
   mode: AgentMode
 }
@@ -128,20 +129,6 @@ export async function requestAgentPrefs(
 
 export const busy = (s: AgentState): boolean => s.status === 'running' || s.status === 'starting'
 
-/** Observe the next turn before sending it, including turns that finish between React renders. */
-export function watchTurn(id: string, ended: (state: AgentState | undefined) => void): () => void {
-  let started = false
-  const initialError = useAgent.getState().threads[id]?.state.error
-  return useAgent.subscribe(({ threads }) => {
-    const state = threads[id]?.state
-    if (state && busy(state)) started = true
-    else if (started || !state || (state.error && state.error !== initialError)) {
-      started = false
-      ended(state)
-    }
-  })
-}
-
 /** The remembered mode, where this provider offers it. */
 export const startMode = (primary: AgentState): AgentMode => {
   const { mode } = useAgentPrefs.getState()
@@ -155,6 +142,7 @@ const blank = (id: string, build: string, primary: AgentState): Thread => ({
   title: null,
   items: [],
   asks: [],
+  suggestion: null,
   mode: startMode(primary),
   state: {
     ...primary,
@@ -258,13 +246,26 @@ function receiveState(id: string, state: AgentState): void {
   }
   patch(id, (t) => ({
     state,
+    ...(busy(state) ? { suggestion: null } : {}),
     ...(state.status !== 'off' ? { mode: state.mode } : {}),
     ...(state.build === t.build && state.sessionId ? { session: state.sessionId } : {})
   }))
 }
 
 studio.agent.onMsg(({ thread, data }) => {
-  if (thread) patch(thread, (t) => ({ items: reduce(t.items, data) }))
+  if (thread) {
+    if (data.type === 'suggestion')
+      patch(thread, (t) => ({
+        suggestion: !busy(t.state) && !t.asks.length ? data.text : null
+      }))
+    else
+      patch(thread, (t) => ({
+        items: reduce(t.items, data),
+        ...(data.type === 'user' || data.type === 'text' || data.type === 'tool'
+          ? { suggestion: null }
+          : {})
+      }))
+  }
   if (data.type === 'turn-end') void queryClient.invalidateQueries({ queryKey: ['agent-sessions'] })
 })
 studio.agent.onState(({ thread, data }) =>
@@ -276,7 +277,8 @@ studio.agent.onAsk(({ thread, data }) => {
       asks:
         'done' in data
           ? t.asks.filter((x) => x.id !== data.done)
-          : [...t.asks.filter((x) => x.id !== data.id), data]
+          : [...t.asks.filter((x) => x.id !== data.id), data],
+      ...('done' in data ? {} : { suggestion: null })
     }))
 })
 void studio.agent
@@ -345,11 +347,13 @@ export async function send(
   if (!opts.command)
     patch(active, (t) => ({
       title: t.session ? t.title : null,
+      suggestion: null,
       items: [
         ...t.items,
         { kind: 'user', id: `me:${Date.now()}`, text, ...(attachments ? { attachments } : {}) }
       ]
     }))
+  else patch(active, () => ({ suggestion: null }))
   await requestAgentPrefs(primary.provider)
     .then(({ model, effort }) =>
       studio.agent.send(active, {
@@ -375,6 +379,31 @@ export async function setMode(mode: AgentMode): Promise<void> {
   if (mode !== 'plan') useAgentPrefs.setState({ mode })
   if (threads[active].state.status !== 'off')
     await studio.agent.setMode(active, mode).catch(fail(active))
+}
+
+/** Clears the active thread's ghost-text prompt suggestion. */
+export function dismissSuggestion(): void {
+  const { active } = useAgent.getState()
+  if (active) patch(active, () => ({ suggestion: null }))
+}
+
+/** Implements a Codex plan (with optional user edits), switching back to the remembered working mode. */
+export async function implementPlan(editedPlan?: string): Promise<void> {
+  const mode = startMode(useAgent.getState().primary)
+  await setMode(mode)
+  await send(
+    editedPlan !== undefined
+      ? `Implement this updated plan:\n\n${editedPlan}`
+      : 'Implement the plan.'
+  )
+}
+
+/** Sends revision feedback for a Codex plan while staying in Plan mode. */
+export async function revisePlan(feedback: string): Promise<void> {
+  const text = feedback.trim()
+  if (!text) return
+  if (activeThread(useAgent.getState()).mode !== 'plan') await setMode('plan')
+  await send(text)
 }
 
 /** Stops the active thread's turn; its session stays live. */
