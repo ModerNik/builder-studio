@@ -92,24 +92,16 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     <div ref={setEditorHost} className="flex h-full min-h-0 flex-col" />
   ))
   const [activityContent] = useState(() => <div ref={setActivityHost} className="h-full min-h-0" />)
-  const activityBadge =
+  const activityBadgeTone =
+    job?.state === 'running' ? 'running' : job?.state === 'failed' ? 'danger' : undefined
+  const activityBadgeLabel =
     job?.state === 'running'
-      ? {
-          badge: 'dot' as const,
-          badgeTone: 'running' as const,
-          badgeLabel: job.stage
-            ? `${JOB_LABELS[job.spec.part]}: ${job.stage}`
-            : `${JOB_LABELS[job.spec.part]} running`
-        }
+      ? job.stage
+        ? `${JOB_LABELS[job.spec.part]}: ${job.stage}`
+        : `${JOB_LABELS[job.spec.part]} running`
       : job?.state === 'failed'
-        ? {
-            badge: 'dot' as const,
-            badgeTone: 'danger' as const,
-            badgeLabel: `${JOB_LABELS[job.spec.part]} failed`
-          }
+        ? `${JOB_LABELS[job.spec.part]} failed`
         : undefined
-  const activityBadgeTone = activityBadge?.badgeTone
-  const activityBadgeLabel = activityBadge?.badgeLabel
   const panels = useMemo<WorkbenchPanel[]>(
     () => [
       {

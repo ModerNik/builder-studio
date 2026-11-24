@@ -111,6 +111,7 @@ export function HistoryList({
           <span className="tabular-nums">
             {handEdits.toLocaleString()} hand {handEdits === 1 ? 'edit' : 'edits'}
           </span>
+          <span className="sr-only">, </span>
           <span aria-hidden="true">·</span>
           <span>{SAVE_WORD[save]}</span>
         </p>

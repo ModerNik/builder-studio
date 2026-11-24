@@ -59,7 +59,7 @@ schematic again.
 ### Generating a draft
 
 **Generate draft** runs the engine's quick _proto_ job on `build.py` and renders a preview. The
-**Activity** button beside the screen tabs shows a live indicator while it runs (and turns red if it
+**Activity** button beside the screen tabs shows a live dot while it runs (or a red dot if it
 fails). Open **Activity** (`Ctrl \``) to see the stage (generating blocks, checking blocks, removing
 hidden blocks, saving the schematic, creating preview images), the result, time and the version's
 size in blocks, the full job log, and **Copy paste position**, which copies where the file goes in
