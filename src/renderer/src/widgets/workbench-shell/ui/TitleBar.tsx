@@ -1,5 +1,5 @@
 // Title bar content: app mark, breadcrumb (Builds › build switcher), command palette trigger, and slots
-// for the global job chip, the setup chip and app links. WorkbenchShell supplies the bar itself.
+// for the setup chip and app links. WorkbenchShell supplies the bar itself.
 import type { ReactElement, ReactNode } from 'react'
 import { DropdownMenu } from 'radix-ui'
 import { Boxes, Check, ChevronDown, ChevronRight, Ellipsis, Search } from 'lucide-react'
@@ -77,7 +77,6 @@ export function TitleBar({
   onHome,
   onSearch,
   searchLabel = 'Search builds and commands',
-  job,
   setup,
   actions,
   overflow,
@@ -88,8 +87,6 @@ export function TitleBar({
   /** Opens the command palette (the app registers Ctrl K). */
   onSearch?: () => void
   searchLabel?: string
-  /** Global job chip: what is running anywhere, opens Activity. */
-  job?: ReactNode
   /** Setup or notice chip; moves into ⋯ on touch tiers. */
   setup?: ReactNode
   /** App links (Labs, Settings) at the right end. */
@@ -155,7 +152,6 @@ export function TitleBar({
       </div>
       <div className="workbench-title-actions flex shrink-0 items-center gap-2">
         {panelAction}
-        {job}
         {!compact && setup}
         {!compact && actions}
         {compact && overflow && (

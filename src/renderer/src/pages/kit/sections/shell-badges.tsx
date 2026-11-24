@@ -1,5 +1,5 @@
 import type { ReactElement } from 'react'
-import { MessageCircle, ListChecks } from 'lucide-react'
+import { Activity, MessageCircle, ListChecks } from 'lucide-react'
 import { TabBadge } from '@/shared/ui/common/parts'
 import { PanelToggle } from '@/widgets/workbench-shell/ui/PanelToggle'
 import { Specimen, Specimens, Guidance } from '../specimen'
@@ -45,14 +45,44 @@ export default function BadgesDemo(): ReactElement {
             }}
           />
         </Specimen>
+        <Specimen label="Activity toggle, running">
+          <PanelToggle
+            panel={{
+              id: 'activity',
+              side: 'bottom',
+              title: 'Activity',
+              icon: Activity,
+              keys: 'Ctrl+`',
+              badge: 'dot',
+              badgeLabel: 'Generate draft: Checking blocks',
+              badgeTone: 'running',
+              content: null
+            }}
+          />
+        </Specimen>
+        <Specimen label="Activity toggle, failed">
+          <PanelToggle
+            panel={{
+              id: 'activity',
+              side: 'bottom',
+              title: 'Activity',
+              icon: Activity,
+              keys: 'Ctrl+`',
+              badge: 'dot',
+              badgeLabel: 'Generate draft failed',
+              badgeTone: 'danger',
+              content: null
+            }}
+          />
+        </Specimen>
         <Specimen label="needs you, 100+">
           <TabBadge badge={128} label="128 asks need you" tone="attention" />
         </Specimen>
       </Specimens>
       <Guidance>
-        Give the Chat panel badgeTone attention with the number of asks waiting on the user, and
-        pass the same number to the StatusBar as needsYou. The count is always spelled out for
-        screen readers; amber matches the awaiting-approval state.
+        Give the Chat panel badgeTone attention with the number of asks waiting on the user, and use
+        badge dot with running or danger on the Activity toggle for live or failed build jobs. Every
+        badge is spelled out for screen readers.
       </Guidance>
     </div>
   )

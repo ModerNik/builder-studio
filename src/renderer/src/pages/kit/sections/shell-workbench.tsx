@@ -19,7 +19,6 @@ import { TitleBar } from '@/widgets/workbench-shell/ui/TitleBar'
 import { PanelToggle } from '@/widgets/workbench-shell/ui/PanelToggle'
 import { EditorTabs } from '@/widgets/workbench-shell/ui/EditorTabs'
 import { Tabs, TabsContent } from '@/shared/ui/primitives/tabs'
-import { StatusBar } from '@/widgets/workbench-shell/ui/StatusBar'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
 import { IconButton } from '@/shared/ui/common/parts'
 import {
@@ -223,7 +222,6 @@ export function DemoWorkbench({
 }): ReactElement {
   const [screen, setScreen] = useState(review ? 'review' : 'workspace')
   const [build, setBuild] = useState(BUILDS[0])
-  const [running, setRunning] = useState(true)
   const [searched, setSearched] = useState(0)
   useShortcuts([
     { keys: 'Ctrl+K', label: 'Command palette', group: 'App', run: () => setSearched((n) => n + 1) }
@@ -272,8 +270,9 @@ export function DemoWorkbench({
       keys: 'Ctrl+`',
       side: 'bottom',
       defaultOpen: false,
-      badge: 3,
-      badgeLabel: '3 problems',
+      badge: 'dot',
+      badgeTone: 'running',
+      badgeLabel: 'Generate draft: Checking blocks',
       content: <ActivityPane />
     }
   ]
@@ -332,30 +331,6 @@ export function DemoWorkbench({
               </DropdownMenu.Item>
             </>
           }
-        />
-      }
-      status={
-        <StatusBar
-          activity={screen === 'workspace' && !page}
-          job={
-            running
-              ? {
-                  label: 'Generate draft',
-                  stage: 'Checking blocks 2 of 5',
-                  elapsed: '0:21',
-                  state: 'running',
-                  onStop: () => setRunning(false),
-                  onOpen: () => {}
-                }
-              : null
-          }
-          problems={3}
-          onProblems={() => {}}
-          needsYou={2}
-          onNeedsYou={() => {}}
-          engine="ready"
-          assistant="waiting"
-          assistantName="Claude Code"
         />
       }
     >

@@ -14,7 +14,7 @@ export type DockSide = 'right' | 'bottom'
 export interface DockPanelSpec {
   id: string
   side: DockSide
-  /** Open on first use at wide; at desktop only right panels open by default (Activity folds into the status bar). */
+  /** Open on first use at wide; at desktop only right panels open by default (Activity starts closed). */
   defaultOpen?: boolean
 }
 export type SheetSize = 'half' | 'full'
