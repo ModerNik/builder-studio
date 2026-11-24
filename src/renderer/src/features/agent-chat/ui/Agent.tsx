@@ -195,6 +195,7 @@ function BuildAgent({ build }: { build: string }): ReactElement {
       </div>
       {brief.dialog}
       <ActiveTranscript
+        key={id}
         build={build}
         onBrief={() => void brief.openBrief()}
         onRewind={(point) => {
@@ -320,6 +321,7 @@ function ActiveTranscript({
   const ref = session ? { provider: state.provider, id: session } : null
   const [editTarget, setEditTarget] = useState<{
     threadId: string
+    itemCount: number
     id: string
     point: string
     attachments?: string[]
@@ -328,7 +330,10 @@ function ActiveTranscript({
   const [editError, setEditError] = useState<string>()
   const [forking, setForking] = useState(false)
 
-  const activeEdit = editTarget && editTarget.threadId === id && !working ? editTarget : null
+  const activeEdit =
+    editTarget && editTarget.threadId === id && editTarget.itemCount === items.length && !working
+      ? editTarget
+      : null
   const editPreview = useRewindPreview(activeEdit ? ref : null, build, activeEdit?.point ?? null)
   const previewValue = editPreview.error
     ? { files: [], unavailable: errorMessage(editPreview.error) }
@@ -354,6 +359,8 @@ function ActiveTranscript({
 
   const handleFork = async (item: Extract<Item, { kind: 'user' }>): Promise<void> => {
     if (!ref || !item.point || forking || working || editSubmitting) return
+    setEditTarget(null)
+    setEditError(undefined)
     setForking(true)
     try {
       await forkThread(ref, build, item.point)
@@ -380,6 +387,7 @@ function ActiveTranscript({
               setEditError(undefined)
               setEditTarget({
                 threadId: id,
+                itemCount: items.length,
                 id: item.id,
                 point: item.point,
                 attachments: item.attachments
@@ -388,7 +396,16 @@ function ActiveTranscript({
           : undefined
       }
       onForkMessage={ref && state.capabilities.fork ? (item) => void handleFork(item) : undefined}
-      onRewindMessage={ref ? (item) => item.point && onRewind(item.point) : undefined}
+      onRewindMessage={
+        ref
+          ? (item) => {
+              if (!item.point) return
+              setEditTarget(null)
+              setEditError(undefined)
+              onRewind(item.point)
+            }
+          : undefined
+      }
       editingMessage={
         activeEdit
           ? {

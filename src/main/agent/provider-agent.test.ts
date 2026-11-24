@@ -153,7 +153,7 @@ it('refuses targeted fork while session is busy and forwards point when idle', a
   const { agent, send } = await pool()
   await expect(send('t1', S1)).resolves.toBe('turn-1')
   await expect(agent.fork({ provider: 'claude', id: S1 }, 'tower', 'u1')).rejects.toThrow(
-    /Wait for the current turn/
+    /Wait for the current turn.*forking/
   )
   const service = fake.made.find((m) => m.state === agent.state().threads.t1)!
   service.state.status = 'idle'

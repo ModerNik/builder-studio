@@ -26,6 +26,8 @@ export interface MessageBubbleEditState {
   preview?: { files: string[]; unavailable: string | null }
   submitting?: boolean
   error?: string
+  /** Focus the editor textarea on mount (defaults to true; disable in static kit specimens). */
+  autoFocus?: boolean
   onSubmit(text: string, undoFiles: boolean): void
   onCancel(): void
 }
@@ -145,12 +147,14 @@ function MessageBubbleEditor({
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const undoId = useId()
 
+  const shouldAutoFocus = editing.autoFocus !== false
   useEffect(() => {
+    if (!shouldAutoFocus) return
     const el = textareaRef.current
     if (!el) return
     el.focus()
     el.setSelectionRange(el.value.length, el.value.length)
-  }, [])
+  }, [shouldAutoFocus])
 
   const preview = editing.preview
   const canUndoFiles = Boolean(preview && !preview.unavailable && preview.files.length > 0)
@@ -291,7 +295,10 @@ export function MessageBubble({
   const hasActions = copyable || !!onEdit || !!onFork || !!onRewind
   return (
     <div
-      className={cn('group/message ml-auto flex max-w-[85%] flex-col items-end gap-0.5', className)}
+      className={cn(
+        'group/message ml-auto flex w-fit max-w-[85%] flex-col items-end gap-0.5',
+        className
+      )}
     >
       <div className="flex w-fit max-w-full flex-col gap-1.5 rounded-lg rounded-br-sm bg-surface-active px-3 py-2">
         <span className="sr-only">You said:</span>

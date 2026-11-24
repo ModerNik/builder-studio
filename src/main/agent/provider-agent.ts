@@ -205,7 +205,7 @@ export class ProviderAgent {
   /** tag: the build, or `<build>#<lane>` for a variant lane, so lanes stay out of the panel's list. */
   async fork(ref: SessionRef, tag: string, point?: string): Promise<SessionRef> {
     this.check(ref)
-    if (point) this.assertIdleSession(ref)
+    if (point) this.assertIdleSession(ref, 'forking')
     return { provider: this.provider, id: await this.primary.fork(ref.id, tag, point) }
   }
 
@@ -215,10 +215,10 @@ export class ProviderAgent {
     return this.primary.rewindPoints(ref.id)
   }
 
-  private assertIdleSession(ref: SessionRef): void {
+  private assertIdleSession(ref: SessionRef, action = 'rewinding'): void {
     const live = this.liveIn(ref.id)
     if (live && working(this.threads.get(live)!.state))
-      throw new Error('Wait for the current turn to finish before rewinding.')
+      throw new Error(`Wait for the current turn to finish before ${action}.`)
   }
 
   private async rewindTurns(ref: SessionRef, point: string): Promise<string[]> {

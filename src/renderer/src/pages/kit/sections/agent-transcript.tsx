@@ -164,6 +164,7 @@ export default function AgentTranscript(): ReactElement {
           <Cell label="Inline edit with build-file undo preview" className="flex flex-col gap-3">
             <MessageBubble
               editing={{
+                autoFocus: false,
                 preview: {
                   files: ['builds/stone_watchtower/build.py', 'builds/stone_watchtower/roof.py'],
                   unavailable: null
