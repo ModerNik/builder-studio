@@ -79,8 +79,7 @@ export function TitleBar({
   searchLabel = 'Search builds and commands',
   setup,
   actions,
-  overflow,
-  panelAction
+  overflow
 }: {
   crumbs: Crumb[]
   onHome?: () => void
@@ -93,7 +92,6 @@ export function TitleBar({
   actions?: ReactNode
   /** Menu items for ⋯ on tablet and phone (setup notices, app links). */
   overflow?: ReactNode
-  panelAction?: ReactNode
 }): ReactElement {
   const { tier } = useWorkbench()
   const compact = tier === 'tablet' || tier === 'phone'
@@ -151,7 +149,6 @@ export function TitleBar({
         )}
       </div>
       <div className="workbench-title-actions flex shrink-0 items-center gap-2">
-        {panelAction}
         {!compact && setup}
         {!compact && actions}
         {compact && overflow && (
