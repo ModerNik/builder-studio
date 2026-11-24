@@ -173,7 +173,9 @@ describe('transcript', () => {
         message: { role: 'user', content: '<system-reminder>x</system-reminder>' }
       }
     ])
-    expect(items).toEqual([{ kind: 'user', id: 'a:0', text: 'crown B, thicker frames' }])
+    expect(items).toEqual([
+      { kind: 'user', id: 'a:0', text: 'crown B, thicker frames', point: 'a' }
+    ])
   })
 
   it('flags a plan proposal, replacing its streamed text', () => {

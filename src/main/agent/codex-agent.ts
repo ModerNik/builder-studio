@@ -298,7 +298,7 @@ export class CodexAgent {
     if (loginId && this.rpc) await this.rpc.request('account/login/cancel', { loginId })
   }
 
-  async send(a: AgentSend): Promise<void> {
+  async send(a: AgentSend): Promise<string | undefined> {
     if (this.authenticating) throw new Error('Finish or cancel Codex sign-in before sending.')
     if (a.provider !== this.provider || (a.resume && a.resume.provider !== this.provider))
       throw new Error('Cannot resume another provider’s session.')
@@ -368,7 +368,7 @@ export class CodexAgent {
         this.abort = new AbortController()
         this.set({ status: 'running' })
         await rpc.request('thread/compact/start', { threadId: this.state.sessionId })
-        return
+        return undefined
       }
       const names = new Set([...a.text.matchAll(/\$([\w:-]+)/g)].map((m) => m[1]))
       const skills = names.size ? (await this.skills(rpc)).filter((k) => names.has(k.name)) : []
@@ -413,6 +413,7 @@ export class CodexAgent {
         effort: a.effort
       })
       if (epoch === this.epoch && !this.abort.signal.aborted) this.turn = result.turn.id
+      return result.turn.id
     } catch (e) {
       if (epoch === this.epoch) this.fail(e)
       throw e
@@ -850,15 +851,26 @@ export class CodexAgent {
       .sort((a, b) => b.modified - a.modified)
   }
   async history(id: string): Promise<AgentMsg[]> {
-    return (await this.turns(id)).flatMap((t) => [
-      ...t.items.flatMap((i) => codexEvents(i, true)),
-      {
-        type: 'turn-end' as const,
-        id: t.id,
-        text: t.error?.message ?? t.status,
-        error: t.status === 'failed'
-      }
-    ])
+    return (await this.turns(id)).flatMap((t) => {
+      let tagged = false
+      return [
+        ...t.items.flatMap((i) =>
+          codexEvents(i, true).map((e) => {
+            if (e.type === 'user' && !tagged) {
+              tagged = true
+              return { ...e, point: t.id }
+            }
+            return e
+          })
+        ),
+        {
+          type: 'turn-end' as const,
+          id: t.id,
+          text: t.error?.message ?? t.status,
+          error: t.status === 'failed'
+        }
+      ]
+    })
   }
 
   private async turns(id: string): Promise<Thread['turns']> {
@@ -876,9 +888,16 @@ export class CodexAgent {
     } while (cursor)
     return turns
   }
-  /** A copy of the thread to continue apart from it; tag is the build, or <build>#<lane> for a variant lane. */
-  async fork(id: string, tag: string): Promise<string> {
-    return this.forkThread(id, tag)
+  /** A copy of the thread to continue apart from it; tag is the build, or <build>#<lane> for a variant lane.
+   *  When `point` is given, forks through that turn (inclusive) and drops later turns. */
+  async fork(id: string, tag: string, point?: string): Promise<string> {
+    if (!point) return this.forkThread(id, tag)
+    const turns = await this.turns(id)
+    const at = turns.findIndex(
+      (t) => t.id === point && t.items.some((i) => i.type === 'userMessage')
+    )
+    if (at < 0) throw new Error('That turn is no longer in the conversation.')
+    return this.forkThread(id, tag, at === turns.length - 1 ? undefined : turns[at].id)
   }
 
   async rewindPoints(id: string): Promise<{ id: string; text: string }[]> {

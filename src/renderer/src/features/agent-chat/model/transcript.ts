@@ -4,7 +4,7 @@ import type { AgentMsg, McbEvent } from '@shared/api'
 import { parseEvent } from '@shared/events'
 
 export type Item =
-  | { kind: 'user'; id: string; text: string; attachments?: string[] } // workspace-relative paths
+  | { kind: 'user'; id: string; text: string; attachments?: string[]; point?: string } // workspace-relative paths
   | {
       kind: 'text'
       id: string
@@ -62,7 +62,7 @@ export function reduce(items: Item[], m: AgentMsg): Item[] {
     m.type === 'tool'
       ? { kind: 'tool', id: m.id, name: m.name, input: m.input, parent: m.parent }
       : m.type === 'user'
-        ? { kind: 'user', id: m.id, text: m.text }
+        ? { kind: 'user', id: m.id, text: m.text, ...(m.point ? { point: m.point } : {}) }
         : { kind: 'note', id: m.id, text: m.text, error: m.error }
   const at = items.findIndex((x) => x.id === m.id)
   return at < 0 ? [...items, item] : items.with(at, item)

@@ -78,7 +78,12 @@ export function claudeEvents(m: Native): AgentMsg[] {
       .join('\n')
       .trim()
     if (said && !parent && !m.isSynthetic && !said.startsWith('<'))
-      result.push({ type: 'user', id: `${id}:0`, text: said })
+      result.push({
+        type: 'user',
+        id: `${id}:0`,
+        text: said,
+        ...(typeof m.uuid === 'string' ? { point: m.uuid } : {})
+      })
     return result
   }
   if (m.type === 'prompt_suggestion' && typeof m.suggestion === 'string' && m.suggestion.trim())

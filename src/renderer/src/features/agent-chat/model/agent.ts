@@ -344,13 +344,14 @@ export async function send(
   const t = threads[active]
   if (!t) return
   const attachments = opts.attachments?.length ? opts.attachments : undefined
+  const itemId = `me:${crypto.randomUUID()}`
   if (!opts.command)
     patch(active, (t) => ({
       title: t.session ? t.title : null,
       suggestion: null,
       items: [
         ...t.items,
-        { kind: 'user', id: `me:${Date.now()}`, text, ...(attachments ? { attachments } : {}) }
+        { kind: 'user', id: itemId, text, ...(attachments ? { attachments } : {}) }
       ]
     }))
   else patch(active, () => ({ suggestion: null }))
@@ -368,6 +369,12 @@ export async function send(
         attachments
       })
     )
+    .then((point) => {
+      if (point && !opts.command)
+        patch(active, (cur) => ({
+          items: cur.items.map((x) => (x.kind === 'user' && x.id === itemId ? { ...x, point } : x))
+        }))
+    })
     .catch(fail(active))
 }
 
