@@ -48,8 +48,14 @@ export function registerAgent(ctx: IpcContext, handle: Handle): void {
   )
   handle('agent:sessions', z.string(), (build) => agent.sessions(build))
   handle('agent:history', SessionRefSchema, (ref) => agent.history(ref))
-  handle('agent:fork', z.object({ ref: SessionRefSchema, build: z.string().min(1) }), (a) =>
-    agent.fork(a.ref, a.build)
+  handle(
+    'agent:fork',
+    z.object({
+      ref: SessionRefSchema,
+      build: z.string().min(1),
+      point: z.string().min(1).optional()
+    }),
+    (a) => agent.fork(a.ref, a.build, a.point)
   )
   const rewindPoint = z.object({
     ref: SessionRefSchema,

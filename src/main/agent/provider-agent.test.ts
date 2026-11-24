@@ -8,7 +8,10 @@ import type { AgentDeps } from './agent'
 vi.mock('../app/settings', () => ({ pythonEnv: () => ({}) }))
 // a thread's service: send makes it live and running; tests set it idle by hand
 const fake = vi.hoisted(() => ({
-  made: [] as { state: { status: string; sessionId: string | null } }[]
+  made: [] as { state: { status: string; sessionId: string | null } }[],
+  fork: vi.fn<(id: string, tag: string, point?: string) => Promise<string>>(
+    async () => '00000000-0000-4000-8000-000000000099'
+  )
 }))
 vi.mock('./agent', () => ({
   NO_KEY: 'Claude needs your own Anthropic API key.',
@@ -17,9 +20,13 @@ vi.mock('./agent', () => ({
     constructor(private d: { emit(ch: string, p: unknown): void }) {
       fake.made.push(this)
     }
-    async send(a: { resume: { id: string } | null }): Promise<void> {
+    async send(a: { resume: { id: string } | null }): Promise<string> {
       this.state = { status: 'running', sessionId: a.resume?.id ?? crypto.randomUUID() }
       this.d.emit('agent:state', this.state)
+      return 'turn-1'
+    }
+    fork(id: string, tag: string, point?: string): Promise<string> {
+      return fake.fork(id, tag, point)
     }
     close(): void {
       this.state = { status: 'off', sessionId: null }
@@ -70,7 +77,7 @@ type Emitted = { channel: string; payload: ThreadEvent<AgentState> }
 const pool = async (): Promise<{
   agent: import('./provider-agent').ProviderAgent
   emitted: Emitted[]
-  send(thread: string, resume?: string): Promise<void>
+  send(thread: string, resume?: string): Promise<string | undefined>
 }> => {
   root = mkdtempSync(join(tmpdir(), 'studio pool '))
   const s = SettingsSchema.parse({
@@ -91,7 +98,7 @@ const pool = async (): Promise<{
     root,
     async () => {}
   )
-  const send = (thread: string, resume?: string): Promise<void> =>
+  const send = (thread: string, resume?: string): Promise<string | undefined> =>
     agent.send(thread, {
       provider: 'claude',
       build: 'tower',
@@ -139,4 +146,20 @@ it('opens a stored session in one thread only', async () => {
   agent.close('t1')
   await send('t2', S1)
   expect(Object.keys(agent.state().threads)).toEqual(['t2'])
+})
+
+it('refuses targeted fork while session is busy and forwards point when idle', async () => {
+  fake.fork.mockClear()
+  const { agent, send } = await pool()
+  await expect(send('t1', S1)).resolves.toBe('turn-1')
+  await expect(agent.fork({ provider: 'claude', id: S1 }, 'tower', 'u1')).rejects.toThrow(
+    /Wait for the current turn/
+  )
+  const service = fake.made.find((m) => m.state === agent.state().threads.t1)!
+  service.state.status = 'idle'
+  await expect(agent.fork({ provider: 'claude', id: S1 }, 'tower', 'u1')).resolves.toEqual({
+    provider: 'claude',
+    id: '00000000-0000-4000-8000-000000000099'
+  })
+  expect(fake.fork).toHaveBeenCalledWith(S1, 'tower', 'u1')
 })

@@ -117,7 +117,7 @@ export class ProviderAgent {
       ([, t]) => t.state.status !== 'off' && t.state.sessionId === id
     )?.[0]
   }
-  async send(thread: string, a: AgentSend): Promise<void> {
+  async send(thread: string, a: AgentSend): Promise<string | undefined> {
     if (a.provider !== this.provider)
       throw new Error('Provider changed. Reopen the Agent panel before sending.')
     if (a.resume) this.check(a.resume)
@@ -142,7 +142,7 @@ export class ProviderAgent {
       this.checkpoints.start(thread, this.d.settings().workspace, a.build, isolated)
     }
     try {
-      await s.send(a)
+      return await s.send(a)
     } catch (e) {
       this.checkpoints.cancel(thread)
       throw e
@@ -203,9 +203,10 @@ export class ProviderAgent {
     return this.primary.history(ref.id)
   }
   /** tag: the build, or `<build>#<lane>` for a variant lane, so lanes stay out of the panel's list. */
-  async fork(ref: SessionRef, tag: string): Promise<SessionRef> {
+  async fork(ref: SessionRef, tag: string, point?: string): Promise<SessionRef> {
     this.check(ref)
-    return { provider: this.provider, id: await this.primary.fork(ref.id, tag) }
+    if (point) this.assertIdleSession(ref)
+    return { provider: this.provider, id: await this.primary.fork(ref.id, tag, point) }
   }
 
   rewindPoints(ref: SessionRef): Promise<AgentRewindPoint[]> {

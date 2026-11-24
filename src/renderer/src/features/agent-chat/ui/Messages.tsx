@@ -1,12 +1,34 @@
 // Transcript text items: the user's message, the assistant's reply, system notes, and the chips
 // attachments and context arrive as.
-import type { ReactElement, ReactNode } from 'react'
-import { FileText, LoaderCircle, X, type LucideIcon } from 'lucide-react'
+import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import {
+  FileText,
+  GitFork,
+  LoaderCircle,
+  Pencil,
+  RotateCcw,
+  X,
+  type LucideIcon
+} from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { Prose } from '@/shared/ui/code/Prose'
-import { Tip } from '@/shared/ui/common/Tip'
+import { CopyButton } from '@/shared/ui/common/CopyButton'
+import { IconAction, Tip } from '@/shared/ui/common/Tip'
+import { InlineNotice } from '@/shared/ui/feedback/Alert'
+import { Button } from '@/shared/ui/primitives/button'
+import { Checkbox } from '@/shared/ui/primitives/checkbox'
+import { Textarea } from '@/shared/ui/primitives/textarea'
 
 export type Attachment = { path: string; url?: string; uploading?: boolean }
+
+export interface MessageBubbleEditState {
+  /** File rewind preview for this turn; undefined while loading. */
+  preview?: { files: string[]; unavailable: string | null }
+  submitting?: boolean
+  error?: string
+  onSubmit(text: string, undoFiles: boolean): void
+  onCancel(): void
+}
 
 const IMAGE = /\.(png|jpe?g|webp|gif)$/i
 const base = (p: string): string => p.split(/[\\/]/).pop() ?? p
@@ -107,25 +129,64 @@ export function ContextChip({
   )
 }
 
-/** The user's message: right-aligned, plain text as typed, with its attachments under it. */
-export function MessageBubble({
-  children,
+function MessageBubbleEditor({
+  initialText,
   attachments,
+  editing,
   className
 }: {
-  children: string
+  initialText: string
   attachments?: Attachment[]
+  editing: MessageBubbleEditState
   className?: string
 }): ReactElement {
+  const [draft, setDraft] = useState(initialText)
+  const [undoFiles, setUndoFiles] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const undoId = useId()
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [])
+
+  const preview = editing.preview
+  const canUndoFiles = Boolean(preview && !preview.unavailable && preview.files.length > 0)
+  const effectiveUndo = canUndoFiles && undoFiles
+  const canSubmit = draft.trim().length > 0 && preview !== undefined && !editing.submitting
+
+  const submit = (): void => {
+    if (!canSubmit) return
+    editing.onSubmit(draft.trim(), effectiveUndo)
+  }
+
   return (
     <div
       className={cn(
-        'ml-auto flex w-fit max-w-[85%] flex-col gap-1.5 rounded-lg rounded-br-sm bg-surface-active px-3 py-2',
+        'ml-auto flex w-full max-w-[92%] flex-col gap-2 rounded-lg border border-border-default bg-surface-raised p-2.5',
         className
       )}
     >
-      <span className="sr-only">You said:</span>
-      <div className="break-words whitespace-pre-wrap select-text">{children}</div>
+      <Textarea
+        ref={textareaRef}
+        aria-label="Edit message"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        disabled={editing.submitting}
+        rows={3}
+        className="max-h-60 min-h-20 resize-y"
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            if (!editing.submitting) editing.onCancel()
+          } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault()
+            submit()
+          }
+        }}
+      />
       {attachments?.length ? (
         <div className="flex flex-wrap gap-1.5">
           {attachments.map((a) => (
@@ -133,6 +194,157 @@ export function MessageBubble({
           ))}
         </div>
       ) : null}
+      <div aria-live="polite" className="space-y-1 text-xs text-fg-secondary">
+        {!preview ? (
+          <p className="text-fg-muted">Checking build file changes…</p>
+        ) : preview.unavailable ? (
+          <p className="text-fg-muted">
+            Build file undo unavailable; only the conversation will rewind.
+          </p>
+        ) : preview.files.length > 0 ? (
+          <div className="space-y-1.5 rounded-md border border-border-subtle bg-surface-sunken p-2">
+            <label
+              htmlFor={undoId}
+              className="flex cursor-pointer items-center gap-2 text-sm text-fg"
+            >
+              <Checkbox
+                id={undoId}
+                checked={undoFiles}
+                disabled={editing.submitting}
+                onCheckedChange={(checked) => setUndoFiles(checked === true)}
+              />
+              <span>
+                Undo changes to {preview.files.length}{' '}
+                {preview.files.length === 1 ? 'build file' : 'build files'}
+              </span>
+            </label>
+            <ul className="max-h-24 overflow-auto pl-6 font-mono text-xs text-fg-secondary break-all">
+              {preview.files.map((file) => (
+                <li key={file}>{file}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+      {editing.error && <InlineNotice tone="danger">{editing.error}</InlineNotice>}
+      <div className="flex items-center justify-end gap-1.5">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          disabled={editing.submitting}
+          onClick={editing.onCancel}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant={effectiveUndo ? 'destructive' : 'default'}
+          disabled={!canSubmit}
+          onClick={submit}
+        >
+          {editing.submitting
+            ? effectiveUndo
+              ? 'Undoing and resending…'
+              : 'Resending…'
+            : effectiveUndo
+              ? 'Resend & undo files'
+              : 'Resend'}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** The user's message: right-aligned, plain text as typed, with attachments and hover/focus quick actions. */
+export function MessageBubble({
+  children,
+  attachments,
+  copyable = true,
+  onEdit,
+  onFork,
+  onRewind,
+  actionsDisabled = false,
+  editing,
+  className
+}: {
+  children: string
+  attachments?: Attachment[]
+  copyable?: boolean
+  onEdit?: () => void
+  onFork?: () => void
+  onRewind?: () => void
+  actionsDisabled?: boolean
+  editing?: MessageBubbleEditState
+  className?: string
+}): ReactElement {
+  if (editing)
+    return (
+      <MessageBubbleEditor
+        initialText={children}
+        attachments={attachments}
+        editing={editing}
+        className={className}
+      />
+    )
+  const hasActions = copyable || !!onEdit || !!onFork || !!onRewind
+  return (
+    <div
+      className={cn('group/message ml-auto flex max-w-[85%] flex-col items-end gap-0.5', className)}
+    >
+      <div className="flex w-fit max-w-full flex-col gap-1.5 rounded-lg rounded-br-sm bg-surface-active px-3 py-2">
+        <span className="sr-only">You said:</span>
+        <div className="min-w-0 max-w-full break-words whitespace-pre-wrap select-text">
+          {children}
+        </div>
+        {attachments?.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            {attachments.map((a) => (
+              <AttachmentChip key={a.path} file={a} />
+            ))}
+          </div>
+        ) : null}
+      </div>
+      {hasActions && (
+        <div
+          role="toolbar"
+          aria-label="Message actions"
+          className="flex items-center gap-0.5 opacity-0 transition-opacity duration-(--dur-fast) group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100"
+        >
+          {copyable && <CopyButton size="xs" text={children} label="Copy message" />}
+          {onEdit && (
+            <IconAction
+              size="xs"
+              icon={Pencil}
+              label="Edit message"
+              tip="Edit and resend from here"
+              disabled={actionsDisabled}
+              onClick={onEdit}
+            />
+          )}
+          {onFork && (
+            <IconAction
+              size="xs"
+              icon={GitFork}
+              label="Fork from here"
+              tip="Fork conversation after this turn"
+              disabled={actionsDisabled}
+              onClick={onFork}
+            />
+          )}
+          {onRewind && (
+            <IconAction
+              size="xs"
+              icon={RotateCcw}
+              label="Rewind to here"
+              tip="Rewind conversation to before this message"
+              disabled={actionsDisabled}
+              onClick={onRewind}
+            />
+          )}
+        </div>
+      )}
     </div>
   )
 }

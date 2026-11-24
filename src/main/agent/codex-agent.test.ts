@@ -294,7 +294,7 @@ describe('Codex app-server provider', () => {
     t.complete()
     expect(await t.agent.history(ID)).toEqual(
       expect.arrayContaining([
-        { type: 'user', id: 'user', text: 'hello' },
+        { type: 'user', id: 'user', text: 'hello', point: 'old-turn' },
         { type: 'text', id: 'answer', parent: null, text: 'world' }
       ])
     )
@@ -717,7 +717,7 @@ describe('Codex app-server provider', () => {
 
   it('forks history only through the turn before a rewind point', async () => {
     const t = setup()
-    await t.agent.send(t.send)
+    await expect(t.agent.send(t.send)).resolves.toBe('turn-1')
     t.complete()
     vi.mocked(t.conn.request).mockResolvedValueOnce({
       data: ['one', 'two'].map((id) => ({
@@ -733,6 +733,33 @@ describe('Codex app-server provider', () => {
       lastTurnId: 'one',
       excludeTurns: true
     })
+  })
+
+  it('forks through a target turn inclusive and tags history user messages with turn points', async () => {
+    const t = setup()
+    await t.agent.send(t.send)
+    t.complete()
+    const turns = ['one', 'two'].map((id) => ({
+      id,
+      status: 'completed',
+      items: [{ type: 'userMessage', id: `message:${id}`, content: [{ type: 'text', text: id }] }]
+    }))
+    vi.mocked(t.conn.request).mockResolvedValueOnce({ data: turns, nextCursor: null })
+    const history = await t.agent.history(ID)
+    expect(history.filter((m) => m.type === 'user')).toEqual([
+      { type: 'user', id: 'message:one', text: 'one', point: 'one' },
+      { type: 'user', id: 'message:two', text: 'two', point: 'two' }
+    ])
+    vi.mocked(t.conn.request).mockResolvedValueOnce({ data: turns, nextCursor: null })
+    await expect(t.agent.fork(ID, t.send.build, 'one')).resolves.toBe(ID2)
+    expect(t.conn.request).toHaveBeenCalledWith('thread/fork', {
+      threadId: ID,
+      lastTurnId: 'one',
+      excludeTurns: true
+    })
+    vi.mocked(t.conn.request).mockResolvedValueOnce({ data: turns, nextCursor: null })
+    await expect(t.agent.fork(ID, t.send.build, 'two')).resolves.toBe(ID2)
+    expect(t.conn.request).toHaveBeenLastCalledWith('thread/fork', { threadId: ID })
   })
 
   it('lists visible models with advertised defaults and supported efforts', async () => {

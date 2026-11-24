@@ -100,23 +100,59 @@ export default function AgentTranscript(): ReactElement {
   const [decided, setDecided] = useState<PermitDecision | null>(null)
   const [plan, setPlan] = useState<string>('open')
   const [quizResult, setQuizResult] = useState<string | null>(null)
+  const [msgText, setMsgText] = useState(
+    'Make the keep taller and give it a darker roof. The gatehouse stays as it is.'
+  )
+  const [msgEditing, setMsgEditing] = useState(false)
+  const [msgAction, setMsgAction] = useState<string | null>(null)
   const [started] = useState(() => Date.now() - 47_000)
   return (
     <div>
       <Sub
         title="Messages"
-        note="The user's message, the assistant's reply in chat prose, and system notes from the app."
+        note="The user's message (with hover/focus Copy, Edit, Fork and Rewind actions and inline editing), the assistant's reply in chat prose, and system notes from the app."
       >
         <Grid min="22rem">
-          <Cell label="A short exchange" className="flex flex-col gap-3">
+          <Cell
+            label={
+              msgAction
+                ? `A short exchange · ${msgAction} (demo)`
+                : 'A short exchange (hover or focus the bubble for actions)'
+            }
+            className="flex flex-col gap-3"
+          >
             <SystemNote>New session · stone_watchtower</SystemNote>
             <MessageBubble
               attachments={[
                 { path: 'builds/stone_watchtower/attachments/pasted-1730662800.png', url: hero },
                 { path: 'builds/stone_watchtower/refs/gatehouse_notes.md' }
               ]}
+              onEdit={() => setMsgEditing(true)}
+              onFork={() => setMsgAction('forked after this turn')}
+              onRewind={() => setMsgAction('opened Rewind dialog for this turn')}
+              editing={
+                msgEditing
+                  ? {
+                      preview: {
+                        files: [
+                          'builds/stone_watchtower/build.py',
+                          'builds/stone_watchtower/DESIGN.md'
+                        ],
+                        unavailable: null
+                      },
+                      onSubmit: (next, undoFiles) => {
+                        setMsgText(next)
+                        setMsgEditing(false)
+                        setMsgAction(
+                          undoFiles ? 'edited and undid 2 build files' : 'edited conversation only'
+                        )
+                      },
+                      onCancel: () => setMsgEditing(false)
+                    }
+                  : undefined
+              }
             >
-              Make the keep taller and give it a darker roof. The gatehouse stays as it is.
+              {msgText}
             </MessageBubble>
             <AssistantMessage>
               {
@@ -124,6 +160,28 @@ export default function AgentTranscript(): ReactElement {
               }
             </AssistantMessage>
             <SystemNote tone="error">The session ended: claude exited with code 1</SystemNote>
+          </Cell>
+          <Cell label="Inline edit with build-file undo preview" className="flex flex-col gap-3">
+            <MessageBubble
+              editing={{
+                preview: {
+                  files: ['builds/stone_watchtower/build.py', 'builds/stone_watchtower/roof.py'],
+                  unavailable: null
+                },
+                onSubmit: () => undefined,
+                onCancel: () => undefined
+              }}
+            >
+              Swap the roof from spruce to dark oak and raise the keep by 4 blocks.
+            </MessageBubble>
+            <MessageBubble
+              actionsDisabled
+              onEdit={() => undefined}
+              onFork={() => undefined}
+              onRewind={() => undefined}
+            >
+              Turn running — Copy stays active while Edit, Fork and Rewind disable.
+            </MessageBubble>
           </Cell>
           <Cell label="Narrow, long words" className="flex flex-col gap-3">
             <Narrow width={18.75}>

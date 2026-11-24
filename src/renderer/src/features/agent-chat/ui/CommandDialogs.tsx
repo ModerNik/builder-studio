@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react'
+import { useEffect, useRef, type ReactElement } from 'react'
 import type { AgentRewindPoint, AgentRewindPreview, AgentState } from '@shared/api'
 import { Button } from '@/shared/ui/primitives/button'
 import {
@@ -33,6 +33,14 @@ export function RewindDialog({
   onClose(): void
   onRewind(files: string[] | null): void
 }): ReactElement {
+  const selectedRef = useRef<HTMLLabelElement>(null)
+  const scrolled = useRef(false)
+  useEffect(() => {
+    if (!scrolled.current && point && points.length > 0 && selectedRef.current) {
+      scrolled.current = true
+      selectedRef.current.scrollIntoView({ block: 'nearest' })
+    }
+  }, [point, points.length])
   return (
     <Dialog
       open
@@ -67,6 +75,7 @@ export function RewindDialog({
           {points.map((p) => (
             <label
               key={p.id}
+              ref={p.id === point ? selectedRef : undefined}
               className="flex min-h-(--density-row) cursor-pointer items-center gap-2 rounded-md px-2 py-1 hover:bg-surface-hover"
             >
               <RadioGroupItem value={p.id} />

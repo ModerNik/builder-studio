@@ -776,7 +776,7 @@ export interface AgentSession {
 
 /** Provider-independent events. Native SDK/protocol payloads stay in main. */
 export type AgentMsg =
-  | { type: 'user'; id: string; text: string }
+  | { type: 'user'; id: string; text: string; point?: string }
   | {
       type: 'text'
       id: string
@@ -967,7 +967,7 @@ export interface StudioApi {
     cancelLogin(): Promise<void>
     hasApiKey(): Promise<boolean> // whether an Anthropic API key is saved; the key is never sent back
     setApiKey(key: string): Promise<void> // '' removes it
-    send(thread: string, a: AgentSend): Promise<void>
+    send(thread: string, a: AgentSend): Promise<string | undefined>
     interrupt(thread: string): Promise<void>
     close(thread: string): Promise<void> // ends the thread's live session; it stays resumable
     configure(thread: string, model: string | null, effort: Effort | null): Promise<void> // its live session too
@@ -977,7 +977,7 @@ export interface StudioApi {
     permit(thread: string, p: Permit): Promise<void>
     sessions(build: string): Promise<AgentSession[]> // tagged with the build, newest first
     history(ref: SessionRef): Promise<AgentMsg[]>
-    fork(ref: SessionRef, build: string): Promise<SessionRef>
+    fork(ref: SessionRef, build: string, point?: string): Promise<SessionRef>
     rewindPoints(ref: SessionRef): Promise<AgentRewindPoint[]>
     rewindPreview(ref: SessionRef, build: string, point: string): Promise<AgentRewindPreview>
     rewind(
