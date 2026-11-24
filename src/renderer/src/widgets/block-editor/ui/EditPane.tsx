@@ -79,6 +79,7 @@ export function EditPane({
         onUndo={e.undo}
         onRedo={e.redo}
         handEdits={e.history.layer.size}
+        save={e.save}
         onDiscard={e.discard}
         build={build}
       />

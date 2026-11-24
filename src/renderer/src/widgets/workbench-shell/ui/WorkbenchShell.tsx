@@ -1,15 +1,14 @@
-// The S3 Workbench shell: title bar, screen tabs with dock toggles, the screen with its docks, status bar.
+// The S3 Workbench shell: title bar, screen tabs with dock toggles, and the screen with its docks.
 // It renders whatever screen it is given; tiers come from its own width (container-based, not the window).
 //
 // Focus order (Tab), and F6 / Shift F6 between these regions:
 //   1. Skip link ("Skip to the 3D view") → the screen
-//   2. Title bar: home, breadcrumb and build switcher, search, job chip, setup chip, app links
+//   2. Title bar: home, breadcrumb and build switcher, search, setup chip, app links
 //   3. Screen tabs: one Tab stop, arrow keys inside, then More
 //   4. Dock toggles
 //   5. The screen (toolbar, then the 3D view)
 //   6. Right dock columns, left to right
 //   7. Bottom dock
-//   8. Status bar
 // Sheets and dialogs trap focus and give it back to their trigger.
 import './shell.css'
 import {
@@ -85,7 +84,6 @@ export function WorkbenchShell({
   screen,
   onScreenChange,
   panels,
-  status,
   skipLabel = 'Skip to the screen',
   shortcuts = true,
   preview,
@@ -100,8 +98,6 @@ export function WorkbenchShell({
   screen: string
   onScreenChange: (id: string) => void
   panels: WorkbenchPanel[]
-  /** null leaves out the status bar (Setup). */
-  status: ReactNode
   /** Names where the skip link goes, e.g. "Skip to the 3D view". */
   skipLabel?: string
   /** Register the shell's shortcuts (one shell per window does). */
@@ -218,7 +214,10 @@ export function WorkbenchShell({
 
   const Main = preview ? 'section' : 'main'
   const Header = preview ? 'div' : 'header'
-  const Footer = preview ? 'div' : 'footer'
+  const panelToggles = [
+    ...panels.filter((p) => p.side === 'right'),
+    ...panels.filter((p) => p.side === 'bottom')
+  ]
   const rightKey = layout.columns.map((c) => c.join('+')).join('|')
   // A shared dock uses the largest minimum of its panels.
   const minimumWidth = (id: string): number => {
@@ -295,13 +294,13 @@ export function WorkbenchShell({
             />
 
             {/* a landmark beside the screen tabs' nav, so nothing on the screen sits outside one */}
-            <nav aria-label="Panels" className="ml-auto flex shrink-0 items-center gap-0.5">
-              {panels
-                .filter((p) => p.side === 'right')
-                .map((p) => (
+            {panelToggles.length > 0 && (
+              <nav aria-label="Panels" className="ml-auto flex shrink-0 items-center gap-0.5">
+                {panelToggles.map((p) => (
                   <PanelToggle key={p.id} panel={p} />
                 ))}
-            </nav>
+              </nav>
+            )}
           </div>
         )}
 
@@ -386,17 +385,7 @@ export function WorkbenchShell({
           {width > 0 && createPortal(children, screenHost)}
         </div>
 
-        {status != null && (
-          <Footer
-            data-workbench-region=""
-            aria-label={preview ? 'Status bar' : undefined}
-            className="shrink-0"
-          >
-            {status}
-          </Footer>
-        )}
-
-        {!docked(tier) && (
+        {!docked(tier) && panels.length > 0 && (
           <PanelSheet
             panels={panels}
             tab={layout.sheet?.tab ?? null}

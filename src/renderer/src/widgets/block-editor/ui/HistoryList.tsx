@@ -1,7 +1,15 @@
 // The edit log (DESIGN › History list): oldest first, the current row marked, undone rows struck through and
 // still clickable. A click undoes or redoes to that row; Start is the build as the Workspace opened it.
 import { useState, type ReactElement } from 'react'
-import { FolderOpen, MoreHorizontal, Redo2, Trash2, Undo2, type LucideIcon } from 'lucide-react'
+import {
+  FolderOpen,
+  MoreHorizontal,
+  PencilLine,
+  Redo2,
+  Trash2,
+  Undo2,
+  type LucideIcon
+} from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { focusRing } from '@/shared/ui/common/styles'
 import { ConfirmDestructive } from '@/shared/ui/feedback/ConfirmDestructive'
@@ -13,7 +21,14 @@ import {
   DropdownMenuTrigger
 } from '@/shared/ui/primitives/dropdown-menu'
 import type { Edit } from '@/entities/block-edit/model/history'
+import type { SaveState } from '@/entities/block-edit/model/store'
 import { toolOf } from '../model/tools'
+
+const SAVE_WORD: Record<SaveState, string> = {
+  saved: 'saved',
+  saving: 'saving…',
+  failed: 'not saved'
+}
 
 export function HistoryList({
   edits,
@@ -22,6 +37,7 @@ export function HistoryList({
   onUndo,
   onRedo,
   handEdits,
+  save = 'saved',
   onDiscard,
   build,
   className
@@ -34,6 +50,8 @@ export function HistoryList({
   onRedo: () => void
   /** Cells the saved hand edits change. */
   handEdits: number
+  /** Whether the hand edits are saved, saving or failed to save. */
+  save?: SaveState
   onDiscard: () => void
   build: string
   className?: string
@@ -80,6 +98,23 @@ export function HistoryList({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+      {(handEdits > 0 || save !== 'saved') && (
+        <p
+          role="status"
+          aria-live="polite"
+          className={cn(
+            'flex items-center gap-1.5 text-xs',
+            save === 'failed' ? 'text-danger-text' : 'text-fg-secondary'
+          )}
+        >
+          <PencilLine aria-hidden="true" className="size-3.5 shrink-0" />
+          <span className="tabular-nums">
+            {handEdits.toLocaleString()} hand {handEdits === 1 ? 'edit' : 'edits'}
+          </span>
+          <span aria-hidden="true">·</span>
+          <span>{SAVE_WORD[save]}</span>
+        </p>
+      )}
       {edits.length ? (
         <ol className="flex flex-col">
           <Row icon={FolderOpen} label="Start" current={cursor === 0} onClick={() => onJump(0)} />

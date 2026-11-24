@@ -6,7 +6,7 @@ import { Maximize2, Minimize2, X, type LucideIcon } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import type { DockPanelSpec, DockSide, SheetSize } from '@/shared/lib/layout'
 import { useWorkbench } from '../model/context'
-import { IconButton } from '@/shared/ui/common/parts'
+import { IconButton, type TabBadgeTone } from '@/shared/ui/common/parts'
 import { focusRing } from '@/shared/ui/common/styles'
 import { useReturnFocus } from '@/shared/lib/focus'
 
@@ -17,8 +17,8 @@ export interface WorkbenchPanel extends DockPanelSpec {
   keys?: string
   badge?: number | 'dot'
   badgeLabel?: string
-  /** `attention` for a count of asks waiting on the user; */
-  badgeTone?: 'neutral' | 'attention'
+  /** `attention` for asks waiting on the user, `running` for live jobs, `danger` for failed jobs. */
+  badgeTone?: TabBadgeTone
   /** Default width (right) or height (bottom) as a length token, e.g. `--dock-assistant`. */
   size?: string
   content: ReactNode

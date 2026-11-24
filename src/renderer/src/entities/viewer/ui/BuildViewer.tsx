@@ -464,7 +464,7 @@ export function BuildViewer({
       })
       if (!obj || stale) return
       loadedSource.current = src
-      // the file's own size, for the slider and the status bar
+      // the file's own size, for the slider and Activity stats
       box.current = obj.box
       setProgress(null)
       latest.current.onStats?.({

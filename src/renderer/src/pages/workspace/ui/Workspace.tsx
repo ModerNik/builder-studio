@@ -1,6 +1,6 @@
 // The Workspace screen (G6.1 A, viewer-first): toolbar, canvas, Editor and Activity. Data and labels
 // live in lib/workspace.ts and lib/analysis.ts; the parts are in app/workspace/*.
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -88,31 +88,59 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   // the Editor and Activity are shell docks; this screen draws into them through portals
   const [editorHost, setEditorHost] = useState<HTMLElement | null>(null)
   const [activityHost, setActivityHost] = useState<HTMLElement | null>(null)
-  const [panels] = useState((): WorkbenchPanel[] => [
-    {
-      id: 'editor',
-      side: 'right',
-      title: 'Editor',
-      icon: PencilRuler,
-      keys: 'Ctrl+I',
-      size: '--dock-editor',
-      defaultOpen: true,
-      content: <div ref={setEditorHost} className="flex h-full min-h-0 flex-col" />
-    },
-    {
-      id: 'activity',
-      side: 'bottom',
-      title: 'Activity',
-      icon: Activity,
-      keys: 'Ctrl+`',
-      size: '--dock-activity',
-      content: <div ref={setActivityHost} className="h-full min-h-0" />
-    }
-  ])
+  const [editorContent] = useState(() => (
+    <div ref={setEditorHost} className="flex h-full min-h-0 flex-col" />
+  ))
+  const [activityContent] = useState(() => <div ref={setActivityHost} className="h-full min-h-0" />)
+  const activityBadge =
+    job?.state === 'running'
+      ? {
+          badge: 'dot' as const,
+          badgeTone: 'running' as const,
+          badgeLabel: job.stage
+            ? `${JOB_LABELS[job.spec.part]}: ${job.stage}`
+            : `${JOB_LABELS[job.spec.part]} running`
+        }
+      : job?.state === 'failed'
+        ? {
+            badge: 'dot' as const,
+            badgeTone: 'danger' as const,
+            badgeLabel: `${JOB_LABELS[job.spec.part]} failed`
+          }
+        : undefined
+  const activityBadgeTone = activityBadge?.badgeTone
+  const activityBadgeLabel = activityBadge?.badgeLabel
+  const panels = useMemo<WorkbenchPanel[]>(
+    () => [
+      {
+        id: 'editor',
+        side: 'right',
+        title: 'Editor',
+        icon: PencilRuler,
+        keys: 'Ctrl+I',
+        size: '--dock-editor',
+        defaultOpen: true,
+        content: editorContent
+      },
+      {
+        id: 'activity',
+        side: 'bottom',
+        title: 'Activity',
+        icon: Activity,
+        keys: 'Ctrl+`',
+        size: '--dock-activity',
+        badge: activityBadgeTone ? 'dot' : undefined,
+        badgeTone: activityBadgeTone,
+        badgeLabel: activityBadgeLabel,
+        content: activityContent
+      }
+    ],
+    [editorContent, activityContent, activityBadgeTone, activityBadgeLabel]
+  )
   useEffect(() => {
     setScreenPanels(panels)
-    return clearScreenPanels
   }, [panels])
+  useEffect(() => clearScreenPanels, [])
   const height = stats.dims?.[1] ?? 0
 
   // a version this session wrote opens at once

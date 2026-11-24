@@ -20,8 +20,8 @@ most recent change.
 
 Opening a build (`/build/<name>`) shows its versions, a large 3D view and the **Editor** panel. The
 screen tabs (Workspace, Review, Variants, Export, Location, Refs, Log) open the build's other screens,
-and the **Chat** and **Editor** buttons beside them show and hide those panels. **Activity** in the
-status bar (Ctrl \`) opens the build's job log.
+and the **Editor**, **Chat** and **Activity** (`Ctrl \``) buttons beside them show and hide those
+panels.
 
 ### Header
 
@@ -59,10 +59,11 @@ schematic again.
 ### Generating a draft
 
 **Generate draft** runs the engine's quick _proto_ job on `build.py` and renders a preview. The
-status bar shows the stage (generating blocks, checking blocks, removing hidden blocks, saving the
-schematic, creating preview images). **Activity** shows the result, time and the version's size in
-blocks, the full job log, and **Copy paste position**, which copies where the file goes in the world.
-**Esc** stops a running job after a confirm.
+**Activity** button beside the screen tabs shows a live indicator while it runs (and turns red if it
+fails). Open **Activity** (`Ctrl \``) to see the stage (generating blocks, checking blocks, removing
+hidden blocks, saving the schematic, creating preview images), the result, time and the version's
+size in blocks, the full job log, and **Copy paste position**, which copies where the file goes in
+the world. **Esc** stops a running job after a confirm.
 
 **Draft settings…** limits the draft to an area and names the output. Empty fields use the build's
 defaults, and your choices are remembered per build.
@@ -118,8 +119,8 @@ four tabs.
 Hand edits change blocks without touching `build.py`. They are saved in `builds/<name>/data/edits.json`,
 and every draft and export applies them last, over the code and imported parts, as the part
 **Hand edits**. Until the next draft the 3D view draws them over the newest version. You edit the
-newest version only; other versions and Compare show their files as they were made. The status bar
-shows how many blocks you changed and whether they are saved.
+newest version only; other versions and Compare show their files as they were made. **History** in
+the Edit tab shows how many blocks you changed and whether they are saved.
 
 | Tool          | Key | Does                                                                                                                                                                                                                                                          |
 | ------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

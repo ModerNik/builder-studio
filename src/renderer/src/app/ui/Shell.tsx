@@ -1,6 +1,5 @@
-// The app frame (S3 Workbench): title bar, the build's screen tabs and Assistant dock, status bar. App pages
-// (Builds, Settings, Documentation, Labs) get the same title bar and status bar with no tabs; the Assistant
-// is their only dock.
+// The app frame (S3 Workbench): title bar, the build's screen tabs and docks. App pages (Builds,
+// Settings, Documentation, Labs) get the same title bar with no tabs; the Assistant is their only dock.
 // The app-wide listeners (review requests, show / show_sheet, the MCP status report, toasts) are in
 // ../model/subscriptions.
 import { useEffect, useState, type ReactElement } from 'react'
@@ -20,23 +19,15 @@ import {
 import { WorkbenchShell } from '@/widgets/workbench-shell/ui/WorkbenchShell'
 import { PanelToggle } from '@/widgets/workbench-shell/ui/PanelToggle'
 import { TitleBar, type Crumb } from '@/widgets/workbench-shell/ui/TitleBar'
-import {
-  StatusBar,
-  type AssistantState,
-  type StatusJob
-} from '@/widgets/workbench-shell/ui/StatusBar'
 import { IconButton } from '@/shared/ui/common/parts'
 import { menuItem } from '@/shared/ui/common/styles'
 import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
-import { formatElapsed, useElapsed } from '@/shared/ui/common/time'
-import { useAvailability } from '@/entities/availability/model/availability'
 import { useBuilds } from '@/entities/build/model/builds'
-import { PART_LABEL, cancelJob, useJobs } from '@/entities/job/model/jobs'
+import { cancelJob, useJobs } from '@/entities/job/model/jobs'
 import { useReview } from '@/entities/review/model/review'
 import { useVariants } from '@/features/agent-chat/model/variants'
 import { useAgent, useAgentPrefs } from '@/features/agent-chat/model/agent'
-import { PROVIDER_TEXT } from '@/features/agent-chat/model/providers'
 import { STATE_LABEL, buildState, useGalleryDialog } from '@/entities/build/model/gallery'
 import { useShortcuts } from '@/shared/lib/shortcuts'
 import { useScreenPanels } from '@/widgets/workbench-shell/model/screenPanels'
@@ -45,7 +36,6 @@ import { AgentPanel } from '@/features/agent-chat/ui/Agent'
 import { SetupChip, SetupMenuItem } from '@/entities/availability/ui/SetupChip'
 import { useSetupNotices } from '@/entities/availability/model/setupFix'
 import { useAppSubscriptions } from '../model/subscriptions'
-import { useEdits } from '@/entities/block-edit/model/store'
 
 const SCREENS = [
   { id: 'workspace', label: 'Workspace' },
@@ -211,7 +201,6 @@ export function Shell(): ReactElement {
               }))
         }
         panels={panels}
-        status={<Status current={current} activity={!!current && screen === 'workspace'} />}
         skipLabel="Skip to the page"
       >
         <AssistantBridge />
@@ -233,77 +222,6 @@ function AssistantBridge(): null {
     useAgentPrefs.setState({ open: false })
   }, [asked, dock])
   return null
-}
-
-function Status({
-  current,
-  activity
-}: {
-  current: string | null
-  activity: boolean
-}): ReactElement {
-  const navigate = useNavigate()
-  const { dock } = useWorkbench()
-  const jobs = useJobs((s) => s.jobs)
-  const job = jobs.find((j) => j.state === 'running') ?? jobs[0]
-  const live = job?.state === 'running'
-  const elapsed = useElapsed(job?.started, live)
-  const availability = useAvailability()
-  const primary = useAgent((s) => s.primary)
-  const asks = useAgent((s) => Object.values(s.threads).reduce((n, t) => n + t.asks.length, 0))
-  const handCount = useEdits((s) => (s.build === current ? s.history.layer.size : 0))
-  const handSave = useEdits((s) => (s.build === current ? s.save : 'saved'))
-  const assistant: AssistantState =
-    primary.status === 'off'
-      ? 'off'
-      : asks
-        ? 'waiting'
-        : primary.status === 'idle'
-          ? 'idle'
-          : 'working'
-  const status: StatusJob | null = job
-    ? {
-        label: `${job.spec.build} · ${PART_LABEL[job.spec.part]}`,
-        stage: live ? job.stage : undefined,
-        elapsed: formatElapsed(
-          live ? elapsed : Math.round(((job.ended ?? job.started) - job.started) / 1000)
-        ),
-        state: job.state,
-        onStop: live ? () => cancelJob(job.id) : undefined
-      }
-    : null
-  // jobs are newest first; the build's Activity dock has the log, another build opens on its Workspace
-  const recent: StatusJob[] = jobs.slice(0, 4).map((j) => ({
-    label: `${j.spec.build} · ${PART_LABEL[j.spec.part]}`,
-    state: j.state,
-    // a running job's live clock is in the bar itself
-    elapsed: j.ended ? formatElapsed(Math.round((j.ended - j.started) / 1000)) : undefined,
-    onOpen: () =>
-      j.spec.build === current
-        ? dock({ type: 'open', id: 'activity' })
-        : void navigate({ to: '/build/$name', params: { name: j.spec.build } })
-  }))
-  return (
-    <StatusBar
-      activity={activity}
-      handEdits={
-        handCount || handSave !== 'saved' ? { count: handCount, save: handSave } : undefined
-      }
-      job={status}
-      recent={recent}
-      needsYou={asks}
-      onNeedsYou={() => useAgentPrefs.setState({ open: true })}
-      engine={
-        availability.data
-          ? availability.data.requirements.engine.ok
-            ? 'ready'
-            : 'offline'
-          : undefined
-      }
-      assistant={assistant}
-      assistantName={PROVIDER_TEXT[primary.provider].name}
-    />
-  )
 }
 
 function Palette({

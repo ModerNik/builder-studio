@@ -7,9 +7,12 @@ import { formatKeys } from '@/shared/lib/shortcuts'
 import { Tip } from './Tip'
 import { chromeButton } from './styles'
 
+export type TabBadgeTone = 'neutral' | 'attention' | 'running' | 'danger'
+
 /**
- * A count or a dot on a tab, with its meaning spelled out for screen readers. `attention` is for asks
- * waiting on the user ("Needs you"): the awaiting-approval amber, solid, so it reads at rail size.
+ * A count or a dot on a tab or panel toggle, with its meaning spelled out for screen readers.
+ * `attention` is for asks waiting on the user ("Needs you"): amber; `running` is a glowing working
+ * dot for a live build job; `danger` is for a failed job.
  */
 export function TabBadge({
   badge,
@@ -18,13 +21,21 @@ export function TabBadge({
 }: {
   badge: number | 'dot'
   label?: string
-  tone?: 'neutral' | 'attention'
+  tone?: TabBadgeTone
 }): ReactElement {
   return badge === 'dot' ? (
     <span
       className={cn(
-        'size-1.5 shrink-0 rounded-full',
-        tone === 'attention' ? 'bg-warning-solid' : 'bg-accent-solid'
+        tone === 'running'
+          ? 'working-dot'
+          : cn(
+              'size-1.5 shrink-0 rounded-full',
+              tone === 'attention'
+                ? 'bg-warning-solid'
+                : tone === 'danger'
+                  ? 'bg-danger-solid'
+                  : 'bg-accent-solid'
+            )
       )}
       role="img"
       aria-label={label ?? 'Needs attention'}
@@ -35,7 +46,9 @@ export function TabBadge({
         'min-w-4 rounded-full px-1 text-center text-2xs tabular-nums',
         tone === 'attention'
           ? 'bg-warning-solid font-semibold text-warning-on-solid'
-          : 'bg-surface-active text-fg-secondary'
+          : tone === 'danger'
+            ? 'bg-danger-solid font-semibold text-danger-on-solid'
+            : 'bg-surface-active text-fg-secondary'
       )}
     >
       <span aria-hidden="true">{badge > 99 ? '99+' : badge}</span>

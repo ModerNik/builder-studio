@@ -73,7 +73,6 @@ export function Setup(): ReactElement {
       screen=""
       onScreenChange={() => {}}
       panels={[]}
-      status={null}
       skipLabel="Skip to the setup step"
     >
       <div className="flex h-full min-h-0 flex-col md:flex-row">

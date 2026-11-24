@@ -33,7 +33,36 @@ export default function HistoryListSection(): ReactElement {
             onUndo={() => move(cursor - 1)}
             onRedo={() => move(cursor + 1)}
             handEdits={26}
+            save="saved"
             onDiscard={() => setCursor(0)}
+            build="stone_bridge"
+          />
+        </Specimen>
+        <Specimen label="Saving hand edits" className="w-[18.75rem] max-w-full">
+          <HistoryList
+            className="w-full"
+            edits={EDITS.slice(0, 1)}
+            cursor={1}
+            onJump={() => {}}
+            onUndo={() => {}}
+            onRedo={() => {}}
+            handEdits={1}
+            save="saving"
+            onDiscard={() => {}}
+            build="stone_bridge"
+          />
+        </Specimen>
+        <Specimen label="Save failed" className="w-[18.75rem] max-w-full">
+          <HistoryList
+            className="w-full"
+            edits={EDITS.slice(0, 2)}
+            cursor={2}
+            onJump={() => {}}
+            onUndo={() => {}}
+            onRedo={() => {}}
+            handEdits={240}
+            save="failed"
+            onDiscard={() => {}}
             build="stone_bridge"
           />
         </Specimen>
