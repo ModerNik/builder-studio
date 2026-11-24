@@ -27,6 +27,7 @@ import { WorldScene } from '../lib/WorldScene'
 import { WorldStreamer } from '../lib/WorldStreamer'
 import {
   boxDimensions,
+  buildBoxFromOrigin,
   centeredBox,
   computeGroundStats,
   normalizeBox,
@@ -126,6 +127,7 @@ export function WorldMapViewport({
     pending: 0
   })
   const [toast, setToast] = useState<{ msg: string; at: number }>({ msg: '', at: 0 })
+  const [buildSize, setBuildSize] = useState<Vec3>([16, 16, 16])
 
   // Latest prop refs for pointer/worker callbacks without tearing down WebGL context
   const propsRef = useRef({
@@ -134,6 +136,7 @@ export function WorldMapViewport({
     origin,
     rotation,
     margin,
+    buildSize,
     onAreaBoxChange,
     onOriginChange,
     onBuildSize,
@@ -146,6 +149,7 @@ export function WorldMapViewport({
       origin,
       rotation,
       margin,
+      buildSize,
       onAreaBoxChange,
       onOriginChange,
       onBuildSize,
@@ -177,7 +181,10 @@ export function WorldMapViewport({
     scene = new WorldScene(el, streamer, (ori) => setOrientation(ori))
     const overlay = new PlacementOverlay(scene, {
       onOriginDrag: (next) => propsRef.current.onOriginChange?.(next),
-      onBuildLoaded: (size) => propsRef.current.onBuildSize?.(size)
+      onBuildLoaded: (size) => {
+        setBuildSize(size)
+        propsRef.current.onBuildSize?.(size)
+      }
     })
 
     streamerRef.current = streamer
@@ -191,7 +198,8 @@ export function WorldMapViewport({
     function recomputeStats(): void {
       const p = propsRef.current
       if (!p.onGroundStats) return
-      const box = p.areaBox
+      const box =
+        p.mode === 'build' ? buildBoxFromOrigin(p.origin, p.buildSize, p.rotation) : p.areaBox
       if (!box) {
         p.onGroundStats(null)
         return
@@ -223,15 +231,21 @@ export function WorldMapViewport({
     let acquiredKey: string | null = null
     void (async () => {
       const colors = await loadWorldColors()
+      if (!active) return
       let res: Resources | null = null
       if (pack) {
         try {
-          acquiredKey = pack
-          res = await acquireResources(pack, async () => {
+          const loaded = await acquireResources(pack, async () => {
             const r = await fetch(pack)
             if (!r.ok) throw new Error('pack fetch failed')
             return loadResources(await r.arrayBuffer())
           })
+          if (!active) {
+            releaseResources(pack)
+            return
+          }
+          acquiredKey = pack
+          res = loaded
         } catch {
           res = null
         }
@@ -274,8 +288,9 @@ export function WorldMapViewport({
   // Sync placement overlay geometry & ground stats
   useEffect(() => {
     const streamer = streamerRef.current
+    const statsBox = mode === 'build' ? buildBoxFromOrigin(origin, buildSize, rotation) : areaBox
     const ground =
-      areaBox && streamer ? computeGroundStats(areaBox, (x, z) => streamer.heightAt(x, z)) : null
+      statsBox && streamer ? computeGroundStats(statsBox, (x, z) => streamer.heightAt(x, z)) : null
     onGroundStats?.(ground)
     overlayRef.current?.update({
       mode,
@@ -285,7 +300,7 @@ export function WorldMapViewport({
       margin,
       groundY: ground?.median ?? null
     })
-  }, [mode, areaBox, origin, rotation, margin, onGroundStats])
+  }, [mode, areaBox, origin, rotation, margin, buildSize, onGroundStats])
 
   const announce = (msg: string): void => setToast({ msg, at: Date.now() })
 
@@ -295,6 +310,7 @@ export function WorldMapViewport({
     if (view === 'top') {
       onCameraModeChange?.('top')
       scene.setCameraMode('top')
+      overlayRef.current?.syncCamera()
       return
     }
     if (cameraMode === 'top') onCameraModeChange?.('3d')

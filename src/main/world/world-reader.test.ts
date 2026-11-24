@@ -201,6 +201,87 @@ describe('world-reader & site-meta', () => {
     expect(await readFile(join(world, 'level.dat'))).toEqual(Buffer.from(levelBytes))
   })
 
+  it('slices off the solid Nether ceiling in hires chunks while keeping the cavern floor', async () => {
+    const root = join(
+      tmpdir(),
+      `bs-nether-test-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    )
+    dirs.push(root)
+    const world = join(root, 'save')
+    const cache = join(root, 'cache')
+    await mkdir(join(world, 'DIM-1', 'region'), { recursive: true })
+    await writeFile(join(world, 'level.dat'), makeLevelDat())
+
+    // Build a Nether chunk with a solid roof at Y=112..118 (sec 7), air at Y=48..111, floor at Y=40 (sec 2)
+    const parts: Uint8Array[] = []
+    const b = (v: number): void => void parts.push(new Uint8Array([v & 0xff]))
+    const s = (str: string): void => {
+      const bytes = new TextEncoder().encode(str)
+      const len = new Uint8Array(2)
+      new DataView(len.buffer).setInt16(0, bytes.length)
+      parts.push(len, bytes)
+    }
+    const i32 = (v: number): void => {
+      const buf = new Uint8Array(4)
+      new DataView(buf.buffer).setInt32(0, v)
+      parts.push(buf)
+    }
+    const tag = (t: number, name: string): void => {
+      b(t)
+      s(name)
+    }
+    tag(10, '')
+    tag(3, 'DataVersion')
+    i32(4189)
+    tag(9, 'sections')
+    b(10)
+    i32(2)
+    // Section Y=2 (y=32..47): uniform netherrack floor
+    tag(1, 'Y')
+    b(2)
+    tag(10, 'block_states')
+    tag(9, 'palette')
+    b(10)
+    i32(1)
+    tag(8, 'Name')
+    s('minecraft:netherrack')
+    b(0)
+    b(0)
+    b(0)
+    // Section Y=7 (y=112..127): uniform netherrack roof
+    tag(1, 'Y')
+    b(7)
+    tag(10, 'block_states')
+    tag(9, 'palette')
+    b(10)
+    i32(1)
+    tag(8, 'Name')
+    s('minecraft:netherrack')
+    b(0)
+    b(0)
+    b(0)
+    b(0)
+
+    const total = parts.reduce((sum, p) => sum + p.length, 0)
+    const chunkBytes = new Uint8Array(total)
+    let off = 0
+    for (const p of parts) {
+      chunkBytes.set(p, off)
+      off += p.length
+    }
+
+    await writeFile(join(world, 'DIM-1', 'region', 'r.0.0.mca'), makeRegionFile(chunkBytes))
+    const hiBuf = await readHiresChunk(world, 'nether', 0, 0, cache)
+    expect(hiBuf).not.toBeNull()
+    const hi = decodeHiresChunk(new Uint8Array(hiBuf!).buffer)
+    expect(hi.surfaceY[0]).toBe(47)
+    // Roof at Y=115 must be cleared (air = 0), floor at Y=47 must remain solid
+    const roofLy = 115 - hi.minY
+    const floorLy = 47 - hi.minY
+    expect(hi.blocks[(roofLy << 8) | 0]).toBe(0)
+    expect(hi.blocks[(floorLy << 8) | 0]).toBeGreaterThan(0)
+  })
+
   it('persists site.json and updates top-level ORIGIN in build.py while keeping inline comments', async () => {
     const ws = join(tmpdir(), `bs-meta-test-${Date.now()}-${Math.random().toString(16).slice(2)}`)
     dirs.push(ws)

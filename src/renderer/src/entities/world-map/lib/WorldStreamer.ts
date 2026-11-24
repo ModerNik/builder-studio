@@ -10,7 +10,13 @@ import {
   TRANSLUCENT,
   type Resources
 } from '@/entities/viewer/lib/render/resources'
-import { buildBlockAtlasMap, loadWorldColors, type BlockAtlasMap, type Rgb } from './color-table'
+import {
+  buildBlockAtlasMap,
+  FALLBACK_COLORS,
+  loadWorldColors,
+  type BlockAtlasMap,
+  type Rgb
+} from './color-table'
 import type { HiresMeshResult, LowresMeshResult, MeshBucketBuffer } from './world-mesher.worker'
 import type { CameraMode, StreamStats, WorldDataSource } from '../model/types'
 
@@ -98,7 +104,8 @@ export class WorldStreamer {
   private inflightHires = new Map<string, AbortController>()
 
   private hiresMaterials: THREE.MeshLambertMaterial[]
-  private colors: Record<string, Rgb> = {}
+  private resources: Resources | null = null
+  private colors: Record<string, Rgb> = { ...FALLBACK_COLORS }
   private atlas: BlockAtlasMap | null = null
   private generation = 0
   private tick = 0
@@ -115,6 +122,9 @@ export class WorldStreamer {
     void loadWorldColors().then((c) => {
       if (this.disposed) return
       this.colors = c
+      if (this.resources) {
+        this.atlas = buildBlockAtlasMap(this.resources, Object.keys(this.colors))
+      }
       this.broadcastWorkerInit()
     })
   }
@@ -161,6 +171,7 @@ export class WorldStreamer {
   /** Attach or update Builder Studio's jar texture pack resources for textured 3D voxel chunks. */
   setResources(res: Resources | null): void {
     const prevMats = this.hiresMaterials
+    this.resources = res
     this.hiresMaterials = this.createHiresMaterials(res)
     this.atlas = buildBlockAtlasMap(res, Object.keys(this.colors))
     this.broadcastWorkerInit()

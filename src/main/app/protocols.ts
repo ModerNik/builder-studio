@@ -38,6 +38,14 @@ async function serve(file: string | null): Promise<Response> {
   return new Response(res.body, { status: 200, headers })
 }
 
+const INT_PARAM_RE = /^-?\d+$/
+
+function parseIntParam(raw: string | null): number | null {
+  if (raw === null || !INT_PARAM_RE.test(raw)) return null
+  const n = Number(raw)
+  return Number.isSafeInteger(n) ? n : null
+}
+
 /** After app ready. */
 export function handleProtocols(): void {
   protocol.handle('build', (req) => {
@@ -67,9 +75,9 @@ export function handleProtocols(): void {
       }
       const { cache } = resolved()
       if (url.pathname === '/lowres') {
-        const rx = Number(url.searchParams.get('rx'))
-        const rz = Number(url.searchParams.get('rz'))
-        if (!Number.isInteger(rx) || !Number.isInteger(rz)) {
+        const rx = parseIntParam(url.searchParams.get('rx'))
+        const rz = parseIntParam(url.searchParams.get('rz'))
+        if (rx === null || rz === null) {
           return new Response('bad params', { status: 400, headers: cors })
         }
         const bytes = await readLowresTile(world, dimRes.data, rx, rz, cache)
@@ -80,9 +88,9 @@ export function handleProtocols(): void {
         })
       }
       if (url.pathname === '/hires') {
-        const cx = Number(url.searchParams.get('cx'))
-        const cz = Number(url.searchParams.get('cz'))
-        if (!Number.isInteger(cx) || !Number.isInteger(cz)) {
+        const cx = parseIntParam(url.searchParams.get('cx'))
+        const cz = parseIntParam(url.searchParams.get('cz'))
+        if (cx === null || cz === null) {
           return new Response('bad params', { status: 400, headers: cors })
         }
         const bytes = await readHiresChunk(world, dimRes.data, cx, cz, cache)

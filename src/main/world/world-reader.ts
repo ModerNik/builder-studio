@@ -2,7 +2,7 @@
 // Never opens live saves for writing: copies region files to <cache>/world-cache/ on mtime/size change.
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
-import { copyFile, mkdir, readdir, readFile, stat, writeFile } from 'fs/promises'
+import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'fs/promises'
 import { basename, join } from 'path'
 import type { WorldDimension, WorldInfo } from '@shared/api'
 import {
@@ -196,6 +196,18 @@ function worldCacheKey(worldPath: string): string {
 const REGION_MEM_CAP = 12
 const regionMem = new Map<string, { stamp: string; bytes: Uint8Array }>()
 const copyInflight = new Map<string, Promise<{ stamp: string; path: string } | null>>()
+const lowresInflight = new Map<string, Promise<Uint8Array | null>>()
+
+async function writeFileAtomic(dst: string, data: Uint8Array | string): Promise<void> {
+  const tmp = `${dst}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`
+  try {
+    await writeFile(tmp, data)
+    await rename(tmp, dst)
+  } catch (err) {
+    await unlink(tmp).catch(() => {})
+    throw err
+  }
+}
 
 /** Ensure an up-to-date read-only copy of r.<rx>.<rz>.mca exists in cacheRoot and return its path + stamp. */
 export async function ensureRegionSnapshot(
@@ -216,9 +228,8 @@ export async function ensureRegionSnapshot(
   const dir = join(cacheRoot, 'world-cache', worldCacheKey(worldPath), dim)
   const dst = join(dir, fileName)
   const metaPath = `${dst}.stamp`
-  const lockKey = `${dst}:${stamp}`
 
-  const existing = copyInflight.get(lockKey)
+  const existing = copyInflight.get(dst)
   if (existing) return existing
 
   const task = (async () => {
@@ -227,16 +238,23 @@ export async function ensureRegionSnapshot(
       return { stamp, path: dst }
     }
     await mkdir(dir, { recursive: true })
-    await copyFile(src, dst)
-    await writeFile(metaPath, stamp, 'utf8')
+    const tmp = `${dst}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`
+    try {
+      await copyFile(src, tmp)
+      await rename(tmp, dst)
+    } catch (err) {
+      await unlink(tmp).catch(() => {})
+      throw err
+    }
+    await writeFileAtomic(metaPath, stamp)
     return { stamp, path: dst }
   })()
 
-  copyInflight.set(lockKey, task)
+  copyInflight.set(dst, task)
   try {
     return await task
   } finally {
-    copyInflight.delete(lockKey)
+    copyInflight.delete(dst)
   }
 }
 
@@ -307,147 +325,160 @@ export async function readLowresTile(
   if (existsSync(tilePath)) {
     return new Uint8Array(await readFile(tilePath))
   }
+  const inflight = lowresInflight.get(tilePath)
+  if (inflight) return inflight
 
-  const loaded = await loadRegionBytes(worldPath, dim, rx, rz, cacheRoot)
-  if (!loaded) return null
-  const region = loaded.bytes
+  const task = (async (): Promise<Uint8Array | null> => {
+    const loaded = await loadRegionBytes(worldPath, dim, rx, rz, cacheRoot)
+    if (!loaded) return null
+    const region = loaded.bytes
 
-  const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
-  const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
-  const topBlock = new Uint16Array(LOWRES_CELLS)
-  const flags = new Uint8Array(LOWRES_CELLS)
-  const palMap = new Map<string, number>([['minecraft:air', 0]])
-  const palette = ['minecraft:air']
+    const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+    const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+    const topBlock = new Uint16Array(LOWRES_CELLS)
+    const flags = new Uint8Array(LOWRES_CELLS)
+    const palMap = new Map<string, number>([['minecraft:air', 0]])
+    const palette = ['minecraft:air']
 
-  const intern = (raw: string): number => {
-    const clean = stripProps(raw)
-    let id = palMap.get(clean)
-    if (id === undefined) {
-      id = palette.length
-      palette.push(clean)
-      palMap.set(clean, id)
-    }
-    return id
-  }
-
-  const nether = dim === 'nether'
-
-  for (let lcz = 0; lcz < 32; lcz++) {
-    for (let lcx = 0; lcx < 32; lcx++) {
-      const chunk = readRegionChunk(region, lcx, lcz)
-      if (!chunk) continue
-      const sections = decodeChunkSections(chunk)
-      if (!sections.length) continue
-
-      const bySecY = new Map<number, DecodedSection>()
-      let secMinY = 320
-      let secMaxY = -64
-      for (const s of sections) {
-        bySecY.set(s.sectionY, s)
-        secMinY = Math.min(secMinY, s.sectionY * 16)
-        secMaxY = Math.max(secMaxY, s.sectionY * 16 + 15)
+    const intern = (raw: string): number => {
+      const clean = stripProps(raw)
+      let id = palMap.get(clean)
+      if (id === undefined) {
+        id = palette.length
+        palette.push(clean)
+        palMap.set(clean, id)
       }
+      return id
+    }
 
-      const wsHm = nether ? null : readHeightmap(chunk, 'WORLD_SURFACE')
-      const ofHm = nether ? null : readHeightmap(chunk, 'OCEAN_FLOOR')
-      const bPreset = biomePreset(readChunkBiome(chunk)) << 4
+    const nether = dim === 'nether'
 
-      // Sample 8x8 cells per chunk (step = 2 blocks)
-      for (let dz = 0; dz < 16; dz += LOWRES_STEP) {
-        for (let dx = 0; dx < 16; dx += LOWRES_STEP) {
-          const gx = (lcx * 16 + dx) / LOWRES_STEP
-          const gz = (lcz * 16 + dz) / LOWRES_STEP
-          const cellIdx = gz * LOWRES_GRID + gx
+    for (let lcz = 0; lcz < 32; lcz++) {
+      for (let lcx = 0; lcx < 32; lcx++) {
+        const chunk = readRegionChunk(region, lcx, lcz)
+        if (!chunk) continue
+        const sections = decodeChunkSections(chunk)
+        if (!sections.length) continue
 
-          let y = NO_HEIGHT
-          let state = 'minecraft:air'
-          let floorY = NO_HEIGHT
-          let floorState = 'minecraft:air'
+        const bySecY = new Map<number, DecodedSection>()
+        let secMinY = 320
+        let secMaxY = -64
+        for (const s of sections) {
+          bySecY.set(s.sectionY, s)
+          secMinY = Math.min(secMinY, s.sectionY * 16)
+          secMaxY = Math.max(secMaxY, s.sectionY * 16 + 15)
+        }
 
-          if (nether) {
-            // Slice off Nether bedrock roof: scan down from the first open air pocket below Y=118
-            let scanStart = Math.min(118, secMaxY)
-            while (scanStart > 28) {
-              const sec = bySecY.get(scanStart >> 4)
-              if (!sec || isAir(blockAtSection(sec, dx, scanStart & 15, dz))) break
-              scanStart--
-            }
-            const hit = scanColumnDown(bySecY, dx, dz, scanStart, Math.max(0, secMinY))
-            if (hit) {
-              y = hit.y
-              state = hit.state
-              floorY = hit.y
-              floorState = hit.state
-            }
-          } else {
-            const hmY = wsHm ? wsHm[dz * 16 + dx] : NO_HEIGHT
-            if (wsHm && hmY >= secMinY && hmY <= secMaxY) {
-              const sec = bySecY.get(hmY >> 4)
-              const st = sec ? blockAtSection(sec, dx, hmY & 15, dz) : 'minecraft:air'
-              if (!isAir(st)) {
-                y = hmY
-                state = st
+        const wsHm = nether ? null : readHeightmap(chunk, 'WORLD_SURFACE')
+        const ofHm = nether ? null : readHeightmap(chunk, 'OCEAN_FLOOR')
+        const bPreset = biomePreset(readChunkBiome(chunk)) << 4
+
+        // Sample 8x8 cells per chunk (step = 2 blocks)
+        for (let dz = 0; dz < 16; dz += LOWRES_STEP) {
+          for (let dx = 0; dx < 16; dx += LOWRES_STEP) {
+            const gx = (lcx * 16 + dx) / LOWRES_STEP
+            const gz = (lcz * 16 + dz) / LOWRES_STEP
+            const cellIdx = gz * LOWRES_GRID + gx
+
+            let y = NO_HEIGHT
+            let state = 'minecraft:air'
+            let floorY = NO_HEIGHT
+            let floorState = 'minecraft:air'
+
+            if (nether) {
+              // Slice off Nether bedrock roof: scan down from the first open air pocket below Y=118
+              let scanStart = Math.min(118, secMaxY)
+              while (scanStart > 28) {
+                const sec = bySecY.get(scanStart >> 4)
+                if (!sec || isAir(blockAtSection(sec, dx, scanStart & 15, dz))) break
+                scanStart--
               }
-            }
-            if (y === NO_HEIGHT) {
-              const hit = scanColumnDown(bySecY, dx, dz, secMaxY, secMinY)
+              const hit = scanColumnDown(bySecY, dx, dz, scanStart, Math.max(0, secMinY))
               if (hit) {
                 y = hit.y
                 state = hit.state
+                floorY = hit.y
+                floorState = hit.state
               }
-            }
-            if (y !== NO_HEIGHT) {
-              floorY = y
-              floorState = state
-              if (WATER_RE.test(state)) {
-                const candidate = ofHm ? ofHm[dz * 16 + dx] : NO_HEIGHT
-                if (candidate >= secMinY && candidate < y) {
-                  const fSec = bySecY.get(candidate >> 4)
-                  const fSt = fSec ? blockAtSection(fSec, dx, candidate & 15, dz) : 'minecraft:sand'
-                  floorY = candidate
-                  floorState = !isAir(fSt) && !WATER_RE.test(fSt) ? fSt : 'minecraft:sand'
-                } else {
-                  floorY = Math.max(secMinY, y - 4)
-                  floorState = 'minecraft:sand'
+            } else {
+              const hmY = wsHm ? wsHm[dz * 16 + dx] : NO_HEIGHT
+              if (wsHm && hmY >= secMinY && hmY <= secMaxY) {
+                const sec = bySecY.get(hmY >> 4)
+                const st = sec ? blockAtSection(sec, dx, hmY & 15, dz) : 'minecraft:air'
+                if (!isAir(st)) {
+                  y = hmY
+                  state = st
+                }
+              }
+              if (y === NO_HEIGHT) {
+                const hit = scanColumnDown(bySecY, dx, dz, secMaxY, secMinY)
+                if (hit) {
+                  y = hit.y
+                  state = hit.state
+                }
+              }
+              if (y !== NO_HEIGHT) {
+                floorY = y
+                floorState = state
+                if (WATER_RE.test(state)) {
+                  const candidate = ofHm ? ofHm[dz * 16 + dx] : NO_HEIGHT
+                  if (candidate >= secMinY && candidate < y) {
+                    const fSec = bySecY.get(candidate >> 4)
+                    const fSt = fSec
+                      ? blockAtSection(fSec, dx, candidate & 15, dz)
+                      : 'minecraft:sand'
+                    floorY = candidate
+                    floorState = !isAir(fSt) && !WATER_RE.test(fSt) ? fSt : 'minecraft:sand'
+                  } else {
+                    floorY = Math.max(secMinY, y - 4)
+                    floorState = 'minecraft:sand'
+                  }
                 }
               }
             }
-          }
 
-          if (y === NO_HEIGHT) continue
-          surfaceY[cellIdx] = y
-          oceanFloorY[cellIdx] = floorY
+            if (y === NO_HEIGHT) continue
+            surfaceY[cellIdx] = y
+            oceanFloorY[cellIdx] = floorY
 
-          let fl = bPreset
-          if (WATER_RE.test(state)) {
-            fl |= FLAG_WATER
-            topBlock[cellIdx] = intern(floorState)
-          } else {
-            if (LAVA_RE.test(state)) fl |= FLAG_LAVA
-            else if (LEAVES_RE.test(state)) fl |= FLAG_FOLIAGE
-            else if (GRASS_RE.test(state)) fl |= FLAG_GRASS
-            topBlock[cellIdx] = intern(state)
+            let fl = bPreset
+            if (WATER_RE.test(state)) {
+              fl |= FLAG_WATER
+              topBlock[cellIdx] = intern(floorState)
+            } else {
+              if (LAVA_RE.test(state)) fl |= FLAG_LAVA
+              else if (LEAVES_RE.test(state)) fl |= FLAG_FOLIAGE
+              else if (GRASS_RE.test(state)) fl |= FLAG_GRASS
+              topBlock[cellIdx] = intern(state)
+            }
+            flags[cellIdx] = fl
           }
-          flags[cellIdx] = fl
         }
       }
     }
-  }
 
-  const encoded = encodeLowresTile({
-    rx,
-    rz,
-    step: LOWRES_STEP,
-    grid: LOWRES_GRID,
-    palette,
-    surfaceY,
-    oceanFloorY,
-    topBlock,
-    flags
-  })
-  // Cache asynchronously without failing the response if disk write errors
-  void writeFile(tilePath, encoded).catch(() => {})
-  return encoded
+    const encoded = encodeLowresTile({
+      rx,
+      rz,
+      step: LOWRES_STEP,
+      grid: LOWRES_GRID,
+      palette,
+      surfaceY,
+      oceanFloorY,
+      topBlock,
+      flags
+    })
+    // Cache atomically without failing the response if disk write errors
+    void writeFileAtomic(tilePath, encoded).catch(() => {})
+    return encoded
+  })()
+
+  lowresInflight.set(tilePath, task)
+  try {
+    return await task
+  } finally {
+    lowresInflight.delete(tilePath)
+  }
 }
 
 /** Extract a LOD-0 hires 16x16 chunk's exposed vertical block band as a compact binary buffer. */
@@ -479,6 +510,7 @@ export async function readHiresChunk(
 
   const nether = dim === 'nether'
   const surfaceY = new Int16Array(256).fill(NO_HEIGHT)
+  const roofCut = nether ? new Int16Array(256).fill(NO_HEIGHT) : null
   let minBandY = chunkTop
   let maxBandY = chunkBot
 
@@ -494,6 +526,7 @@ export async function readHiresChunk(
           if (!sec || isAir(blockAtSection(sec, lx, scanStart & 15, lz))) break
           scanStart--
         }
+        roofCut![lz * 16 + lx] = scanStart
         const hit = scanColumnDown(bySecY, lx, lz, scanStart, minBandY)
         if (hit) surfaceY[lz * 16 + lx] = hit.y
       }
@@ -570,7 +603,13 @@ export async function readHiresChunk(
       if (uniform === 0) continue
       for (let y = yStart; y <= yEnd; y++) {
         const base = (y - minY) * 256
-        blocks.fill(uniform, base, base + 256)
+        if (!roofCut) {
+          blocks.fill(uniform, base, base + 256)
+        } else {
+          for (let i = 0; i < 256; i++) {
+            if (y <= roofCut[i]) blocks[base + i] = uniform
+          }
+        }
       }
       continue
     }
@@ -579,6 +618,7 @@ export async function readHiresChunk(
       const srcBase = (y - sy0) * 256
       const dstBase = (y - minY) * 256
       for (let i = 0; i < 256; i++) {
+        if (roofCut && y > roofCut[i]) continue
         const v = lut[sec.indices[srcBase + i]]
         if (v !== 0) blocks[dstBase + i] = v
       }

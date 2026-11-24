@@ -82,7 +82,10 @@ export function useSiteLocation(name: string, target: string, versions: BuildVer
 
   // Resolve active world automatically: user choice -> saved site.json -> localStorage -> first detected world
   const world =
-    worldOverride ?? savedMeta.data?.world ?? (rememberedWorld || worlds.data?.[0]?.path || '')
+    worldOverride ??
+    (savedMeta.isPending
+      ? ''
+      : (savedMeta.data?.world ?? (rememberedWorld || worlds.data?.[0]?.path || '')))
 
   // Persist last selected world
   useEffect(() => {
@@ -137,7 +140,7 @@ export function useSiteLocation(name: string, target: string, versions: BuildVer
   // Snap camera and seed default placement when opening a world/dimension
   useEffect(() => {
     const info = worldInfo.data
-    if (!info) return
+    if (!info || savedMeta.isPending) return
     const key = `${info.path}::${dimension}`
     if (initializedKeyRef.current === key) return
     initializedKeyRef.current = key
@@ -170,7 +173,7 @@ export function useSiteLocation(name: string, target: string, versions: BuildVer
       snap: true,
       seq: seqRef.current++
     })
-  }, [worldInfo.data, dimension, savedMeta.data])
+  }, [worldInfo.data, dimension, savedMeta.data, savedMeta.isPending])
 
   const source: WorldDataSource | null = useMemo(() => {
     if (!worldInfo.data) return null
@@ -292,6 +295,7 @@ export function useSiteLocation(name: string, target: string, versions: BuildVer
 
   return {
     worlds,
+    savedMetaPending: savedMeta.isPending,
     world,
     setWorld: (w: string) => {
       setWorldOverride(w)

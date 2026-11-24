@@ -153,7 +153,7 @@ function colorForBlock(short: string, flags: number): Rgb {
 }
 
 /** Build a crisp volumetric 3D lowres terrain + translucent water mesh from a 256x256 region tile. */
-function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
+export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
   const tile = decodeLowresTile(buffer)
   const { rx, rz, grid, step, palette, surfaceY, oceanFloorY, topBlock, flags } = tile
   const terrainBuf = new QuadBuf(65536)
@@ -169,8 +169,8 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
     const rowOff = gz * grid
     const wz0 = oz + gz * step
     const wz1 = wz0 + step
-    const v0 = gz * invGrid
-    const v1 = (gz + 1) * invGrid
+    // Cell-center UV keeps chunk-mask sampling strictly inside this cell's 32x32 chunk texel
+    const vc = (gz + 0.5) * invGrid
 
     for (let gx = 0; gx < grid; gx++) {
       const idx = rowOff + gx
@@ -182,8 +182,7 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
       const groundY = isWater ? oceanFloorY[idx] : sy
       const wx0 = ox + gx * step
       const wx1 = wx0 + step
-      const u0 = gx * invGrid
-      const u1 = (gx + 1) * invGrid
+      const uc = (gx + 0.5) * invGrid
 
       const short = shorts[topBlock[idx]] ?? 'stone'
       let [r, g, b] = colorForBlock(short, isWater ? fl & ~FLAG_WATER : fl)
@@ -212,10 +211,10 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
           0,
           1,
           0,
-          u0,
-          v0,
-          u1,
-          v1,
+          uc,
+          vc,
+          uc,
+          vc,
           wr * depthTint,
           wg * depthTint,
           wb * depthTint
@@ -232,10 +231,10 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         0,
         1,
         0,
-        u0,
-        v0,
-        u1,
-        v1,
+        uc,
+        vc,
+        uc,
+        vc,
         Math.min(1, r * shade),
         Math.min(1, g * shade),
         Math.min(1, b * shade)
@@ -267,10 +266,10 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
           1,
           0,
           0,
-          u0,
-          v0,
-          u1,
-          v1,
+          uc,
+          vc,
+          uc,
+          vc,
           sr,
           sg,
           sb
@@ -295,10 +294,10 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
           -1,
           0,
           0,
-          u0,
-          v0,
-          u1,
-          v1,
+          uc,
+          vc,
+          uc,
+          vc,
           sr,
           sg,
           sb
@@ -316,17 +315,17 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         const bot = Math.max(yS + 1, groundY - 24)
         const [sr, sg, sb] = skirtColor(0.84)
         terrainBuf.pushQuad(
-          [wx0, topY, wz1],
           [wx1, topY, wz1],
-          [wx1, bot, wz1],
+          [wx0, topY, wz1],
           [wx0, bot, wz1],
+          [wx1, bot, wz1],
           0,
           0,
           1,
-          u0,
-          v0,
-          u1,
-          v1,
+          uc,
+          vc,
+          uc,
+          vc,
           sr,
           sg,
           sb
@@ -344,17 +343,17 @@ function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         const bot = Math.max(yN + 1, groundY - 24)
         const [sr, sg, sb] = skirtColor(0.76)
         terrainBuf.pushQuad(
-          [wx1, topY, wz0],
           [wx0, topY, wz0],
-          [wx0, bot, wz0],
+          [wx1, topY, wz0],
           [wx1, bot, wz0],
+          [wx0, bot, wz0],
           0,
           0,
           -1,
-          u0,
-          v0,
-          u1,
-          v1,
+          uc,
+          vc,
+          uc,
+          vc,
           sr,
           sg,
           sb
@@ -408,7 +407,7 @@ function aoFactor(side1: boolean, side2: boolean, corner: boolean): number {
 }
 
 /** Build full 3D face-culled, AO-shaded, textured voxel geometry for a 16x16 hires chunk. */
-function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
+export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
   const chunk = decodeHiresChunk(buffer)
   const { cx, cz, minY, height, palette, surfaceY, blocks } = chunk
   const bufs: [QuadBuf, QuadBuf, QuadBuf, QuadBuf] = [
@@ -671,42 +670,42 @@ function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
           )
         }
 
-        // +Z (south)
+        // +Z (south) — CCW viewed from +Z: top-right -> top-left -> bottom-left -> bottom-right
         if (!hiddenBy(m, at(lx, ly, lz + 1))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const az = lz + 1
           const a0 = aoFactor(
-            occludes(lx - 1, ly, az),
-            occludes(lx, ly + 1, az),
-            occludes(lx - 1, ly + 1, az)
-          )
-          const a1 = aoFactor(
             occludes(lx + 1, ly, az),
             occludes(lx, ly + 1, az),
             occludes(lx + 1, ly + 1, az)
           )
-          const a2 = aoFactor(
-            occludes(lx + 1, ly, az),
-            occludes(lx, ly - 1, az),
-            occludes(lx + 1, ly - 1, az)
+          const a1 = aoFactor(
+            occludes(lx - 1, ly, az),
+            occludes(lx, ly + 1, az),
+            occludes(lx - 1, ly + 1, az)
           )
-          const a3 = aoFactor(
+          const a2 = aoFactor(
             occludes(lx - 1, ly, az),
             occludes(lx, ly - 1, az),
             occludes(lx - 1, ly - 1, az)
           )
+          const a3 = aoFactor(
+            occludes(lx + 1, ly, az),
+            occludes(lx, ly - 1, az),
+            occludes(lx + 1, ly - 1, az)
+          )
           dst.pushQuad(
-            [wx, topY, wz + 1],
             [wx + 1, topY, wz + 1],
-            [wx + 1, wy, wz + 1],
+            [wx, topY, wz + 1],
             [wx, wy, wz + 1],
+            [wx + 1, wy, wz + 1],
             0,
             0,
             1,
-            u0,
-            v0,
             u1,
+            v0,
+            u0,
             v1,
             r * 0.88,
             g * 0.88,
@@ -719,42 +718,42 @@ function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
           )
         }
 
-        // -Z (north)
+        // -Z (north) — CCW viewed from -Z: top-right -> top-left -> bottom-left -> bottom-right
         if (!hiddenBy(m, at(lx, ly, lz - 1))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const az = lz - 1
           const a0 = aoFactor(
-            occludes(lx + 1, ly, az),
-            occludes(lx, ly + 1, az),
-            occludes(lx + 1, ly + 1, az)
-          )
-          const a1 = aoFactor(
             occludes(lx - 1, ly, az),
             occludes(lx, ly + 1, az),
             occludes(lx - 1, ly + 1, az)
           )
-          const a2 = aoFactor(
-            occludes(lx - 1, ly, az),
-            occludes(lx, ly - 1, az),
-            occludes(lx - 1, ly - 1, az)
+          const a1 = aoFactor(
+            occludes(lx + 1, ly, az),
+            occludes(lx, ly + 1, az),
+            occludes(lx + 1, ly + 1, az)
           )
-          const a3 = aoFactor(
+          const a2 = aoFactor(
             occludes(lx + 1, ly, az),
             occludes(lx, ly - 1, az),
             occludes(lx + 1, ly - 1, az)
           )
+          const a3 = aoFactor(
+            occludes(lx - 1, ly, az),
+            occludes(lx, ly - 1, az),
+            occludes(lx - 1, ly - 1, az)
+          )
           dst.pushQuad(
-            [wx + 1, topY, wz],
             [wx, topY, wz],
-            [wx, wy, wz],
+            [wx + 1, topY, wz],
             [wx + 1, wy, wz],
+            [wx, wy, wz],
             0,
             0,
             -1,
-            u0,
-            v0,
             u1,
+            v0,
+            u0,
             v1,
             r * 0.84,
             g * 0.84,
@@ -767,42 +766,42 @@ function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
           )
         }
 
-        // +X (east)
+        // +X (east) — CCW viewed from +X: top-right -> top-left -> bottom-left -> bottom-right
         if (!hiddenBy(m, at(lx + 1, ly, lz))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const ax = lx + 1
           const a0 = aoFactor(
-            occludes(ax, ly, lz + 1),
-            occludes(ax, ly + 1, lz),
-            occludes(ax, ly + 1, lz + 1)
-          )
-          const a1 = aoFactor(
             occludes(ax, ly, lz - 1),
             occludes(ax, ly + 1, lz),
             occludes(ax, ly + 1, lz - 1)
           )
-          const a2 = aoFactor(
-            occludes(ax, ly, lz - 1),
-            occludes(ax, ly - 1, lz),
-            occludes(ax, ly - 1, lz - 1)
+          const a1 = aoFactor(
+            occludes(ax, ly, lz + 1),
+            occludes(ax, ly + 1, lz),
+            occludes(ax, ly + 1, lz + 1)
           )
-          const a3 = aoFactor(
+          const a2 = aoFactor(
             occludes(ax, ly, lz + 1),
             occludes(ax, ly - 1, lz),
             occludes(ax, ly - 1, lz + 1)
           )
+          const a3 = aoFactor(
+            occludes(ax, ly, lz - 1),
+            occludes(ax, ly - 1, lz),
+            occludes(ax, ly - 1, lz - 1)
+          )
           dst.pushQuad(
-            [wx + 1, topY, wz + 1],
             [wx + 1, topY, wz],
-            [wx + 1, wy, wz],
+            [wx + 1, topY, wz + 1],
             [wx + 1, wy, wz + 1],
+            [wx + 1, wy, wz],
             1,
             0,
             0,
-            u0,
-            v0,
             u1,
+            v0,
+            u0,
             v1,
             r * 0.78,
             g * 0.78,
@@ -815,42 +814,42 @@ function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
           )
         }
 
-        // -X (west)
+        // -X (west) — CCW viewed from -X: top-right -> top-left -> bottom-left -> bottom-right
         if (!hiddenBy(m, at(lx - 1, ly, lz))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const ax = lx - 1
           const a0 = aoFactor(
-            occludes(ax, ly, lz - 1),
-            occludes(ax, ly + 1, lz),
-            occludes(ax, ly + 1, lz - 1)
-          )
-          const a1 = aoFactor(
             occludes(ax, ly, lz + 1),
             occludes(ax, ly + 1, lz),
             occludes(ax, ly + 1, lz + 1)
           )
-          const a2 = aoFactor(
-            occludes(ax, ly, lz + 1),
-            occludes(ax, ly - 1, lz),
-            occludes(ax, ly - 1, lz + 1)
+          const a1 = aoFactor(
+            occludes(ax, ly, lz - 1),
+            occludes(ax, ly + 1, lz),
+            occludes(ax, ly + 1, lz - 1)
           )
-          const a3 = aoFactor(
+          const a2 = aoFactor(
             occludes(ax, ly, lz - 1),
             occludes(ax, ly - 1, lz),
             occludes(ax, ly - 1, lz - 1)
           )
+          const a3 = aoFactor(
+            occludes(ax, ly, lz + 1),
+            occludes(ax, ly - 1, lz),
+            occludes(ax, ly - 1, lz + 1)
+          )
           dst.pushQuad(
-            [wx, topY, wz],
             [wx, topY, wz + 1],
-            [wx, wy, wz + 1],
+            [wx, topY, wz],
             [wx, wy, wz],
+            [wx, wy, wz + 1],
             -1,
             0,
             0,
-            u0,
-            v0,
             u1,
+            v0,
+            u0,
             v1,
             r * 0.76,
             g * 0.76,
@@ -876,36 +875,38 @@ function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
   }
 }
 
-const workerScope = self as unknown as {
-  onmessage: ((e: MessageEvent<WorkerIn>) => void) | null
-  postMessage(message: unknown, transfer: Transferable[]): void
-}
+if (typeof self !== 'undefined') {
+  const workerScope = self as unknown as {
+    onmessage: ((e: MessageEvent<WorkerIn>) => void) | null
+    postMessage(message: unknown, transfer: Transferable[]): void
+  }
 
-workerScope.onmessage = (e: MessageEvent<WorkerIn>) => {
-  const msg = e.data
-  if (msg.type === 'init') {
-    colors = { ...FALLBACK_COLORS, ...msg.colors }
-    atlas = msg.atlas
-    return
-  }
-  if (msg.type === 'lowres') {
-    const res = meshLowres(msg.id, msg.buffer)
-    const transfers: Transferable[] = [
-      res.terrain.vertices.buffer,
-      res.terrain.indices.buffer,
-      res.water.vertices.buffer,
-      res.water.indices.buffer,
-      res.surfaceY.buffer
-    ]
-    workerScope.postMessage(res, transfers)
-    return
-  }
-  if (msg.type === 'hires') {
-    const res = meshHires(msg.id, msg.buffer)
-    const transfers: Transferable[] = [res.surfaceY.buffer]
-    for (const b of res.buckets) {
-      transfers.push(b.vertices.buffer, b.indices.buffer)
+  workerScope.onmessage = (e: MessageEvent<WorkerIn>) => {
+    const msg = e.data
+    if (msg.type === 'init') {
+      colors = { ...FALLBACK_COLORS, ...msg.colors }
+      atlas = msg.atlas
+      return
     }
-    workerScope.postMessage(res, transfers)
+    if (msg.type === 'lowres') {
+      const res = meshLowres(msg.id, msg.buffer)
+      const transfers: Transferable[] = [
+        res.terrain.vertices.buffer,
+        res.terrain.indices.buffer,
+        res.water.vertices.buffer,
+        res.water.indices.buffer,
+        res.surfaceY.buffer
+      ]
+      workerScope.postMessage(res, transfers)
+      return
+    }
+    if (msg.type === 'hires') {
+      const res = meshHires(msg.id, msg.buffer)
+      const transfers: Transferable[] = [res.surfaceY.buffer]
+      for (const b of res.buckets) {
+        transfers.push(b.vertices.buffer, b.indices.buffer)
+      }
+      workerScope.postMessage(res, transfers)
+    }
   }
 }

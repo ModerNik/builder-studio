@@ -76,6 +76,7 @@ export class PlacementOverlay {
   private buildObj: SchematicObject | null = null
   private resources: Resources | null = null
   private colors: BlockColorMap | null = null
+  private remeshGen = 0
   private draggingHandle = false
 
   private onOriginDrag?: (origin: Vec3) => void
@@ -147,7 +148,16 @@ export class PlacementOverlay {
 
   setResources(res: Resources | null, colors: BlockColorMap | null): void {
     this.resources = res
-    this.colors = colors
+    if (colors) {
+      const prefixed: BlockColorMap = {}
+      for (const [k, v] of Object.entries(colors)) {
+        prefixed[k] = v
+        if (!k.includes(':')) prefixed[`minecraft:${k}`] = v
+      }
+      this.colors = prefixed
+    } else {
+      this.colors = null
+    }
     if (this.loadedSchematic) {
       void this.remeshBuild(this.loadedSchematic)
     }
@@ -157,6 +167,7 @@ export class PlacementOverlay {
   async setBuildSrc(src: string | null): Promise<void> {
     if (src === this.loadedSrc) return
     this.loadedSrc = src
+    this.remeshGen++
     this.disposeBuildMesh()
     this.loadedSchematic = null
     if (!src) {
@@ -181,12 +192,18 @@ export class PlacementOverlay {
   }
 
   private async remeshBuild(schem: Schematic): Promise<void> {
+    const gen = ++this.remeshGen
     this.disposeBuildMesh()
     const obj = new SchematicObject('placed-build', schem, this.resources)
     const mesher = new Mesher(schem, this.resources, this.colors)
     obj.mesher = mesher
-    await mesher.build(obj.group, obj.materials)
-    if (this.loadedSchematic !== schem) {
+    const ok = await mesher.build(
+      obj.group,
+      obj.materials,
+      undefined,
+      () => gen !== this.remeshGen || this.loadedSchematic !== schem
+    )
+    if (!ok || gen !== this.remeshGen || this.loadedSchematic !== schem) {
       obj.dispose()
       return
     }
@@ -378,6 +395,9 @@ export class PlacementOverlay {
   }
 
   dispose(): void {
+    this.remeshGen++
+    this.loadedSrc = null
+    this.loadedSchematic = null
     this.transform.detach()
     this.transform.dispose()
     this.transformHelper.removeFromParent()

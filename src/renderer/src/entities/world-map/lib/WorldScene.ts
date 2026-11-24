@@ -235,7 +235,7 @@ export class WorldScene {
   setCameraMode(mode: CameraMode): void {
     if (this.cameraMode === mode) return
     const target = this.controls.target.clone()
-    const currentDist = Math.max(40, this.activeCamera.position.distanceTo(target))
+    const currentDist = Math.max(40, this.effectiveDistance())
     this.cameraMode = mode
 
     if (mode === '3d') {

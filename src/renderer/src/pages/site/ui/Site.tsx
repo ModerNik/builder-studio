@@ -104,7 +104,7 @@ function Location({ name }: { name: string }): ReactElement {
     listed.find((w) => w.path === loc.world)?.name ??
     loc.world.split(/[\\/]/).pop() ??
     ''
-  const noWorlds = loc.worlds.isSuccess && !listed.length && !loc.world
+  const noWorlds = loc.worlds.isSuccess && !loc.savedMetaPending && !listed.length && !loc.world
   const areaNorm = loc.areaBox ? normalizeBox(loc.areaBox) : null
   const areaDims = areaNorm ? boxDimensions(areaNorm) : null
   const originLine = formatOriginLine(loc.effectiveOrigin)
@@ -450,16 +450,18 @@ function Location({ name }: { name: string }): ReactElement {
                 <Compass />
               </IconButton>
             )}
-            {loc.worldInfo.data?.player && (
-              <IconButton
-                size="icon-sm"
-                variant="ghost"
-                label="Jump to player position"
-                onClick={loc.jumpToPlayer}
-              >
-                <User />
-              </IconButton>
-            )}
+            {loc.worldInfo.data?.player &&
+              (!loc.worldInfo.data.playerDimension ||
+                loc.worldInfo.data.playerDimension === loc.dimension) && (
+                <IconButton
+                  size="icon-sm"
+                  variant="ghost"
+                  label="Jump to player position"
+                  onClick={loc.jumpToPlayer}
+                >
+                  <User />
+                </IconButton>
+              )}
 
             <Popover
               open={jumpOpen}
