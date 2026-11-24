@@ -9,6 +9,7 @@ import {
   SchematicChooseSchema,
   SchematicCommitSchema,
   SchematicInspectSchema,
+  SiteSaveMetaSchema,
   ImportRequestSchema
 } from '@shared/api'
 import {
@@ -25,6 +26,8 @@ import { writeAtomic } from '../workspace/review'
 import { getSettings, projectSettings, pythonEnv, resolved } from '../app/settings'
 import { MINECRAFT_VERSIONS } from '@shared/minecraft'
 import { listWorlds, savesDirs } from '../workspace/site'
+import { inspectWorld } from '../world/world-reader'
+import { readSiteMeta, saveSiteMeta, updateBuildOrigin } from '../world/site-meta'
 import { command, installedGit } from '../runtime/runtime'
 import { bootstrapWorkspace, createBuild, noLinks } from '../workspace/workspace'
 import { hasSchematicParts, requireSchematicEngine } from '../workspace/schematic-import'
@@ -209,12 +212,26 @@ export function registerWorkspace(ctx: IpcContext, handle: Handle): void {
   )
   handle('site:pick', none, async () => {
     const r = await dialog.showOpenDialog(state.win!, {
-      title: 'A world save folder (read only: the map reads copies of its region files)',
+      title: 'Choose a Minecraft world save folder',
       defaultPath: savesDirs(resolved().schematics, app.getPath('appData'))[0],
       properties: ['openDirectory']
     })
     return r.canceled ? null : r.filePaths[0]
   })
+  handle('site:inspect', z.string().min(1), (worldPath) => inspectWorld(worldPath))
+  handle('site:readMeta', z.string().min(1), (build) => readSiteMeta(resolved().workspace, build))
+  handle(
+    'site:saveMeta',
+    SiteSaveMetaSchema,
+    async ({ build, placement, updateBuildOrigin: sync }) => {
+      const { workspace } = resolved()
+      await saveSiteMeta(workspace, build, placement)
+      const originUpdated = sync
+        ? await updateBuildOrigin(workspace, build, placement.origin)
+        : false
+      return { originUpdated }
+    }
+  )
   handle('bridge:call', BridgeCallSchema, ({ method, params, requestId, minecraftVersion }) =>
     bridgeFor(method, minecraftVersion).call(
       method,

@@ -162,7 +162,11 @@ const studio: StudioApi = {
   },
   site: {
     worlds: () => invoke('site:worlds'),
-    pick: () => invoke('site:pick')
+    pick: () => invoke('site:pick'),
+    inspect: (world) => invoke('site:inspect', world),
+    readMeta: (build) => invoke('site:readMeta', build),
+    saveMeta: (build, placement, updateBuildOrigin) =>
+      invoke('site:saveMeta', { build, placement, updateBuildOrigin })
   },
   bridge: {
     call: async (method, params, onProgress, minecraftVersion) => {
