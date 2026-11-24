@@ -16,7 +16,6 @@ import { useContainerWidth } from '@/shared/lib/layout'
 import { useShortcuts } from '@/shared/lib/shortcuts'
 import { WorkbenchShell } from '@/widgets/workbench-shell/ui/WorkbenchShell'
 import { TitleBar } from '@/widgets/workbench-shell/ui/TitleBar'
-import { PanelToggle } from '@/widgets/workbench-shell/ui/PanelToggle'
 import { EditorTabs } from '@/widgets/workbench-shell/ui/EditorTabs'
 import { Tabs, TabsContent } from '@/shared/ui/primitives/tabs'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
@@ -216,7 +215,7 @@ export function DemoWorkbench({
   preview
 }: {
   review: boolean
-  /** An app page (Gallery, Settings): no document tabs; the Assistant is the only dock. */
+  /** An app page (Gallery, Settings): no document tabs and no docks. */
   page?: boolean
   preview?: { captionInset: number }
 }): ReactElement {
@@ -284,7 +283,7 @@ export function DemoWorkbench({
       screens={page ? [] : SCREENS}
       screen={screen}
       onScreenChange={setScreen}
-      panels={page ? panels.filter((p) => p.id === 'assistant') : panels}
+      panels={page ? [] : panels}
       titleBar={
         <TitleBar
           crumbs={
@@ -303,7 +302,6 @@ export function DemoWorkbench({
                   }
                 ]
           }
-          panelAction={page && <PanelToggle panel={panels.find((p) => p.id === 'assistant')!} />}
           onHome={() => {}}
           onSearch={() => setSearched((n) => n + 1)}
           setup={<SetupNoticesChip notices={NOTICES} />}
@@ -336,7 +334,7 @@ export function DemoWorkbench({
     >
       {page ? (
         <Placeholder title="Settings">
-          <p className="text-fg-secondary">Chat is available in the title bar.</p>
+          <p className="text-fg-secondary">App pages have no document tabs or docks.</p>
         </Placeholder>
       ) : (
         <WorkspaceCanvas screen={screen} build={build} searched={searched} />
