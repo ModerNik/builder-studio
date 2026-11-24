@@ -798,6 +798,47 @@ export type AgentMsg =
   | { type: 'suggestion'; id: string; text: string | null }
 
 /** What each empty settings path field resolves to on this machine; null when nothing is found. */
+export const WORLD_DIMENSIONS = ['overworld', 'nether', 'end'] as const
+export const WorldDimensionSchema = z.enum(WORLD_DIMENSIONS)
+export type WorldDimension = z.infer<typeof WorldDimensionSchema>
+
+export interface WorldInfo {
+  name: string
+  path: string
+  dataVersion: number | null
+  spawn: [number, number, number] | null
+  player: [number, number, number] | null
+  playerDimension: WorldDimension | null
+  dimensions: WorldDimension[]
+  regions: Record<WorldDimension, [number, number][]>
+}
+
+export const SitePlacementSchema = z.object({
+  version: z.literal(1),
+  world: z.string().min(1),
+  dimension: WorldDimensionSchema.default('overworld'),
+  mode: z.enum(['area', 'build']),
+  box: z.tuple([z.int32(), z.int32(), z.int32(), z.int32()]),
+  origin: z.tuple([z.int32(), z.int32(), z.int32()]),
+  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
+  margin: z.int32().min(0).default(48),
+  versionPath: z.string().optional(),
+  ground: z
+    .object({
+      min: z.int32(),
+      max: z.int32(),
+      median: z.int32()
+    })
+    .optional()
+})
+export type SitePlacement = z.infer<typeof SitePlacementSchema>
+export const SiteSaveMetaSchema = z.object({
+  build: z.string().min(1),
+  placement: SitePlacementSchema,
+  updateBuildOrigin: z.boolean().optional()
+})
+
+/** What each empty settings path field resolves to on this machine; null when nothing is found. */
 export type Detected = {
   claude: string | null
   codex: string | null
@@ -985,6 +1026,13 @@ export interface StudioApi {
   site: {
     worlds(): Promise<{ name: string; path: string }[]> // saves folders with a level.dat
     pick(): Promise<string | null> // a folder dialog
+    inspect(world: string): Promise<WorldInfo>
+    readMeta(build: string): Promise<SitePlacement | null>
+    saveMeta(
+      build: string,
+      placement: SitePlacement,
+      updateBuildOrigin?: boolean
+    ): Promise<{ originUpdated: boolean }>
   }
   bridge: {
     call<M extends BridgeMethod>(
@@ -1061,6 +1109,9 @@ export const CHANNELS = [
   'edits:save',
   'site:worlds',
   'site:pick',
+  'site:inspect',
+  'site:readMeta',
+  'site:saveMeta',
   'bridge:call',
   'bridge:log',
   'agent:send',

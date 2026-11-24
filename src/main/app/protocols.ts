@@ -1,8 +1,12 @@
 // build://repo/<repo-relative path> serves workspace files; resource/cache mounts expose selected public files; mcpack://pack/ serves the jar-built pack.
 // Nothing else on disk is reachable from the renderer.
+import { existsSync } from 'fs'
+import { join } from 'path'
 import { net, protocol } from 'electron'
 import { pathToFileURL } from 'url'
+import { WorldDimensionSchema } from '@shared/api'
 import { servedFile } from '../workspace/paths'
+import { readHiresChunk, readLowresTile } from '../world/world-reader'
 import { resolved } from './settings'
 import { isMinecraftVersion } from '@shared/minecraft'
 import { fileRevision } from './locations'
@@ -19,7 +23,8 @@ const PRIVILEGES = {
 export function registerSchemes(): void {
   protocol.registerSchemesAsPrivileged([
     { scheme: 'build', privileges: PRIVILEGES },
-    { scheme: 'mcpack', privileges: PRIVILEGES }
+    { scheme: 'mcpack', privileges: PRIVILEGES },
+    { scheme: 'world', privileges: PRIVILEGES }
   ])
 }
 
@@ -46,5 +51,50 @@ export function handleProtocols(): void {
     const { pack } = resolved(undefined, version)
     if (!pack || fileRevision(pack) !== url.searchParams.get('v')) return serve(null)
     return serve(pack)
+  })
+  protocol.handle('world', async (req) => {
+    const cors = {
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-cache'
+    }
+    try {
+      const url = new URL(req.url)
+      if (url.host !== 'tile') return new Response('not found', { status: 404, headers: cors })
+      const world = url.searchParams.get('world') ?? ''
+      const dimRes = WorldDimensionSchema.safeParse(url.searchParams.get('dim') ?? 'overworld')
+      if (!world || !dimRes.success || !existsSync(join(world, 'level.dat'))) {
+        return new Response('forbidden', { status: 403, headers: cors })
+      }
+      const { cache } = resolved()
+      if (url.pathname === '/lowres') {
+        const rx = Number(url.searchParams.get('rx'))
+        const rz = Number(url.searchParams.get('rz'))
+        if (!Number.isInteger(rx) || !Number.isInteger(rz)) {
+          return new Response('bad params', { status: 400, headers: cors })
+        }
+        const bytes = await readLowresTile(world, dimRes.data, rx, rz, cache)
+        if (!bytes) return new Response(null, { status: 204, headers: cors })
+        return new Response(new Uint8Array(bytes), {
+          status: 200,
+          headers: { ...cors, 'Content-Type': 'application/octet-stream' }
+        })
+      }
+      if (url.pathname === '/hires') {
+        const cx = Number(url.searchParams.get('cx'))
+        const cz = Number(url.searchParams.get('cz'))
+        if (!Number.isInteger(cx) || !Number.isInteger(cz)) {
+          return new Response('bad params', { status: 400, headers: cors })
+        }
+        const bytes = await readHiresChunk(world, dimRes.data, cx, cz, cache)
+        if (!bytes) return new Response(null, { status: 204, headers: cors })
+        return new Response(new Uint8Array(bytes), {
+          status: 200,
+          headers: { ...cors, 'Content-Type': 'application/octet-stream' }
+        })
+      }
+      return new Response('not found', { status: 404, headers: cors })
+    } catch {
+      return new Response('error', { status: 500, headers: cors })
+    }
   })
 }

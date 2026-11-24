@@ -5,19 +5,18 @@
 
 Open **Location**, **Refs** and **Variants** from a build's screen tabs (`Ctrl 5`, `Ctrl 6`, `Ctrl 3`). Open **Labs** from the flask icon in the title bar.
 
-## Build location (site picker)
+## Build location (3D world map)
 
-`/build/<name>/site`: fit a build to real terrain.
+`/build/<name>/site`: explore a real Minecraft world in 3D and set where the build sits.
 
-1. **Choose a world…** from your worlds folder (Settings → Minecraft), or any folder.
-2. Set the map area (its side is 16 to 2048 blocks) and press **Map** to see it top-down.
-3. Drag on the map to mark the build's footprint, in world coordinates. Set a margin around the box.
-4. Copy the `ORIGIN = (x, y, z)` line into `build.py`.
-5. **Write terrain.npz** saves the terrain into `builds/<name>/data/terrain.npz`, with a confirm before
-   overwriting an existing one.
+1. Pick a world save (or browse to any world folder) and dimension (**Overworld**, **Nether**, **End**). The interactive 3D map loads immediately around your saved location, player position, or world spawn.
+2. Navigate freely in **3D**, **Iso**, or **2D** (`1 / 2 / 3`, drag to orbit, right-drag to pan, WASD to fly, or jump to **Spawn** / **Player** / coordinates).
+3. The right rail adapts automatically:
+   - **Scout terrain** *(before a draft exists)*: click the terrain to position the area, drag the corner handles (or Shift-drag) to resize, and set the terrain margin.
+   - **Place build** *(once a `.litematic` draft exists)*: previews your 3D build directly on the terrain; move it with the 3D X/Y/Z handles, click terrain to snap to ground, and rotate in 90° steps (`R`).
+4. Click **Save location** to write `builds/<name>/data/terrain.npz` + `data/site.json` and update `ORIGIN` in `build.py`.
 
-The engine reads the save only through copies of its region files. Builder Studio never writes to a
-world.
+Builder Studio reads only cached copies of region files and never writes to a world save.
 
 ## References
 
