@@ -43,6 +43,7 @@ builds/<name>/
   out/                        generated output; not tracked by Git
     <stem>.litematic          a version (draft or full build)
     <stem>.parts.npz          named parts of that version, when the script uses c.op
+    <stem>_3d/iso_*.png       isometric renders used for Gallery project previews
     <stem>_3d/sheet.png       render sheet of that version
     <stem>_ctx/sheet.png      render sheet in context
     .diff/<a>__<b>/           Diff overlays
