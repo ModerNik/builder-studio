@@ -121,7 +121,9 @@ function ImportForm({
   const short = preview && preview.available < preview.required
   const empty = preview && preview.files === 0
   const trimmedDest = destination.trim()
-  const drive = /^[a-z]:/i.test(trimmedDest) ? trimmedDest.slice(0, 2).toUpperCase() : 'destination'
+  const drive = /^[a-z]:/i.test(trimmedDest)
+    ? trimmedDest.slice(0, 2).toUpperCase()
+    : 'the destination'
 
   const pathField = (kind: 'source' | 'destination'): ReactElement => {
     const label = kind === 'source' ? 'Copy from' : 'Into workspace'
@@ -307,7 +309,7 @@ function ImportForm({
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              <Button variant="ghost" onClick={onClose} className="max-sm:ms-auto">
+              <Button variant="ghost" disabled={busy} onClick={onClose} className="max-sm:ms-auto">
                 Close
               </Button>
             </div>

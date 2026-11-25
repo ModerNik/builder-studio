@@ -256,12 +256,13 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     }
   ])
 
+  const displayName = build?.displayName || name
   const editor = (
     <Editor
       tab={editorTab}
       onTab={setEditorTab}
       a={a}
-      build={name}
+      build={displayName}
       edit={edit}
       onShowNewest={() => setPicked(null)}
       version={version}
@@ -277,7 +278,7 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   )
   const standIn = (
     <CanvasState
-      name={build?.displayName || name}
+      name={displayName}
       error={buildError}
       loading={isLoading}
       missing={!build}
@@ -294,7 +295,7 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   return (
     <div className="flex h-full min-w-0 flex-col">
       <WorkspaceToolbar
-        name={name}
+        name={displayName}
         onUpgradeTarget={() => setUpgradeOpen(true)}
         canUpgradeTarget={!!build && !running}
         versions={build?.versions ?? []}

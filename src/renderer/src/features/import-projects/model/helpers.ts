@@ -36,6 +36,8 @@ export function resolveImportError({
 export interface PreviewQueue<T> {
   /** Cancels any active scan without losing track of its unwinding promise. */
   cancel: () => void
+  /** Cancels any active scan and waits for its unwinding promise to settle before running another workspace operation. */
+  cancelAndWait: () => Promise<void>
   /** Runs `fn` only after any previously cancelled scan has settled, ignoring stale results. */
   enqueue: (
     fn: () => Promise<T>,
@@ -64,6 +66,12 @@ export function createPreviewQueue<T>(onCancel: () => void): PreviewQueue<T> {
       active = false
       onCancel()
     }
+  }
+
+  const cancelAndWait = async (): Promise<void> => {
+    cancel()
+    const pending = inFlight
+    if (pending) await pending.catch(() => {})
   }
 
   const enqueue: PreviewQueue<T>['enqueue'] = (fn, { onStart, onSuccess, onError, onSettled }) => {
@@ -96,5 +104,5 @@ export function createPreviewQueue<T>(onCancel: () => void): PreviewQueue<T> {
     })()
   }
 
-  return { cancel, enqueue }
+  return { cancel, cancelAndWait, enqueue }
 }

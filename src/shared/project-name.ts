@@ -9,7 +9,7 @@ export const ProjectNameSchema = z
   .min(1, 'Enter a project name')
   .max(PROJECT_NAME_MAX_LENGTH, `Use at most ${PROJECT_NAME_MAX_LENGTH} characters`)
   .refine(
-    (s) => !/\p{Cc}/u.test(s),
+    (s) => !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(s),
     'Project name cannot contain control characters or line breaks'
   )
 
@@ -46,6 +46,8 @@ export function slugFromProjectName(
   }
   const raw = displayName
     .trim()
+    .normalize('NFD')
+    .replace(/\p{Mn}+/gu, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')

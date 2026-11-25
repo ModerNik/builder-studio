@@ -158,4 +158,37 @@ describe('importProjects helpers', () => {
     await vi.waitFor(() => expect(settled).toHaveBeenCalledTimes(1))
     expect(onError).not.toHaveBeenCalled()
   })
+
+  it('waits for a cancelled scan to finish unwinding before cancelAndWait resolves', async () => {
+    let finish!: () => void
+    const cancelSpy = vi.fn()
+    const settled = vi.fn()
+    const queue = createPreviewQueue<string>(cancelSpy)
+
+    queue.enqueue(
+      () =>
+        new Promise<string>((_resolve, reject) => {
+          finish = () => reject(new Error('aborted'))
+        }),
+      {
+        onStart: () => {},
+        onSuccess: () => {},
+        onError: () => {},
+        onSettled: settled
+      }
+    )
+
+    let drained = false
+    const wait = queue.cancelAndWait().then(() => {
+      drained = true
+    })
+    expect(cancelSpy).toHaveBeenCalledTimes(1)
+    await Promise.resolve()
+    expect(drained).toBe(false)
+
+    finish()
+    await wait
+    expect(drained).toBe(true)
+    expect(settled).toHaveBeenCalledTimes(1)
+  })
 })

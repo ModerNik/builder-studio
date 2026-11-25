@@ -153,25 +153,32 @@ export function useImportForm(state: ImportState, into: string | undefined, onCl
   }
 
   const act = async (kind: ImportErrorKind, fn: () => Promise<unknown>): Promise<boolean> => {
+    setTrigger(null)
     setPending(true)
     setFailure(null)
     setSawActiveImport(false)
     try {
+      await getQueue().cancelAndWait()
       await fn()
       return true
     } catch (e) {
-      setFailure({ text: message(e), kind })
+      if (mountedRef.current) setFailure({ text: message(e), kind })
       return false
     } finally {
-      setPending(false)
+      if (mountedRef.current) setPending(false)
     }
   }
   const pick = (kind: 'source' | 'destination'): void =>
-    void studio.workspace.pick(kind === 'source' ? source : destination).then((path) => {
-      if (!path) return
-      if (kind === 'source') setSource(path, true)
-      else setDestination(path, true)
-    })
+    void studio.workspace
+      .pick(kind === 'source' ? source : destination)
+      .then((path) => {
+        if (!mountedRef.current || !path) return
+        if (kind === 'source') setSource(path, true)
+        else setDestination(path, true)
+      })
+      .catch((e) => {
+        if (mountedRef.current) setFailure({ text: message(e), kind: 'action' })
+      })
   const recover = async (): Promise<void> => {
     const ok = await act('action', async () => {
       await studio.workspace.recover(destination.trim())
@@ -179,7 +186,7 @@ export function useImportForm(state: ImportState, into: string | undefined, onCl
     })
     if (ok) {
       toast.success('Recovery check complete')
-      if (ready) triggerPreview()
+      if (mountedRef.current && ready) triggerPreview()
     }
   }
   const bootstrap = async (): Promise<void> => {
@@ -193,7 +200,7 @@ export function useImportForm(state: ImportState, into: string | undefined, onCl
       onClose()
     })
     // ImportService.run() consumes the staged plan regardless of outcome; invalidate so retry re-previews
-    if (!ok) setResult(undefined)
+    if (!ok && mountedRef.current) setResult(undefined)
   }
 
   const { error, errorKind } = resolveImportError({

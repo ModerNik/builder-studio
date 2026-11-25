@@ -106,16 +106,13 @@ export function useNewBuild(
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- the dialog reads all of it
 export function useRenameBuild(
   build: { name: string; displayName: string },
-  takenDisplayNames: string[],
+  otherTakenDisplayNames: string[],
   onClose: () => void
 ) {
   const [to, setTo] = useState(build.displayName)
   const rename = useRunOptions((s) => s.rename)
   const parsed = NewBuildNameSchema.safeParse(to)
-  const currentNorm = normalizeProjectName(build.displayName)
-  const otherTaken = new Set(
-    takenDisplayNames.map(normalizeProjectName).filter((n) => n !== currentNorm)
-  )
+  const otherTaken = new Set(otherTakenDisplayNames.map(normalizeProjectName))
   const error = !parsed.success
     ? parsed.error.issues[0].message
     : otherTaken.has(normalizeProjectName(parsed.data))

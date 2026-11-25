@@ -28,6 +28,8 @@ describe('ProjectNameSchema', () => {
       '   ',
       'a'.repeat(PROJECT_NAME_MAX_LENGTH + 1),
       'line1\nline2',
+      'line1\u2028line2',
+      'para1\u2029para2',
       'tab\tname',
       'null\x00byte'
     ]) {
@@ -40,6 +42,7 @@ describe('slugFromProjectName', () => {
   it('derives engine-safe folder slugs and preserves simple snake_case names', () => {
     expect(slugFromProjectName('my_build')).toBe('my_build')
     expect(slugFromProjectName('Harbor Lighthouse #2 (v5)')).toBe('harbor_lighthouse_2_v5')
+    expect(slugFromProjectName('Café Résumé')).toBe('cafe_resume')
     expect(slugFromProjectName('2026 Castle!')).toBe('build_2026_castle')
     expect(slugFromProjectName('!!! 🏰')).toBe('build')
     expect(slugFromProjectName('CON')).toBe('build_con')

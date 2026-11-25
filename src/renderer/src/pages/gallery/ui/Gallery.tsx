@@ -337,7 +337,9 @@ export function Gallery(): ReactElement {
       {renamingBuild && (
         <RenameDialog
           build={renamingBuild}
-          takenDisplayNames={takenDisplayNames}
+          takenDisplayNames={all
+            .filter((b) => b.name !== renamingBuild.name)
+            .map((b) => b.displayName || b.name)}
           onClose={() => setRenaming(null)}
         />
       )}

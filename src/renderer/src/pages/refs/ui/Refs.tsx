@@ -23,6 +23,7 @@ import { IconAction } from '@/shared/ui/common/Tip'
 import { Kbd } from '@/shared/ui/common/parts'
 import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import { buildUrl } from '@/shared/lib/urls'
+import { useBuild } from '@/entities/build/model/builds'
 import { errorText } from '@/entities/build/model/workspace'
 import { addRefs, asLink, dropped, refImages, refPath, useRefs } from '@/entities/ref/model/refs'
 import { removeRef, saveNote as saveRefNote } from '../model/actions'
@@ -35,6 +36,7 @@ export function Refs(): ReactElement {
 function Board({ name }: { name: string }): ReactElement {
   const { tier } = useWorkbench()
   const phone = tier === 'phone'
+  const displayName = useBuild(name).data?.displayName || name
   const refs = useRefs(name)
   const [text, setText] = useState('')
   const [drag, setDrag] = useState<number | null>(null) // images being dragged in, 0 for a link
@@ -144,7 +146,7 @@ function Board({ name }: { name: string }): ReactElement {
       <EmptyState
         icon={Images}
         size="page"
-        title={`Collect references for ${name}`}
+        title={`Collect references for ${displayName}`}
         action={
           <Button variant="outline" onClick={pickFiles}>
             <ImagePlus /> Add images…

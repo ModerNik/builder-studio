@@ -25,7 +25,7 @@ App settings are separate, in `%APPDATA%\builder-studio\settings.json` (see
 ```
 
 A folder under `builds/` counts as a build when it contains `build.py` or `DESIGN.md`. The Gallery
-sorts builds by their newest version or preview sheet.
+sorts builds by their newest version or preview.
 
 ## A build's files
 
@@ -33,6 +33,7 @@ sorts builds by their newest version or preview sheet.
 builds/<name>/
   build.py                    the generator script the engine runs
   DESIGN.md                   brief, status, review log and results (see below)
+  project.json                display name shown in the app (optional; defaults to folder name)
   minecraft.json              project Minecraft version target (optional; defaults to 26.3)
   data/edits.json             hand edits applied in the Editor (optional)
   data/terrain.npz            terrain written by Build location (optional)
@@ -64,6 +65,7 @@ their Minecraft version, and projects created before this setting use 26.3.
 | `DESIGN.md` results table        | The **Export** checklist                                                      |
 | `review/round_N.json`            | **Review**                                                                    |
 | `refs/`                          | The **References** board                                                      |
+| `project.json`                   | **New build** and **Rename**                                                  |
 | `minecraft.json`                 | **New build** and **⋯ → Upgrade target…**                                     |
 | `data/edits.json`                | The **Editor** (hand block edits)                                             |
 | `data/terrain.npz`               | **Build location → Write terrain.npz** (confirms before overwriting)          |
@@ -107,8 +109,10 @@ installed.
 
 **Settings → General → Import builds** copies builds from an older checkout into your workspace.
 
-1. Choose the source folder and the destination workspace. Assets are included by default.
-2. Review the preview: file count, size, free space and any absolute paths that may need fixing.
+1. Choose the source folder and the destination workspace (a new destination folder is created
+   automatically when you copy). Assets are included by default.
+2. Preview the import to review the build and file counts, size, free space and any absolute paths
+   that may need fixing.
 3. Copy. The source stays intact and existing destination files are never overwritten.
 
 Imports keep builds, archives, data, reviews, references and outputs. They leave out checkout code,
