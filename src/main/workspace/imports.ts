@@ -42,8 +42,32 @@ const missing = (e: NodeJS.ErrnoException): null => {
   if (e.code !== 'ENOENT') throw e
   return null
 }
+const errorText = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 // a file that makes its folder a build, as projects.ts listBuilds reads them
 const BUILD_FILE = /^(builds\/(?:_(?!archive\/)[^/]+\/)?(?!_)[^/]+)\/(?:build\.py|DESIGN\.md)$/
+
+async function nearestExistingAncestor(path: string): Promise<string> {
+  for (let p = path; ; p = dirname(p)) {
+    const info = await lstat(p).catch(missing)
+    if (info) {
+      if (!info.isDirectory()) throw new Error('Destination parent must be a directory')
+      return await realpath(p)
+    }
+    if (p === dirname(p)) throw new Error('Destination drive or parent folder does not exist')
+  }
+}
+
+/** Records each directory level that does not yet exist so a failed run can remove only what it created. */
+async function missingAncestors(path: string): Promise<string[]> {
+  const created: string[] = []
+  for (let p = path; ; p = dirname(p)) {
+    const info = await lstat(p).catch(missing)
+    if (info) break
+    created.push(p)
+    if (p === dirname(p)) break
+  }
+  return created
+}
 
 /** Imports activate files as hard links: refuse a drive without them before anything is copied. */
 async function checkHardLinks(dir: string): Promise<void> {
@@ -54,11 +78,11 @@ async function checkHardLinks(dir: string): Promise<void> {
     await unlink(`${probe}.link`)
   } catch (e) {
     throw new Error(
-      `The destination drive can't hold hard links, which the import needs (NTFS can; FAT32 and exFAT can't). Choose a folder on an NTFS drive. (${e})`,
+      `The destination drive can't hold hard links, which the import needs (NTFS can; FAT32 and exFAT can't). Choose a folder on an NTFS drive. (${errorText(e)})`,
       { cause: e }
     )
   } finally {
-    await unlink(probe)
+    await unlink(probe).catch(() => {})
   }
 }
 const identity = (s: BigIntStats): string => `${s.dev}:${s.ino}`
@@ -72,6 +96,7 @@ interface Entry {
 interface Plan {
   preview: ImportPreview
   entries: Entry[]
+  destExists: boolean
 }
 
 const Rel = z
@@ -107,26 +132,44 @@ export class ImportService {
     this.emit(this.state)
   }
 
-  private async destination(path: string): Promise<string> {
+  private async destination(
+    path: string
+  ): Promise<{ path: string; exists: boolean; statRoot: string }> {
     await noLinks(path)
-    const dest = await realpath(path)
-    if (!(await lstat(dest)).isDirectory())
-      throw new Error('Destination must be an existing directory')
+    const info = await lstat(path).catch(missing)
+    if (info) {
+      const dest = await realpath(path)
+      if (!info.isDirectory()) throw new Error('Destination must be a directory')
+      for (const root of this.protectedRoots(dest).filter(Boolean))
+        if (overlaps(dest, canonicalPath(root)))
+          throw new Error(`Workspace overlaps application storage: ${root}`)
+      return { path: dest, exists: true, statRoot: dest }
+    }
+    const statRoot = await nearestExistingAncestor(path)
+    const dest = canonicalPath(path)
     for (const root of this.protectedRoots(dest).filter(Boolean))
       if (overlaps(dest, canonicalPath(root)))
         throw new Error(`Workspace overlaps application storage: ${root}`)
-    return dest
+    return { path: dest, exists: false, statRoot }
   }
 
   private async scan(request: ImportRequest, signal: AbortSignal): Promise<Plan> {
     signal.throwIfAborted()
-    const destination = await this.destination(request.destination)
+    const destInfo = await this.destination(request.destination)
+    const destination = destInfo.path
     await noLinks(request.source)
+    const sourceInfo = await lstat(request.source).catch(missing)
+    if (!sourceInfo) throw new Error(`Source folder does not exist: ${request.source}`)
+    if (!sourceInfo.isDirectory()) throw new Error('Source must be a directory')
     const source = await realpath(request.source)
     if (overlaps(source, destination)) throw new Error('Source and destination must not overlap')
-    if (!(await lstat(source)).isDirectory()) throw new Error('Source must be a directory')
-    if ((await readdir(destination)).some((n) => n.startsWith(PREFIX)))
+    if (destInfo.exists && (await readdir(destination)).some((n) => n.startsWith(PREFIX)))
       throw new Error('Interrupted import found. Recover this destination before retrying.')
+    const buildsInfo = await lstat(join(source, 'builds')).catch(missing)
+    if (!buildsInfo?.isDirectory())
+      throw new Error(
+        `No builds folder found in ${source}. Choose a workspace folder that contains a builds subfolder.`
+      )
     const entries: Entry[] = []
     const warnings: string[] = []
     const walk = async (path: string): Promise<void> => {
@@ -164,7 +207,7 @@ export class ImportService {
     await walk('builds')
     if (request.assets && (await lstat(join(source, 'assets')).catch(missing))) await walk('assets')
     const files = entries.filter((e) => !e.directory)
-    const disk = await statfs(destination)
+    const disk = await statfs(destInfo.statRoot)
     const bytes = files.reduce((n, e) => n + e.size, 0)
     const required =
       files.reduce((n, e) => n + Math.ceil(e.size / disk.bsize) * disk.bsize, 1024 * 1024) +
@@ -182,7 +225,8 @@ export class ImportService {
         available: disk.bavail * disk.bsize,
         warnings
       },
-      entries
+      entries,
+      destExists: destInfo.exists
     }
   }
 
@@ -192,14 +236,16 @@ export class ImportService {
     this.controller = new AbortController()
     this.update({ busy: true, stage: 'scanning', copied: 0, total: 0, error: undefined })
     try {
-      this.plan = await this.scan(request, this.controller.signal)
-      await checkHardLinks(this.plan.preview.destination)
+      const plan = await this.scan(request, this.controller.signal)
+      if (plan.destExists) await checkHardLinks(plan.preview.destination)
+      this.plan = plan
       this.update({ stage: 'preview ready' })
-      return this.plan.preview
+      return plan.preview
     } catch (e) {
+      // Preview errors belong to the active preview promise, not persistent singleton import state.
       this.update({
-        stage: this.controller.signal.aborted ? 'cancelled' : 'failed',
-        error: String(e)
+        stage: this.controller.signal.aborted ? 'cancelled' : 'idle',
+        error: undefined
       })
       throw e
     } finally {
@@ -221,6 +267,7 @@ export class ImportService {
     const signal = controller.signal
     let stage = ''
     let journalReady = false
+    let createdDestDirs: string[] = []
     this.update({
       busy: true,
       stage: 'validating',
@@ -236,6 +283,11 @@ export class ImportService {
         throw new Error('Insufficient disk space')
       signal.throwIfAborted()
       const { source, destination } = plan.preview
+      if (!current.destExists) {
+        createdDestDirs = await missingAncestors(destination)
+        await mkdir(destination, { recursive: true })
+      }
+      if (!plan.destExists || !current.destExists) await checkHardLinks(destination)
       stage = await mkdtemp(join(destination, PREFIX))
       const journal: Journal = {
         version: 1,
@@ -316,7 +368,7 @@ export class ImportService {
             await link(join(stage, 'data', entry.path), to)
           } catch (e) {
             throw new Error(
-              `Could not activate ${entry.path}: ${e}. Destination must support hard links and allow file creation.`,
+              `Could not activate ${entry.path}: ${errorText(e)}. Destination must support hard links and allow file creation.`,
               { cause: e }
             )
           }
@@ -327,10 +379,11 @@ export class ImportService {
       await save()
       await this.cleanup(destination, stage)
       stage = ''
+      createdDestDirs = []
       this.update({ stage: 'done' })
       return destination
     } catch (e) {
-      let error = String(e)
+      let error = errorText(e)
       if (stage) {
         try {
           if (journalReady) await this.cleanup(plan.preview.destination, stage)
@@ -339,8 +392,11 @@ export class ImportService {
             await rm(stage, { recursive: true })
           }
         } catch (cleanup) {
-          error += `; recovery required: ${cleanup}`
+          error += `; recovery required: ${errorText(cleanup)}`
         }
+      }
+      for (const dir of createdDestDirs) {
+        await rmdir(dir).catch(() => {})
       }
       this.update({ stage: signal.aborted ? 'cancelled' : 'failed', error })
       throw new Error(error, { cause: e })
@@ -387,13 +443,18 @@ export class ImportService {
     if (this.state.busy) throw new Error('An import is already running')
     this.update({ busy: true, stage: 'recovering', error: undefined })
     try {
-      const destination = await this.destination(path)
-      for (const name of await readdir(destination)) {
-        if (!name.startsWith(PREFIX)) continue
-        const stage = join(destination, name)
-        await this.cleanup(destination, stage)
+      const destInfo = await this.destination(path)
+      if (destInfo.exists) {
+        for (const name of await readdir(destInfo.path)) {
+          if (!name.startsWith(PREFIX)) continue
+          const stage = join(destInfo.path, name)
+          await this.cleanup(destInfo.path, stage)
+        }
       }
-      this.update({ stage: 'recovered' })
+      this.update({ stage: 'recovered', error: undefined })
+    } catch (e) {
+      this.update({ stage: 'failed', error: errorText(e) })
+      throw e
     } finally {
       this.update({ busy: false })
     }

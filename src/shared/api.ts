@@ -1,6 +1,14 @@
 // The one contract between main, preload and renderer. Main checks every input with these zod schemas.
 import { z } from 'zod'
 import { isMinecraftVersion } from './minecraft'
+import {
+  BuildFolderNameSchema,
+  PROJECT_NAME_MAX_LENGTH,
+  ProjectMetaSchema,
+  ProjectNameSchema
+} from './project-name'
+
+export { BuildFolderNameSchema, PROJECT_NAME_MAX_LENGTH, ProjectMetaSchema, ProjectNameSchema }
 
 /** The companion MCP server for external agents (src/main/agent/mcp.ts), loopback only. */
 export const MCP_PORT = 7341
@@ -135,14 +143,7 @@ export const SettingsSchema = z.object({
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
-export const NewBuildNameSchema = z
-  .string()
-  .max(100)
-  .regex(
-    /^[a-z][a-z0-9_]*$/,
-    'Use lowercase letters, digits and underscores, starting with a letter'
-  )
-  .refine((s) => !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i.test(s), 'Reserved Windows name')
+export const NewBuildNameSchema = ProjectNameSchema
 export const ImportRequestSchema = z.object({
   source: z.string().min(1),
   destination: z.string().min(1),
@@ -378,9 +379,12 @@ export interface Round {
 
 export interface BuildSummary {
   name: string // relative to builds/, posix (e.g. castle, _examples/showcase)
+  displayName: string // user-facing project name from project.json, or `name` when absent
   minecraftVersion?: string
   status: string[] // bullet lines of the DESIGN.md "## Status" block
   rounds: Round[]
+  preview?: string // repo-relative posix path of the final/latest build's full isometric render PNG
+  previewMtime?: number // mtime of `preview` for cache busting
   sheet?: string // repo-relative posix path of the newest out/**/sheet.png
   // out/*.litematic, newest first; sheet: its <stem>_3d (or _ctx) sheet.png; parts: a <stem>.parts.npz beside it
   versions: {

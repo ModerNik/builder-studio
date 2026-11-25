@@ -174,10 +174,16 @@ export function registerWorkspace(ctx: IpcContext, handle: Handle): void {
     idle(path.split('/').slice(1, -2).join('/'))
     return deleteVersion(resolved().workspace, path, trash)
   })
-  handle('builds:rename', z.object({ name: z.string(), to: z.string() }), ({ name, to }) => {
-    idle(name)
-    return moving(() => renameBuild(resolved().workspace, name, to))
-  })
+  handle(
+    'builds:rename',
+    z.object({ name: z.string(), to: NewBuildNameSchema }),
+    async ({ name, to }) => {
+      idle(name)
+      const renamed = await renameBuild(resolved().workspace, name, to)
+      broadcast('builds:changed')
+      return renamed
+    }
+  )
   handle('builds:archive', z.string(), (name) => {
     idle(name)
     return moving(() => archiveBuild(resolved().workspace, name, trash))

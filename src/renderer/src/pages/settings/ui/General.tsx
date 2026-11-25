@@ -8,6 +8,7 @@ import { Progress } from '@/shared/ui/primitives/progress'
 import { ThemeControl } from '@/entities/settings/ui/ThemeControl'
 import { InlineNotice } from '@/shared/ui/feedback/Alert'
 import { SettingsPanel, SettingsRow, SettingsSection } from '@/entities/settings/ui/Settings'
+import { useBuilds } from '@/entities/build/model/builds'
 import { useJobs } from '@/entities/job/model/jobs'
 import { releasesUrl, updateText, useUpdates } from '@/entities/update/model/updates'
 import { UI_SCALES, type Settings } from '@shared/api'
@@ -22,6 +23,8 @@ export function General({ settings }: { settings: Settings }): ReactElement {
   const [importing, setImporting] = useState(false)
   const { open, rerun } = useGeneralActions()
   // the main process refuses a workspace change while work runs; say so before the click
+  const builds = useBuilds().data ?? []
+  const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName || id
   const running = useJobs(useShallow((s) => s.jobs.filter((j) => j.state === 'running')))
   const scale = settings.appearance.scale
   const setScale = (to?: number): void =>
@@ -88,7 +91,7 @@ export function General({ settings }: { settings: Settings }): ReactElement {
               <>
                 {running.length > 0 && (
                   <InlineNotice tone="warning" className="text-sm">
-                    {`${running.map((j) => j.spec.build).join(', ')} ${running.length > 1 ? 'have' : 'has'} a job running. Stop it to change the workspace.`}
+                    {`${running.map((j) => labelOf(j.spec.build)).join(', ')} ${running.length > 1 ? 'have' : 'has'} a job running. Stop it to change the workspace.`}
                   </InlineNotice>
                 )}
                 <ErrorNotice error={open.error} />

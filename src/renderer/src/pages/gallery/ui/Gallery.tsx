@@ -62,7 +62,7 @@ import {
   type BuildState,
   type Sort
 } from '@/entities/build/model/gallery'
-import type { BuildSummary } from '@shared/api'
+import { PROJECT_NAME_MAX_LENGTH, type BuildSummary } from '@shared/api'
 import { plain } from '@/shared/lib/format'
 import { ImportDialog } from '@/features/import-projects/ui/ImportProjects'
 import { SchematicFileField } from '@/features/import-schematic/ui/ImportSchematic'
@@ -215,8 +215,8 @@ export function Gallery(): ReactElement {
       <>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
           <Input
-            aria-label="Filter builds by name"
-            placeholder="Filter by name"
+            aria-label="Search builds"
+            placeholder="Search"
             leading={<Search aria-hidden />}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -288,7 +288,7 @@ export function Gallery(): ReactElement {
             ))}
           </CardGrid>
         ) : (
-          <ul className="flex flex-col">
+          <ul className="flex flex-col gap-3">
             {shown.map((b) => (
               <li key={b.name}>
                 <Card
@@ -306,6 +306,11 @@ export function Gallery(): ReactElement {
       </>
     )
 
+  const renamingBuild = renaming ? (all.find((b) => b.name === renaming) ?? null) : null
+  const doomedBuild = doomed ? (all.find((b) => b.name === doomed) ?? null) : null
+  const takenDisplayNames = all.map((b) => b.displayName || b.name)
+  const takenFolders = all.map((b) => b.name)
+
   return (
     <div className="flex min-h-full flex-col">
       <div className="mx-auto flex w-full max-w-wide flex-1 flex-col gap-4 px-4 pt-6 pb-8 sm:px-8">
@@ -322,20 +327,23 @@ export function Gallery(): ReactElement {
       <NewBuildDialog
         open={dialog === 'new'}
         onOpenChange={(o) => setDialog(o ? 'new' : null)}
-        taken={all.map((b) => b.name)}
+        takenDisplayNames={takenDisplayNames}
+        takenFolders={takenFolders}
       />
       <ImportDialog
         open={dialog === 'import'}
         onOpenChange={(o) => setDialog(o ? 'import' : null)}
       />
-      {renaming && (
+      {renamingBuild && (
         <RenameDialog
-          name={renaming}
-          taken={all.map((b) => b.name)}
+          build={renamingBuild}
+          takenDisplayNames={all
+            .filter((b) => b.name !== renamingBuild.name)
+            .map((b) => b.displayName || b.name)}
           onClose={() => setRenaming(null)}
         />
       )}
-      <DeleteBuild name={doomed} onClose={() => setDoomed(null)} />
+      <DeleteBuild build={doomedBuild} onClose={() => setDoomed(null)} />
     </div>
   )
 }
@@ -434,13 +442,14 @@ function Card({
       {busy && <Label className="max-w-60 text-xs font-normal text-fg-muted">{busyReason}</Label>}
     </>
   )
+  const displayName = b.displayName || b.name
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <BuildCard
           layout={layout}
-          name={b.name}
-          image={b.sheet ? buildUrl(b.sheet, Math.round(b.mtime)) : null}
+          name={displayName}
+          image={b.preview ? buildUrl(b.preview, Math.round(b.previewMtime ?? b.mtime)) : null}
           status={status ?? 'No status yet'}
           meta={buildMeta(b)}
           badge={
@@ -454,12 +463,12 @@ function Card({
             )
           }
           progress={job ? null : undefined}
-          progressLabel={`Working on ${b.name}`}
+          progressLabel={`Working on ${displayName}`}
           onOpen={onOpen}
           menu={
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <IconButton label={`More actions for ${b.name}`} size="icon-sm">
+                <IconButton label={`More actions for ${displayName}`} size="icon-sm">
                   <MoreHorizontal aria-hidden />
                 </IconButton>
               </DropdownMenuTrigger>
@@ -470,7 +479,7 @@ function Card({
           }
         />
       </ContextMenuTrigger>
-      <ContextMenuContent aria-label={b.name}>
+      <ContextMenuContent aria-label={displayName}>
         {items(ContextMenuItem, ContextMenuLabel)}
       </ContextMenuContent>
     </ContextMenu>
@@ -480,11 +489,13 @@ function Card({
 function NewBuildDialog({
   open,
   onOpenChange,
-  taken
+  takenDisplayNames,
+  takenFolders
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
-  taken: string[]
+  takenDisplayNames: string[]
+  takenFolders: string[]
 }): ReactElement {
   const {
     name,
@@ -494,11 +505,11 @@ function NewBuildDialog({
     minecraftVersion,
     setSelectedVersion,
     file,
-    parsed,
+    folder,
     rule,
     create,
     close
-  } = useNewBuild(taken, onOpenChange)
+  } = useNewBuild(takenDisplayNames, takenFolders, onOpenChange)
   const locked = busy || file.choosing
   return (
     <Dialog open={open} onOpenChange={(o) => !o && !locked && close()}>
@@ -519,14 +530,14 @@ function NewBuildDialog({
           }}
         >
           <Field
-            label="Build name"
+            label="Project name"
             hint={
               <>
-                Lowercase letters, digits and _, starting with a letter.
-                {parsed.success && !rule && (
+                Up to {PROJECT_NAME_MAX_LENGTH} characters. Spaces, numbers and symbols are allowed.
+                {folder && (
                   <>
                     {' '}
-                    Creates <span className="font-mono">builds\{name}\</span> with build.py,
+                    Creates <span className="font-mono">builds\{folder}\</span> with build.py,
                     DESIGN.md and a README.
                   </>
                 )}
@@ -538,9 +549,7 @@ function NewBuildDialog({
               autoFocus
               value={name}
               disabled={busy}
-              spellCheck={false}
-              placeholder="my_build"
-              className="font-mono"
+              placeholder="Harbor Lighthouse #2"
               onChange={(e) => setName(e.target.value)}
             />
           </Field>
@@ -573,20 +582,25 @@ function NewBuildDialog({
 }
 
 function RenameDialog({
-  name,
-  taken,
+  build,
+  takenDisplayNames,
   onClose
 }: {
-  name: string
-  taken: string[]
+  build: Pick<BuildSummary, 'name' | 'displayName'>
+  takenDisplayNames: string[]
   onClose: () => void
 }): ReactElement {
-  const { to, setTo, error, submit } = useRenameBuild(name, taken, onClose)
+  const displayName = build.displayName || build.name
+  const { to, setTo, error, submit } = useRenameBuild(
+    { name: build.name, displayName },
+    takenDisplayNames,
+    onClose
+  )
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Rename {name}</DialogTitle>
+          <DialogTitle>Rename {displayName}</DialogTitle>
         </DialogHeader>
         <form
           id="rename-build"
@@ -596,17 +610,16 @@ function RenameDialog({
           }}
         >
           <Field
-            label="New folder name"
+            label="Project name"
             error={error || undefined}
-            hint={`Renames the folder builds\\${name.replaceAll('/', '\\')}. Code inside that names its own folder isn’t changed.`}
+            hint={
+              <>
+                Up to {PROJECT_NAME_MAX_LENGTH} characters. Keeps folder{' '}
+                <span className="font-mono">builds\{build.name.replaceAll('/', '\\')}</span> intact.
+              </>
+            }
           >
-            <Input
-              autoFocus
-              value={to}
-              spellCheck={false}
-              className="font-mono"
-              onChange={(e) => setTo(e.target.value)}
-            />
+            <Input autoFocus value={to} onChange={(e) => setTo(e.target.value)} />
           </Field>
         </form>
         <DialogFooter>
@@ -624,20 +637,21 @@ function RenameDialog({
 
 /** Delete keeps the knowledge: sources and DESIGN.md go to builds/_archive, only out/ (drafts and renders) is trashed. */
 function DeleteBuild({
-  name,
+  build,
   onClose
 }: {
-  name: string | null
+  build: Pick<BuildSummary, 'name' | 'displayName'> | null
   onClose: () => void
 }): ReactElement {
-  const { size, archive } = useDeleteBuild(name)
-  const base = name?.split('/').pop()
+  const { size, archive } = useDeleteBuild(build?.name ?? null)
+  const displayName = build ? build.displayName || build.name : ''
+  const base = build?.name.split('/').pop()
   const mono = (s: string): ReactElement => <span className="font-mono">{s}</span>
   return (
     <ConfirmDestructive
-      open={!!name}
+      open={!!build}
       onOpenChange={(o) => !o && onClose()}
-      title={`Delete ${name}?`}
+      title={`Delete ${displayName}?`}
       action="Delete build"
       onConfirm={archive}
     >

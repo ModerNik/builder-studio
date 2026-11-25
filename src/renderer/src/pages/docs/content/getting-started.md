@@ -68,11 +68,13 @@ Details: [AI assistant](ai-assistant.md).
 
 ## Your first build
 
-1. In the **Gallery**, choose **New build** and enter a name: lowercase letters, digits and
-   underscores, starting with a letter (for example `stone_bridge`). This needs the build engine and Git.
-2. The engine creates its starter scaffold in `builds/<name>/` and the build opens.
+1. In the **Gallery**, choose **New build** and enter a project name (for example `Stone Bridge` or
+   `Harbor Lighthouse #2`). Spaces, numbers, Unicode and symbols up to 100 characters are supported.
+   This needs the build engine and Git.
+2. The engine creates its starter scaffold in `builds/<slug>/` (with the display name saved in
+   `project.json`) and the build opens.
 3. Press **Ctrl Enter** (or **⋯ → Generate draft**) to build a draft and see it in 3D.
-4. Open the AI assistant with **Ctrl J** and describe what you want, or edit `builds/<name>/build.py`
+4. Open the AI assistant with **Ctrl J** and describe what you want, or edit `builds/<slug>/build.py`
    yourself. Builder Studio picks up file changes automatically.
 5. When a version looks right, use **Review** to compare and give feedback, and **Export** to
    finalize it into your schematics folder.

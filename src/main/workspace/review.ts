@@ -1,6 +1,6 @@
 // Review rounds: builds/<name>/review/round_N.json plus a short gist in the DESIGN.md log. The `## Status` block
 // belongs to the agent: every DESIGN.md write here checks it came through unchanged.
-import { existsSync, renameSync, rmSync, writeFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { mkdir, readdir, readFile } from 'fs/promises'
 import { join, posix } from 'path'
 import {
@@ -9,19 +9,10 @@ import {
   type ReviewRound,
   type SavedRound
 } from '@shared/api'
+import { writeAtomic } from './paths'
 import { buildDir, parseDesign } from './projects'
 
-/** tmp + rename, so a reader (the agent, the watcher) never sees half a file. */
-export function writeAtomic(file: string, text: string): void {
-  const tmp = `${file}.${process.pid}.tmp`
-  writeFileSync(tmp, text)
-  try {
-    renameSync(tmp, file)
-  } catch (e) {
-    rmSync(tmp, { force: true })
-    throw e
-  }
-}
+export { writeAtomic }
 
 /** The `## Status` heading and its body, up to the next `## ` heading ('' when there is none). */
 export function statusBlock(md: string): string {

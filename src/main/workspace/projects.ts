@@ -3,9 +3,32 @@ import { watch, type FSWatcher } from 'chokidar'
 import { existsSync, readFileSync } from 'fs'
 import { mkdir, readdir, readFile, rename, stat } from 'fs/promises'
 import { dirname, join, posix } from 'path'
-import type { BuildSummary, Round } from '@shared/api'
+import { ProjectMetaSchema, ProjectNameSchema, type BuildSummary, type Round } from '@shared/api'
+import { normalizeProjectName } from '@shared/project-name'
 import { DEFAULT_MINECRAFT_VERSION, isMinecraftVersion } from '@shared/minecraft'
-import { toolPath, under } from './paths'
+import { toolPath, under, writeAtomic } from './paths'
+
+const PROJECT_META_FILE = 'project.json'
+const ISO_VIEWS = ['iso_se.png', 'iso_sw.png', 'iso_ne.png', 'iso_nw.png'] as const
+
+export function readProjectDisplayName(repo: string, name: string): string {
+  try {
+    const file = toolPath(repo, posix.join('builds', name, PROJECT_META_FILE))
+    const parsed = ProjectMetaSchema.safeParse(JSON.parse(readFileSync(file, 'utf8')))
+    if (parsed.success) return parsed.data.name
+  } catch {
+    // missing or malformed metadata falls back to the folder name
+  }
+  return name
+}
+
+export function writeProjectDisplayName(repo: string, name: string, displayName: string): string {
+  const clean = ProjectNameSchema.parse(displayName)
+  buildDir(repo, name)
+  const file = toolPath(repo, posix.join('builds', name, PROJECT_META_FILE))
+  writeAtomic(file, JSON.stringify({ name: clean }, null, 2) + '\n')
+  return clean
+}
 
 export function readMinecraftVersion(path: string): string {
   let content: string
@@ -58,8 +81,8 @@ export function parseDesign(md: string): { status: string[]; rounds: Round[]; sh
     }
     const r = /^###\s+Round\s+(\d+)\s*[:.\-–—]?\s*(.*)$/i.exec(line)
     if (r) rounds.push({ n: Number(r[1]), title: r[2].trim() })
-    const s = /^###\s+Shipped\s+(\S+)/.exec(line)
-    if (s) shipped.push(s[1])
+    const s = /^###\s+Shipped\s+(.+?)(?:\s+\(\d{4}-\d{2}-\d{2}\))?\s*$/.exec(line)
+    if (s) shipped.push(s[1].trim())
   }
   return { status, rounds, shipped }
 }
@@ -80,8 +103,35 @@ function listedVersion(read: () => string): string | undefined {
   }
 }
 
+async function findIsoRender(
+  out: string,
+  rel: (...p: string[]) => string,
+  renders: Set<string>,
+  stem: string
+): Promise<{ path: string; mtime: number } | undefined> {
+  for (const dir of [`${stem}_3d`, `${stem}_ctx`]) {
+    if (!renders.has(dir)) continue
+    const fullDir = join(out, dir)
+    for (const file of ISO_VIEWS) {
+      const s = await stat(join(fullDir, file)).catch(() => null)
+      if (s?.isFile()) return { path: rel('out', dir, file), mtime: s.mtimeMs }
+    }
+    const entries = await readdir(fullDir, { withFileTypes: true }).catch(() => [])
+    const extra = entries
+      .filter((e) => e.isFile() && /^iso_.*\.png$/i.test(e.name))
+      .map((e) => e.name)
+      .sort()[0]
+    if (extra) {
+      const s = await stat(join(fullDir, extra)).catch(() => null)
+      if (s?.isFile()) return { path: rel('out', dir, extra), mtime: s.mtimeMs }
+    }
+  }
+  return undefined
+}
+
 async function summary(repo: string, name: string): Promise<BuildSummary> {
   const dir = join(repo, 'builds', name)
+  const displayName = readProjectDisplayName(repo, name)
   const minecraftVersion = listedVersion(() => projectMinecraftVersion(repo, name))
   const design = await readFile(join(dir, 'DESIGN.md'), 'utf8').catch(() => '')
   const out = join(dir, 'out')
@@ -119,8 +169,33 @@ async function summary(repo: string, name: string): Promise<BuildSummary> {
     if (dir) v.sheet = rel('out', dir, 'sheet.png')
   }
   versions.sort((a, b) => b.mtime - a.mtime)
-  const mtime = Math.max(0, versions[0]?.mtime ?? 0, sheet?.mtime ?? 0)
-  return { name, minecraftVersion, ...parseDesign(design), sheet: sheet?.path, versions, mtime }
+  const parsed = parseDesign(design)
+  const previewCandidates = [
+    ...[...parsed.shipped].reverse(),
+    posix.basename(name),
+    'full',
+    ...versions.map((v) => posix.basename(v.path, '.litematic'))
+  ]
+  const seen = new Set<string>()
+  let preview: { path: string; mtime: number } | undefined
+  for (const stem of previewCandidates) {
+    if (!stem || seen.has(stem)) continue
+    seen.add(stem)
+    preview = await findIsoRender(out, rel, renders, stem)
+    if (preview) break
+  }
+  const mtime = Math.max(0, versions[0]?.mtime ?? 0, sheet?.mtime ?? 0, preview?.mtime ?? 0)
+  return {
+    name,
+    displayName,
+    minecraftVersion,
+    ...parsed,
+    preview: preview?.path,
+    previewMtime: preview?.mtime,
+    sheet: sheet?.path,
+    versions,
+    mtime
+  }
 }
 
 /** builds/<name> with a build.py or DESIGN.md; folders starting with _ hold more builds one level down. */
@@ -141,7 +216,6 @@ export async function listBuilds(repo: string): Promise<BuildSummary[]> {
 
 const ARCHIVE = '_archive'
 const BUILD = /^(_[\w.-]+\/)?[\w.-]+$/ // castle, _examples/showcase
-const NAME = /^[\w.-]+$/
 
 /** Sends a file or folder to the Recycle Bin (Electron's shell.trashItem; injected so tests can run in node). */
 export type Trash = (path: string) => Promise<void>
@@ -170,14 +244,16 @@ export async function deleteVersion(repo: string, path: string, trash: Trash): P
   for (const p of beside.map((s) => join(dirname(file), s))) if (existsSync(p)) await trash(p)
 }
 
-/** Renames the build folder in place; returns the new build name. */
+/** Updates the project's display name in project.json while keeping its folder stable; returns its build id. */
 export async function renameBuild(repo: string, name: string, to: string): Promise<string> {
-  if (!NAME.test(to) || to.startsWith('_')) throw new Error(`bad name ${to}`)
-  const dir = buildDir(repo, name)
-  const target = join(dirname(dir), to)
-  if (existsSync(target)) throw new Error(`${to} already exists`)
-  await rename(dir, target)
-  return name.includes('/') ? `${posix.dirname(name)}/${to}` : to
+  const clean = ProjectNameSchema.parse(to)
+  buildDir(repo, name)
+  const existing = await listBuilds(repo)
+  const target = normalizeProjectName(clean)
+  if (existing.some((b) => b.name !== name && normalizeProjectName(b.displayName) === target))
+    throw new Error(`${clean} already exists`)
+  writeProjectDisplayName(repo, name, clean)
+  return name
 }
 
 /** Keeps the sources: out/ (drafts and renders) to the Recycle Bin, the rest to builds/_archive/<name>. */

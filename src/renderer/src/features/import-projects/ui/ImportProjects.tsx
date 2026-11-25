@@ -1,6 +1,6 @@
 // Import builds: one dialog, opened from Setup › Workspace, Settings › General and the Gallery. Paths are
-// previewed as soon as both are filled in; one primary per state (Preview import → Copy and open workspace
-// → Cancel import).
+// previewed once the user selects or edits them; one primary per state (Preview import → Copy and open
+// workspace → Cancel import).
 import { type ReactElement } from 'react'
 import { FolderOpen, MoreHorizontal } from 'lucide-react'
 import { Button } from '@/shared/ui/primitives/button'
@@ -33,12 +33,25 @@ import {
 import { Alert } from '@/shared/ui/feedback/Alert'
 import { KeyValueList } from '@/shared/ui/data/values'
 import type { ImportState } from '@shared/api'
-import { absolute, cancelImport, useImportForm, useImportState } from '../model/importProjects'
+import {
+  absolute,
+  cancelImport,
+  isImportCopying,
+  useImportForm,
+  useImportState,
+  type ImportErrorKind
+} from '../model/importProjects'
 
 const size = (bytes: number): string =>
   bytes >= 1024 ** 3
     ? `${(bytes / 1024 ** 3).toFixed(1)} GB`
     : `${(bytes / 1024 ** 2).toFixed(1)} MB`
+
+const ERROR_TITLE: Record<ImportErrorKind, string> = {
+  preview: 'Couldn’t preview import',
+  import: 'The import didn’t run',
+  action: 'Couldn’t complete action'
+}
 
 export function ImportDialog({
   open,
@@ -51,13 +64,14 @@ export function ImportDialog({
   destination?: string
 }): ReactElement {
   const state = useImportState()
+  const locked = isImportCopying(state)
   return (
-    <Dialog open={open} onOpenChange={(next) => !state.busy && onOpenChange(next)}>
+    <Dialog open={open} onOpenChange={(next) => !locked && onOpenChange(next)}>
       <DialogContent
         size="lg"
         phone="sheet"
-        showCloseButton={!state.busy}
-        onInteractOutside={(e) => state.busy && e.preventDefault()}
+        showCloseButton={!locked}
+        onInteractOutside={(e) => locked && e.preventDefault()}
       >
         <DialogHeader>
           <DialogTitle>Import builds</DialogTitle>
@@ -65,7 +79,7 @@ export function ImportDialog({
             Copy builds from an older folder. The original is not changed.
           </DialogDescription>
         </DialogHeader>
-        {/* remounts on open, so each opening starts from the saved paths */}
+        {/* remounts on open, so each opening starts fresh from the saved paths */}
         {open && (
           <ImportForm state={state} into={destination} onClose={() => onOpenChange(false)} />
         )}
@@ -92,27 +106,33 @@ function ImportForm({
     assets,
     setAssets,
     checking,
+    copying,
     busy,
     ready,
-    setAttempt,
+    triggerPreview,
     preview,
     error,
+    errorKind,
     pick,
     recover,
     bootstrap,
     copy
   } = useImportForm(state, into, onClose)
   const short = preview && preview.available < preview.required
-  const drive = destination.trim().slice(0, 2).toUpperCase()
+  const empty = preview && preview.files === 0
+  const trimmedDest = destination.trim()
+  const drive = /^[a-z]:/i.test(trimmedDest)
+    ? trimmedDest.slice(0, 2).toUpperCase()
+    : 'the destination'
 
   const pathField = (kind: 'source' | 'destination'): ReactElement => {
     const label = kind === 'source' ? 'Copy from' : 'Into workspace'
+    const value = kind === 'source' ? source : destination
     return (
       <Field
         label={label}
         error={
-          (kind === 'source' ? source : destination).trim() &&
-          !absolute(kind === 'source' ? source : destination)
+          value.trim() && !absolute(value)
             ? 'Enter the full folder path, starting with a drive letter such as C:\\.'
             : undefined
         }
@@ -121,8 +141,8 @@ function ImportForm({
           <Input
             className="min-w-0 flex-1 font-mono text-sm"
             spellCheck={false}
-            value={kind === 'source' ? source : destination}
-            disabled={busy || checking}
+            value={value}
+            disabled={busy}
             onChange={(e) =>
               kind === 'source' ? setSource(e.target.value) : setDestination(e.target.value)
             }
@@ -130,7 +150,7 @@ function ImportForm({
           <Button
             variant="outline"
             className="max-sm:hidden"
-            disabled={busy || checking}
+            disabled={busy}
             onClick={() => pick(kind)}
           >
             Browse…
@@ -139,7 +159,7 @@ function ImportForm({
             label={`Browse for ${label.toLowerCase()}`}
             variant="outline"
             className="sm:hidden"
-            disabled={busy || checking}
+            disabled={busy}
             onClick={() => pick(kind)}
           >
             <FolderOpen aria-hidden />
@@ -161,7 +181,7 @@ function ImportForm({
         >
           <Checkbox
             checked={assets}
-            disabled={busy || checking}
+            disabled={busy}
             onCheckedChange={(v) => setAssets(v === true)}
           />
         </Field>
@@ -171,9 +191,9 @@ function ImportForm({
           becomes your workspace after copying.
         </p>
 
-        {state.busy ? (
+        {copying ? (
           <div className="flex flex-col gap-2 rounded-lg border border-border-default bg-surface-raised p-4">
-            <p className="font-medium">{state.stage}</p>
+            <p className="font-medium capitalize">{state.stage}</p>
             {state.total > 0 && (
               <>
                 <p className="text-sm text-fg-secondary">
@@ -204,9 +224,14 @@ function ImportForm({
               ]}
             />
             <p className="text-sm text-fg-secondary">
-              Existing files are never overwritten. Links and overlapping folders are refused.{' '}
-              {drive} has hard links, which the import uses to put the copied files in place.
+              Existing files are never overwritten. Links and overlapping folders are refused. The
+              import uses hard links on {drive} to put the copied files in place.
             </p>
+            {empty && (
+              <Alert tone="warning" title="No files found to import">
+                The builds folder is empty. Choose a folder that contains builds to import.
+              </Alert>
+            )}
             {short && (
               <Alert tone="danger" title={`Not enough space on ${drive}`}>
                 {`The import needs ${size(preview.required)} and ${size(preview.available)} is free. Free some space or choose another destination.`}
@@ -233,19 +258,19 @@ function ImportForm({
         ) : (
           !error && (
             <p className="text-sm text-fg-secondary">
-              Preview import counts the builds and files and checks the space and the drive’s hard
-              links before anything is copied.
+              Preview import counts the builds and files and checks available space before anything
+              is copied.
             </p>
           )
         )}
-        {(error || state.error) && (
-          <Alert tone="danger" title="The import didn’t run">
-            {error || state.error}
+        {error && (
+          <Alert tone="danger" title={ERROR_TITLE[errorKind]}>
+            {error}
           </Alert>
         )}
       </div>
       <DialogFooter className="items-stretch sm:items-center">
-        {state.busy ? (
+        {copying ? (
           <Button variant="destructive" onClick={cancelImport}>
             Cancel import
           </Button>
@@ -284,14 +309,14 @@ function ImportForm({
                   </DropdownMenuContent>
                 </DropdownMenu>
               )}
-              <Button variant="ghost" onClick={onClose} className="max-sm:ms-auto">
+              <Button variant="ghost" disabled={busy} onClick={onClose} className="max-sm:ms-auto">
                 Close
               </Button>
             </div>
             {preview ? (
               <Button
                 variant="primary"
-                disabled={busy || !!short}
+                disabled={busy || !!short || !!empty}
                 onClick={() => void copy(preview.id)}
               >
                 Copy and open workspace
@@ -300,7 +325,7 @@ function ImportForm({
               <Button
                 variant="primary"
                 disabled={!ready || checking || busy}
-                onClick={() => setAttempt((n) => n + 1)}
+                onClick={triggerPreview}
               >
                 {checking ? 'Checking…' : error ? 'Try again' : 'Preview import'}
               </Button>

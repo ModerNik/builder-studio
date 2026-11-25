@@ -57,6 +57,7 @@ import {
 import type { Item } from '@/features/agent-chat/model/transcript'
 import type { AgentMode, PermissionAsk, Permit, SessionRef } from '@shared/api'
 import { lintProblems } from '@/shared/lib/format'
+import { useBuild } from '@/entities/build/model/builds'
 import { useCurrentBuild } from '@/entities/build/model/current-build'
 import { useBriefDialog } from './BriefDialog'
 import { AgentThreads } from './AgentThreads'
@@ -310,6 +311,7 @@ function ActiveTranscript({
   onRewind(point: string): void
 }): ReactElement {
   const id = useThread((t) => t.id)
+  const displayName = useBuild(build).data?.displayName || build
   const session = useThread((t) => t.session)
   const items = useThread((t) => t.items)
   const asks = useThread((t) => t.asks)
@@ -429,7 +431,7 @@ function ActiveTranscript({
           <EmptyState
             icon={Bot}
             size="panel"
-            title={`Talk to the agent about ${build}`}
+            title={`Talk to the agent about ${displayName}`}
             action={
               <Button variant="outline" disabled={working} onClick={onBrief}>
                 <FileText aria-hidden /> Write a brief
@@ -442,7 +444,9 @@ function ActiveTranscript({
       }
     >
       {sibling && (
-        <SystemNote>Another thread is working on {build} too; their edits can collide.</SystemNote>
+        <SystemNote>
+          Another thread is working on {displayName} too; their edits can collide.
+        </SystemNote>
       )}
       {state.error && (
         <Alert

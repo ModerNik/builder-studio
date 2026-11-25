@@ -7,9 +7,11 @@ const b = (
   mtime: number,
   rounds = 0,
   versions = 0,
-  shipped: string[] = []
+  shipped: string[] = [],
+  displayName = name
 ): BuildSummary => ({
   name,
+  displayName,
   status: [],
   rounds: Array.from({ length: rounds }, (_, i) => ({ n: i + 1, title: '' })),
   versions: Array.from({ length: versions }, (_, i) => ({
@@ -52,4 +54,17 @@ test('filters by name and state, sorts by change, name or state', () => {
   ])
   expect(shownBuilds(list, { ...opts, query: 'ET' }).map((x) => x.name)).toEqual(['beta'])
   expect(shownBuilds(list, { ...opts, state: 'review' }).map((x) => x.name)).toEqual(['gamma'])
+
+  const titled = [
+    b('slug_a', 1, 0, 0, [], 'Zebra Tower #2'),
+    b('slug_b', 2, 0, 0, [], 'Alpha Castle (v1)')
+  ]
+  expect(shownBuilds(titled, { ...opts, sort: 'name' }).map((x) => x.name)).toEqual([
+    'slug_b',
+    'slug_a'
+  ])
+  expect(shownBuilds(titled, { ...opts, query: 'castle (v1)' }).map((x) => x.name)).toEqual([
+    'slug_b'
+  ])
+  expect(shownBuilds(titled, { ...opts, query: 'slug_a' }).map((x) => x.name)).toEqual(['slug_a'])
 })

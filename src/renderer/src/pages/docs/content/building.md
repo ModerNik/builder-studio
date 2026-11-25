@@ -4,12 +4,14 @@
 
 ## Gallery
 
-The home screen lists every build in the workspace with its newest preview sheet, sorted by the
-most recent change.
+The home screen lists every build in the workspace with its full isometric preview (from the newest
+shipped build, full build, or latest draft), sorted by the most recent change.
 
-- **New build** creates the engine's starter scaffold in `builds/<name>/` and opens it. Names use
-  lowercase letters, digits and underscores, start with a letter, and can't be reserved Windows names
-  such as `con` or `nul`. Needs the build engine and Git.
+- **New build** creates the engine's starter scaffold in `builds/<slug>/` and opens it. Project
+  names can use spaces, numbers, Unicode and printable symbols up to 100 characters; Builder Studio
+  saves the display name in `project.json` and generates a safe folder slug automatically. Needs the
+  build engine and Git.
+- **Rename** updates the project's display name in `project.json` without moving its folder on disk.
 - To start from an existing schematic, choose **Start from a schematic** in **New build**. The
   project opens with the imported blocks as its first version.
 - **Delete** archives the build's sources to `builds/_archive/` and sends only `out/` to the Recycle

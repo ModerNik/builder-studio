@@ -241,7 +241,11 @@ function Log({ name }: { name: string }): ReactElement {
     )
   else if (!md.data)
     body = (
-      <EmptyState icon={FileText} size="page" title={`No DESIGN.md for ${name} yet`}>
+      <EmptyState
+        icon={FileText}
+        size="page"
+        title={`No DESIGN.md for ${build?.displayName || name} yet`}
+      >
         The agent starts the log with the brief, and each review you save adds to it. It lives at
         builds/{name}/DESIGN.md.
       </EmptyState>

@@ -72,14 +72,15 @@ export function Shell(): ReactElement {
   useAppSubscriptions(pathname, current)
 
   const page = !current
+  const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName ?? id
   const crumbs: Crumb[] = current
     ? [
         { label: 'Builds', onSelect: () => void navigate({ to: '/' }) },
         {
-          label: current,
+          label: labelOf(current),
           menu: {
             label: 'Switch build',
-            items: builds.map((b) => ({ id: b.name, label: b.name })),
+            items: builds.map((b) => ({ id: b.name, label: b.displayName || b.name })),
             value: current,
             onSelect: (name) => void navigate({ to: '/build/$name', params: { name } })
           }
@@ -244,6 +245,8 @@ function Palette({
       .filter(([, d]) => d.requestId)
       .map(([b]) => b)
   )
+  const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName ?? id
+  const currentLabel = current ? labelOf(current) : null
   const gallery = (open: 'new' | 'import'): void => {
     void navigate({ to: '/' })
     useGalleryDialog.setState({ open })
@@ -254,10 +257,10 @@ function Palette({
       <CommandList>
         <CommandEmpty>Nothing found.</CommandEmpty>
         {current && (
-          <CommandGroup heading={current}>
+          <CommandGroup heading={currentLabel ?? current}>
             {(['proto', 'check'] as const).map((part) => (
               <CommandItem key={part} onSelect={go(() => runJob(current, part, opts))}>
-                {{ proto: 'Generate draft', check: 'Check build' }[part]}: {current}
+                {{ proto: 'Generate draft', check: 'Check build' }[part]}: {currentLabel}
                 {part === 'proto' && <CommandShortcut>Ctrl Enter</CommandShortcut>}
               </CommandItem>
             ))}
@@ -266,7 +269,7 @@ function Palette({
                 () => void navigate({ to: '/build/$name/ship', params: { name: current } })
               )}
             >
-              Export: {current}
+              Export: {currentLabel}
             </CommandItem>
           </CommandGroup>
         )}
@@ -274,7 +277,7 @@ function Palette({
           <CommandGroup heading="Running">
             {running.map((j) => (
               <CommandItem key={j.id} onSelect={go(() => cancelJob(j.id))}>
-                Stop build activity: {j.spec.build}
+                Stop build activity: {labelOf(j.spec.build)}
               </CommandItem>
             ))}
           </CommandGroup>
@@ -282,14 +285,15 @@ function Palette({
         <CommandGroup heading="Builds">
           {builds.map((b) => {
             const state = STATE_LABEL[buildState(b, busy, reviews)]
+            const display = b.displayName || b.name
             return (
               <CommandItem
                 key={b.name}
-                value={`${b.name} ${state} ${b.status[0] ?? ''}`}
+                value={`${display} ${b.name} ${state} ${b.status[0] ?? ''}`}
                 onSelect={go(() => void navigate({ to: '/build/$name', params: { name: b.name } }))}
               >
-                <span className="font-mono">{b.name}</span>
-                <span className="text-fg-muted">· {state}</span>
+                <span className="truncate font-medium">{display}</span>
+                <span className="shrink-0 text-fg-muted">· {state}</span>
               </CommandItem>
             )
           })}

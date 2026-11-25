@@ -31,11 +31,15 @@ function CrumbItem({ crumb, last }: { crumb: Crumb; last: boolean }): ReactEleme
     return (
       <DropdownMenu.Root>
         <DropdownMenu.Trigger className={cls} aria-label={`${crumb.menu.label}: ${crumb.label}`}>
-          <span className="truncate font-mono text-sm">{crumb.label}</span>
+          <span className="truncate font-medium text-sm">{crumb.label}</span>
           <ChevronDown aria-hidden="true" />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
-          <DropdownMenu.Content align="start" sideOffset={4} className={menuContent}>
+          <DropdownMenu.Content
+            align="start"
+            sideOffset={4}
+            className={cn(menuContent, 'max-w-72')}
+          >
             <DropdownMenu.Label className="px-2 py-1 text-xs text-fg-muted">
               {crumb.menu.label}
             </DropdownMenu.Label>
@@ -49,7 +53,7 @@ function CrumbItem({ crumb, last }: { crumb: Crumb; last: boolean }): ReactEleme
                   aria-hidden="true"
                   className={cn(item.id !== crumb.menu!.value && 'invisible')}
                 />
-                <span className="font-mono text-sm">{item.label}</span>
+                <span className="truncate text-sm">{item.label}</span>
               </DropdownMenu.Item>
             ))}
           </DropdownMenu.Content>
@@ -116,7 +120,7 @@ export function TitleBar({
         <nav aria-label="Breadcrumb" className="min-w-0">
           <ol className="flex min-w-0 items-center">
             {shownCrumbs.map((c, i) => (
-              <li key={c.label} className="flex min-w-0 items-center">
+              <li key={`${i}:${c.label}`} className="flex min-w-0 items-center">
                 {(i > 0 || !compact) && (
                   <ChevronRight aria-hidden="true" className="size-3.5 shrink-0 text-fg-muted" />
                 )}

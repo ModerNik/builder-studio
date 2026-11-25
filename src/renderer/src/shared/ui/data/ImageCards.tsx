@@ -20,6 +20,7 @@ export function ImageMedia({
   src,
   alt = '',
   aspect,
+  fit = 'cover',
   pixelated = false,
   fallback,
   children,
@@ -29,6 +30,8 @@ export function ImageMedia({
   alt?: string
   /** CSS aspect-ratio, e.g. "16 / 10". */
   aspect: string
+  /** `cover` fills and crops; `contain` shows the full image without cropping. */
+  fit?: 'cover' | 'contain'
   /** Sprites and block art: no smoothing. */
   pixelated?: boolean
   /** Shown when there is no image or it fails to load. */
@@ -57,7 +60,8 @@ export function ImageMedia({
           draggable={false}
           onError={() => setBroken(true)}
           className={cn(
-            'absolute inset-0 size-full object-cover',
+            'absolute inset-0 size-full',
+            fit === 'contain' ? 'object-contain' : 'object-cover',
             pixelated && '[image-rendering:pixelated]'
           )}
         />
@@ -99,9 +103,9 @@ export interface BuildCardProps {
   status?: ReactNode
   /** "Review 6 · Exported v4 · 2 h ago". */
   meta?: ReactNode
-  /** The newest preview sheet. */
+  /** The project's full isometric preview render. */
   image?: string | null
-  /** A status badge in the image's top corner (card) or at the row's end (row). */
+  /** A status badge in the image's top corner (card) or beside the title (row). */
   badge?: ReactNode
   /** A running job, 0–100, or null while its progress is unknown. Omit when nothing runs. */
   progress?: number | null
@@ -109,7 +113,7 @@ export interface BuildCardProps {
   onOpen: () => void
   /** The ⋯ menu button; it sits above the open target. */
   menu?: ReactNode
-  /** `row` is the list view's 44px row with a 56×35 thumbnail. */
+  /** `row` is the list view's horizontal project card with a 16:10 isometric thumbnail. */
   layout?: 'card' | 'row'
   className?: string
 }
@@ -141,7 +145,7 @@ export function BuildCard({
     return (
       <article
         className={cn(
-          'relative flex min-h-11 min-w-0 items-center gap-3 rounded-md px-2 py-1 transition-colors duration-fast ease-standard can-hover:hover:bg-surface-hover',
+          'relative flex min-h-28 min-w-0 items-center gap-4 rounded-lg border border-border-default bg-surface-raised p-3 transition-[border-color,background-color] duration-fast ease-standard can-hover:hover:border-border-strong can-hover:hover:bg-surface-overlay',
           cardFocus,
           className
         )}
@@ -149,31 +153,37 @@ export function BuildCard({
       >
         <ImageMedia
           src={image}
-          aspect="56 / 35"
-          className="w-14 rounded-xs"
-          fallback={<ImageOff aria-hidden className="size-4" />}
+          aspect="16 / 10"
+          fit="contain"
+          className="w-32 rounded-md border border-border-subtle sm:w-44"
+          fallback={
+            <>
+              <ImageOff aria-hidden className="size-4" />
+              <span className="text-xs">No preview</span>
+            </>
+          }
         >
           {running && <ImageProgress value={progress} label={progressLabel} />}
         </ImageMedia>
-        <div className="flex min-w-0 flex-1 items-baseline gap-3">
-          <button
-            type="button"
-            data-slot="card-open"
-            onClick={onOpen}
-            className={cn(
-              stretched,
-              'min-w-0 shrink-0 truncate text-start text-base font-medium text-fg'
-            )}
-          >
-            {name}
-          </button>
-          {status && (
-            <span className="min-w-0 flex-1 truncate text-sm text-fg-secondary">{status}</span>
-          )}
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+            <button
+              type="button"
+              data-slot="card-open"
+              onClick={onOpen}
+              className={cn(
+                stretched,
+                'min-w-0 max-w-full truncate text-start text-md font-semibold text-fg'
+              )}
+            >
+              {name}
+            </button>
+            {badge && <span className="shrink-0">{badge}</span>}
+          </div>
+          {status && <p className="line-clamp-2 text-sm text-fg-secondary">{status}</p>}
+          {meta && <p className="truncate text-xs text-fg-muted">{meta}</p>}
         </div>
-        {meta && <span className="shrink-0 text-xs text-fg-muted max-sm:hidden">{meta}</span>}
-        {badge && <span className="shrink-0">{badge}</span>}
-        {menu && <span className="relative z-[1] shrink-0">{menu}</span>}
+        {menu && <div className="relative z-[1] shrink-0 self-start">{menu}</div>}
       </article>
     )
   return (
@@ -185,7 +195,7 @@ export function BuildCard({
       )}
       {...rest}
     >
-      <ImageMedia src={image} aspect="16 / 10" fallback={NO_PREVIEW}>
+      <ImageMedia src={image} aspect="16 / 10" fit="contain" fallback={NO_PREVIEW}>
         {badge && <span className="absolute start-2 top-2 flex">{badge}</span>}
         {running && <ImageProgress value={progress} label={progressLabel} />}
       </ImageMedia>
