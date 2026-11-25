@@ -4,6 +4,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { NewBuildNameSchema } from '@shared/api'
+import { normalizeProjectName, slugFromProjectName } from '@shared/project-name'
 import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import { errorMessage } from '@/shared/ui/feedback/errors'
 import { studio } from '@/shared/api/studio'
@@ -12,8 +13,6 @@ import { useRunOptions } from '@/entities/job/model/run'
 import { commitSchematic, useSchematicFile } from '@/features/import-schematic/model/schematic'
 import { nameFromFile } from './buildName'
 
-const NAME = /^[\w.-]+$/
-
 /** No workspace yet: reopen first-run setup at the workspace step. */
 export const openSetup = (): void =>
   void studio.setup
@@ -21,7 +20,11 @@ export const openSetup = (): void =>
     .then(() => window.location.reload())
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- the dialog reads all of it
-export function useNewBuild(taken: string[], onOpenChange: (open: boolean) => void) {
+export function useNewBuild(
+  takenDisplayNames: string[],
+  takenFolders: string[],
+  onOpenChange: (open: boolean) => void
+) {
   const navigate = useNavigate()
   const [name, setNameValue] = useState('')
   const [busy, setBusy] = useState(false)
@@ -36,7 +39,7 @@ export function useNewBuild(taken: string[], onOpenChange: (open: boolean) => vo
     ...schematic,
     choose: async () => {
       const next = await schematic.choose()
-      if (next) setNameValue((current) => current || nameFromFile(next.name, taken))
+      if (next) setNameValue((current) => current || nameFromFile(next.name, takenDisplayNames))
       return next
     }
   }
@@ -44,27 +47,27 @@ export function useNewBuild(taken: string[], onOpenChange: (open: boolean) => vo
     setNameValue(next)
     setFailure('')
   }
+  const takenSet = new Set(takenDisplayNames.map(normalizeProjectName))
   const parsed = NewBuildNameSchema.safeParse(name)
   const rule = !name
     ? ''
-    : taken.includes(name)
-      ? `“${name}” is taken. Pick another.`
-      : parsed.success
-        ? ''
-        : parsed.error.issues[0].message === 'Reserved Windows name'
-          ? `“${name}” is a reserved Windows name. Pick another.`
-          : 'Use lowercase letters, digits and _, starting with a letter.'
+    : !parsed.success
+      ? parsed.error.issues[0].message
+      : takenSet.has(normalizeProjectName(parsed.data))
+        ? `“${parsed.data}” is taken. Pick another.`
+        : ''
+  const folder = parsed.success && !rule ? slugFromProjectName(parsed.data, takenFolders) : ''
   /** False when the name needs fixing: the dialog moves focus to it. */
   const create = async (): Promise<boolean> => {
     if (busy || file.choosing) return true
-    if (!name) setFailure('Enter a build name.')
+    if (!name.trim()) setFailure('Enter a project name.')
     if (!parsed.success || rule) return false
     setBusy(true)
     setFailure('')
     try {
       const created = file.source
-        ? (await commitSchematic({ id: file.source.id, name })).build
-        : await studio.builds.create(name, minecraftVersion)
+        ? (await commitSchematic({ id: file.source.id, name: parsed.data })).build
+        : await studio.builds.create(parsed.data, minecraftVersion)
       file.clear()
       setSelectedVersion(null)
       onOpenChange(false)
@@ -93,6 +96,7 @@ export function useNewBuild(taken: string[], onOpenChange: (open: boolean) => vo
     setSelectedVersion,
     file,
     parsed,
+    folder,
     rule,
     create,
     close
@@ -100,22 +104,29 @@ export function useNewBuild(taken: string[], onOpenChange: (open: boolean) => vo
 }
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- the dialog reads all of it
-export function useRenameBuild(name: string, taken: string[], onClose: () => void) {
-  const dir = name.includes('/') ? name.slice(0, name.lastIndexOf('/') + 1) : '' // _examples/ stays put
-  const [to, setTo] = useState(name.slice(dir.length))
+export function useRenameBuild(
+  build: { name: string; displayName: string },
+  takenDisplayNames: string[],
+  onClose: () => void
+) {
+  const [to, setTo] = useState(build.displayName)
   const rename = useRunOptions((s) => s.rename)
-  const error =
-    !NAME.test(to) || to.startsWith('_')
-      ? 'Use letters, digits, _ . and -, not starting with _.'
-      : taken.includes(dir + to) && dir + to !== name
-        ? 'Taken. Pick another name.'
-        : ''
+  const parsed = NewBuildNameSchema.safeParse(to)
+  const currentNorm = normalizeProjectName(build.displayName)
+  const otherTaken = new Set(
+    takenDisplayNames.map(normalizeProjectName).filter((n) => n !== currentNorm)
+  )
+  const error = !parsed.success
+    ? parsed.error.issues[0].message
+    : otherTaken.has(normalizeProjectName(parsed.data))
+      ? 'Taken. Pick another name.'
+      : ''
   const submit = (): void => {
-    if (error) return
-    if (dir + to === name) return onClose()
-    studio.builds.rename(name, to).then(
+    if (error || !parsed.success) return
+    if (parsed.data === build.displayName) return onClose()
+    studio.builds.rename(build.name, parsed.data).then(
       (now) => {
-        rename(name, now)
+        if (now !== build.name) rename(build.name, now)
         onClose()
       },
       (e) => toast.error(errorMessage(e))

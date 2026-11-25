@@ -19,14 +19,14 @@ const noop = (): void => {}
 
 const BUILDS = [
   {
-    name: 'harbor_lighthouse',
+    name: 'Harbor Lighthouse #2 (v5)',
     status: 'v5_copper_roof picked; export next',
     meta: 'Review 5 · Exported v4 · 2 h ago',
     image: IMG,
     badge: <Badge variant="warning">Waiting for review</Badge>
   },
   {
-    name: 'stone_bridge',
+    name: 'Stone Bridge — Canal',
     status: 'v7: deeper arches over the canal',
     meta: 'Review 6 · Exported v4 · now',
     image: IMG2,
@@ -34,20 +34,21 @@ const BUILDS = [
     progress: 42
   },
   {
-    name: 'keepers_cottage_with_a_very_long_name_for_truncation',
-    status: 'No Status block yet, so the line stays short and this one is long enough to clamp',
+    name: 'Keeper’s Cottage: Long Project Title & Testing Truncation (100%)',
+    status:
+      'No Status block yet, so the line stays readable across two lines before clamping cleanly on narrower screens',
     meta: 'Review 1 · never exported · yesterday',
     image: null
   },
   {
-    name: 'quarry_crane',
+    name: 'Quarry Crane #4',
     status: 'v2: taller jib',
     meta: 'Review 2 · never exported · 5 min ago',
     image: IMG2,
     badge: <StatusBadge state="failed">Last job failed</StatusBadge>
   },
   {
-    name: 'mill_house',
+    name: 'Mill House (Survival)',
     status: 'Exported to schematics/',
     meta: 'Review 3 · Exported v3 · 4 days ago',
     image: 'missing-file.png',
@@ -58,24 +59,24 @@ const BUILDS = [
 export default function BuildCardSection(): ReactElement {
   return (
     <div className="flex flex-col gap-6">
-      <Specimens title="Card: preview 16:10 on viewer gray, status badge and progress on the image, ⋯ above the open target">
+      <Specimens title="Card: full isometric 16:10 preview on viewer gray, status badge and progress on the image, ⋯ above the open target">
         <CardGrid min="15rem" className="w-full">
           {BUILDS.map((b) => (
             <BuildCard key={b.name} {...b} onOpen={noop} menu={menu(b.name)} />
           ))}
         </CardGrid>
       </Specimens>
-      <Specimens title="Row: the list view for many builds, 44px with a 56×35 thumbnail">
-        <div className="flex w-full max-w-4xl flex-col divide-y divide-border-subtle rounded-lg border border-border-default bg-surface-raised p-1">
+      <Specimens title="Row: spacious horizontal list cards with 16:10 isometric previews, multi-line status and always-visible metadata">
+        <div className="flex w-full max-w-4xl flex-col gap-3">
           {BUILDS.map((b) => (
             <BuildCard key={b.name} {...b} layout="row" onOpen={noop} menu={menu(b.name)} />
           ))}
           <BuildCard
-            name="oak_gate"
+            name="Oak Gate & Courtyard"
             status="Waiting for its first draft"
-            meta="No reviews yet"
+            meta="No reviews yet · No versions yet"
             progress={null}
-            progressLabel="oak_gate: starting"
+            progressLabel="Oak Gate & Courtyard: starting"
             onOpen={noop}
             layout="row"
           />
@@ -83,8 +84,9 @@ export default function BuildCardSection(): ReactElement {
       </Specimens>
       <Guidance>
         The whole card opens the build (Enter on the focused name does too); the ⋯ button and the
-        context menu hold Rename and Delete. No image shows “No preview yet”; a broken one the
-        image-off mark. The meta line drops out of rows under 640px.
+        context menu hold Rename and Delete. Previews use object-contain so full isometric renders
+        never crop. No image shows “No preview yet” (or “No preview” in compact thumbnails); a
+        broken one shows the image-off mark.
       </Guidance>
     </div>
   )

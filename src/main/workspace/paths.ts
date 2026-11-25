@@ -1,5 +1,17 @@
 import { dirname, isAbsolute, relative, resolve, sep } from 'path'
-import { existsSync, realpathSync, statSync } from 'fs'
+import { existsSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'fs'
+
+/** tmp + rename, so a reader (the agent, the watcher) never sees half a file. */
+export function writeAtomic(file: string, text: string): void {
+  const tmp = `${file}.${process.pid}.tmp`
+  writeFileSync(tmp, text)
+  try {
+    renameSync(tmp, file)
+  } catch (e) {
+    rmSync(tmp, { force: true })
+    throw e
+  }
+}
 
 export interface FileRoots {
   workspace: string

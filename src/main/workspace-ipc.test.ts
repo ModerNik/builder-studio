@@ -388,7 +388,14 @@ it('keeps settings on import failure and releases the operation lock for retry',
   expect(state.bootstrap).not.toHaveBeenCalled()
   expect(state.watch).toHaveBeenLastCalledWith('D:/old workspace')
   await expect(invoke('builds:create', 'starter')).resolves.toBe('starter')
-  await expect(invoke('builds:create', '../escape')).rejects.toThrow()
+  await expect(invoke('builds:create', 'Castle #2 (v1)')).resolves.toBe('starter')
+  expect(state.create).toHaveBeenLastCalledWith(
+    expect.anything(),
+    'Castle #2 (v1)',
+    expect.anything()
+  )
+  await expect(invoke('builds:create', 'a'.repeat(101))).rejects.toThrow()
+  await expect(invoke('builds:create', 'line\nbreak')).rejects.toThrow()
 })
 
 it('requires usable tools, permits setup without textures or AI, and reopens without resetting configuration', async () => {

@@ -1,9 +1,12 @@
-import { lstat, mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, rmdir, writeFile } from 'fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'path'
 import { NewBuildNameSchema, type Settings } from '@shared/api'
+import { normalizeProjectName, slugFromProjectName } from '@shared/project-name'
 import { command, installedGit } from '../runtime/runtime'
 import { insideRepo } from '../agent/permissions'
 import { canonicalPath } from './paths'
+import { listBuilds, writeProjectDisplayName } from './projects'
 
 /** A real write probe, without changing any existing workspace file. */
 export async function validateWorkspace(
@@ -94,16 +97,22 @@ export async function bootstrapWorkspace(workspace: string, managedGit = ''): Pr
   }
 }
 
-/** The engine owns the scaffold and collision guard; the app supplies the resolved environment. */
+/** The engine owns the scaffold and collision guard; the app maps display names to safe folder slugs. */
 export async function createBuild(
   s: Settings,
   name: string,
   env: NodeJS.ProcessEnv,
   schematicStage?: string
 ): Promise<string> {
-  NewBuildNameSchema.parse(name)
+  const displayName = NewBuildNameSchema.parse(name)
   if (!s.workspace) throw new Error('Select a workspace in Settings first')
-  await noLinks(join(s.workspace, 'builds', name))
+  const existing = await listBuilds(s.workspace)
+  const target = normalizeProjectName(displayName)
+  if (existing.some((b) => normalizeProjectName(b.displayName) === target))
+    throw new Error(`${displayName} already exists`)
+  const takenFolders = await readdir(join(s.workspace, 'builds')).catch(() => [] as string[])
+  const slug = slugFromProjectName(displayName, takenFolders)
+  await noLinks(join(s.workspace, 'builds', slug))
   await bootstrapWorkspace(s.workspace, s.git)
   try {
     await command(s.python, ['-c', 'import mcb, schematica, tools.new_build'], {
@@ -120,10 +129,12 @@ export async function createBuild(
     [
       '-m',
       'tools.new_build',
-      name,
+      slug,
       ...(schematicStage ? ['--schematic-stage', schematicStage] : [])
     ],
     { cwd: s.workspace, env }
   )
-  return name
+  if (existsSync(join(s.workspace, 'builds', slug)))
+    writeProjectDisplayName(s.workspace, slug, displayName)
+  return slug
 }

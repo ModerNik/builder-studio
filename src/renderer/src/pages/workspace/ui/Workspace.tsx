@@ -277,7 +277,7 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   )
   const standIn = (
     <CanvasState
-      name={name}
+      name={build?.displayName || name}
       error={buildError}
       loading={isLoading}
       missing={!build}

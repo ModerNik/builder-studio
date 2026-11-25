@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'fs'
+import { existsSync, mkdirSync, mkdtempSync, utimesSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { describe, expect, it } from 'vitest'
@@ -43,8 +43,11 @@ describe('parseDesign', () => {
     expect(d.shipped).toEqual(['pit_v1'])
   })
 
-  it('copes with no DESIGN.md', () => {
+  it('copes with no DESIGN.md and parses shipped stems with spaces', () => {
     expect(parseDesign('')).toEqual({ status: [], rounds: [], shipped: [] })
+    expect(parseDesign('### Shipped Grand Keep v2 (2026-11-25)\n').shipped).toEqual([
+      'Grand Keep v2'
+    ])
   })
 })
 
@@ -129,13 +132,73 @@ describe('build file operations', () => {
     await expect(deleteVersion(r.root, 'builds/../x/out/a.litematic', r.trash)).rejects.toThrow()
   })
 
-  it('renames in place and refuses collisions and bad names', async () => {
+  it('updates displayName in project.json while keeping the folder stable, and refuses collisions/bad names', async () => {
     const r = repo()
     await expect(renameBuild(r.root, 'ring', 'other')).rejects.toThrow('already exists')
-    await expect(renameBuild(r.root, 'ring', '../x')).rejects.toThrow()
-    await expect(renameBuild(r.root, '../ring', 'x')).rejects.toThrow()
-    expect(await renameBuild(r.root, 'ring', 'ring2')).toBe('ring2')
-    expect(existsSync(join(r.root, 'builds/ring2/DESIGN.md'))).toBe(true)
+    await expect(renameBuild(r.root, 'ring', 'OTHER')).rejects.toThrow('already exists')
+    await expect(renameBuild(r.root, 'ring', '   ')).rejects.toThrow()
+    await expect(renameBuild(r.root, 'ring', 'bad\nname')).rejects.toThrow()
+    await expect(renameBuild(r.root, 'ring', 'a'.repeat(101))).rejects.toThrow()
+    await expect(renameBuild(r.root, '../ring', 'Valid Name')).rejects.toThrow()
+    expect(await renameBuild(r.root, 'ring', 'Ring #2: Gate & Tower!')).toBe('ring')
+    expect(existsSync(join(r.root, 'builds/ring/DESIGN.md'))).toBe(true)
+    const ring = (await listBuilds(r.root)).find((b) => b.name === 'ring')!
+    expect(ring.displayName).toBe('Ring #2: Gate & Tower!')
+    // case-only rename of the same build succeeds
+    expect(await renameBuild(r.root, 'ring', 'ring #2: gate & tower!')).toBe('ring')
+  })
+
+  it('picks full isometric preview of shipped/final build over contact sheets and random detail folders', async () => {
+    const r = repo()
+    const put = (rel: string, mtimeSec: number): void => {
+      const p = join(r.root, rel)
+      mkdirSync(join(p, '..'), { recursive: true })
+      writeFileSync(p, 'png')
+      utimesSync(p, mtimeSec, mtimeSec)
+    }
+    // Only sheet.png exists initially -> preview stays undefined (never uses tiled sheet.png)
+    const initial = (await listBuilds(r.root)).find((b) => b.name === 'ring')!
+    expect(initial.preview).toBeUndefined()
+    expect(initial.sheet).toBe('builds/ring/out/v1_3d/sheet.png')
+
+    // Arbitrary non-version subfolder with a newer iso render must be ignored
+    put('builds/ring/out/window_closeup/iso_se.png', 5000)
+    put('builds/ring/out/v1_3d/elev_s.png', 4000)
+    expect((await listBuilds(r.root)).find((b) => b.name === 'ring')!.preview).toBeUndefined()
+
+    // Fallback to newest version's isometric render when no final/shipped build exists yet
+    put('builds/ring/out/v1_3d/iso_sw.png', 1000)
+    expect((await listBuilds(r.root)).find((b) => b.name === 'ring')!.preview).toBe(
+      'builds/ring/out/v1_3d/iso_sw.png'
+    )
+
+    // Full build stem (matching folder name "ring") beats draft version v1
+    put('builds/ring/out/ring_3d/iso_se.png', 2000)
+    expect((await listBuilds(r.root)).find((b) => b.name === 'ring')!.preview).toBe(
+      'builds/ring/out/ring_3d/iso_se.png'
+    )
+
+    // Shipped build in DESIGN.md beats everything else (preferring iso_se over iso_nw)
+    writeFileSync(
+      join(r.root, 'builds/ring/DESIGN.md'),
+      '## Status\n### Shipped final_v3 (2026-11-25)\n'
+    )
+    put('builds/ring/out/final_v3_3d/iso_nw.png', 3000)
+    put('builds/ring/out/final_v3_3d/iso_se.png', 3000)
+    const finalBuild = (await listBuilds(r.root)).find((b) => b.name === 'ring')!
+    expect(finalBuild.preview).toBe('builds/ring/out/final_v3_3d/iso_se.png')
+    expect(finalBuild.previewMtime).toBeGreaterThan(0)
+  })
+
+  it('supports _ctx isometric fallback, custom iso_*.png views, and malformed project.json fallback', async () => {
+    const r = repo()
+    writeFileSync(join(r.root, 'builds/other/project.json'), '{not-json')
+    mkdirSync(join(r.root, 'builds/other/out/v1_ctx'), { recursive: true })
+    writeFileSync(join(r.root, 'builds/other/out/v1.litematic'), 'x')
+    writeFileSync(join(r.root, 'builds/other/out/v1_ctx/iso_custom.png'), 'png')
+    const other = (await listBuilds(r.root)).find((b) => b.name === 'other')!
+    expect(other.displayName).toBe('other')
+    expect(other.preview).toBe('builds/other/out/v1_ctx/iso_custom.png')
   })
 
   it('archives the sources, trashes out/, and hides _archive from the gallery', async () => {
