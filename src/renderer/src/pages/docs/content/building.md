@@ -21,7 +21,7 @@ shipped build, full build, or latest draft), sorted by the most recent change.
 ## The build workspace
 
 Opening a build (`/build/<name>`) shows its versions, a large 3D view and the **Editor** panel. The
-screen tabs (Workspace, Review, Variants, Export, Location, Refs, Log) open the build's other screens,
+screen tabs (Workspace, Review, Variants, Location, Refs, Log, Export) open the build's other screens,
 and the **Editor**, **Chat** and **Activity** (`Ctrl \``) buttons beside them show and hide those
 panels.
 

@@ -15,7 +15,12 @@ describe('hasChatDock', () => {
   })
 
   it('places Export (ship) at the end of the build tabs', () => {
-    expect(BUILD_SCREENS.at(-1)).toEqual({ id: 'ship', label: 'Export', chat: true })
+    expect(BUILD_SCREENS.at(-1)).toEqual({
+      id: 'ship',
+      label: 'Export',
+      group: 'export',
+      chat: true
+    })
     expect(BUILD_SCREENS.map((s) => s.id)).toEqual([
       'workspace',
       'review',
@@ -36,5 +41,19 @@ describe('hasChatDock', () => {
     expect(hasChatDock('district', 'log', custom)).toBe(false)
     expect(hasChatDock('district', 'ship', custom)).toBe(false)
     expect(hasChatDock(null, 'workspace', custom)).toBe(false)
+  })
+
+  it('groups core build tabs, supporting context tabs, and Export in workflow order', () => {
+    expect(BUILD_SCREENS.filter((s) => s.group === 'core').map((s) => s.id)).toEqual([
+      'workspace',
+      'review',
+      'variants'
+    ])
+    expect(BUILD_SCREENS.filter((s) => s.group === 'support').map((s) => s.id)).toEqual([
+      'site',
+      'refs',
+      'log'
+    ])
+    expect(BUILD_SCREENS.filter((s) => s.group === 'export').map((s) => s.id)).toEqual(['ship'])
   })
 })

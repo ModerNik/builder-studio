@@ -30,7 +30,23 @@ export default function BadgesDemo(): ReactElement {
             <TabBadge badge={2} label="2 asks need you" tone="attention" />
           </span>
         </Specimen>
-        <Specimen label="Chat toggle, needs you">
+        <Specimen label="Chat toggle, labelled (desktop / wide)">
+          <PanelToggle
+            showLabel
+            panel={{
+              id: 'assistant',
+              side: 'right',
+              title: 'Chat',
+              icon: MessageCircle,
+              keys: 'Ctrl+J',
+              badge: 2,
+              badgeLabel: '2 asks need you',
+              badgeTone: 'attention',
+              content: null
+            }}
+          />
+        </Specimen>
+        <Specimen label="Chat toggle, compact">
           <PanelToggle
             panel={{
               id: 'assistant',

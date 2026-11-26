@@ -64,11 +64,13 @@ type IconButtonProps = Omit<ComponentProps<'button'>, 'children'> & {
   keys?: string
   /** Visible label beside the icon. */
   showLabel?: boolean
+  /** Compact `sm` fits 44px chrome bars (32px fine, 40px touch); `default` is `--density-icon-button`. */
+  size?: 'default' | 'sm'
 }
 
 /** An icon button with a label for assistive tech and a tooltip that names its shortcut. */
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { icon: Icon, label, keys, showLabel, className, ...rest },
+  { icon: Icon, label, keys, showLabel, size = 'default', className, ...rest },
   ref
 ) {
   return (
@@ -80,7 +82,9 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
         aria-keyshortcuts={keys?.replaceAll('Ctrl', 'Control')}
         className={cn(
           chromeButton,
-          'h-(--density-icon-button) min-w-(--density-icon-button)',
+          size === 'sm'
+            ? 'h-[max(2rem,var(--density-control-sm))] min-w-[max(2rem,var(--density-control-sm))]'
+            : 'h-(--density-icon-button) min-w-(--density-icon-button)',
           showLabel && 'px-2',
           className
         )}

@@ -290,7 +290,6 @@ export function DemoWorkbench({
             page
               ? [{ label: 'Settings' }]
               : [
-                  { label: 'Builds', onSelect: () => {} },
                   {
                     label: build,
                     menu: {
@@ -307,9 +306,9 @@ export function DemoWorkbench({
           setup={<SetupNoticesChip notices={NOTICES} />}
           actions={
             <>
-              <IconButton icon={FlaskConical} label="Labs" />
-              <IconButton icon={BookOpen} label="Documentation" />
-              <IconButton icon={Settings} label="Settings" />
+              <IconButton size="sm" icon={FlaskConical} label="Labs" />
+              <IconButton size="sm" icon={BookOpen} label="Documentation" />
+              <IconButton size="sm" icon={Settings} label="Settings" />
             </>
           }
           overflow={

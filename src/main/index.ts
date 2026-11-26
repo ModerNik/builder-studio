@@ -467,10 +467,10 @@ function registerIpc(): void {
 
 // Window chrome per theme: --surface-bg behind the title bar, --fg window buttons (renderer app/styles/main.css as sRGB)
 const CHROME = {
-  dark: { color: '#121316', symbolColor: '#ededef', height: 35 },
-  light: { color: '#f2f2f3', symbolColor: '#17181b', height: 35 }
+  dark: { color: '#121316', symbolColor: '#ededef', height: 43 },
+  light: { color: '#f2f2f3', symbolColor: '#17181b', height: 43 }
 }
-// the header is 36 CSS px, so the OS button strip follows the UI scale
+// the header is 44 CSS px, so the OS button strip follows the UI scale
 const chrome = (): (typeof CHROME)['dark'] => {
   const { theme, scale } = getSettings().appearance
   const mode = theme === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : theme
@@ -520,10 +520,10 @@ function createWindow(): void {
     autoHideMenuBar: true,
     title: 'Builder Studio',
     // one bar: the Shell header is the title bar, the OS draws the window buttons over it;
-    // 35 of the header's 36px so its bottom border runs under the buttons
+    // 43 of the header's 44px so its bottom border runs under the buttons
     titleBarStyle: 'hidden',
     titleBarOverlay: chrome(),
-    trafficLightPosition: { x: 12, y: 11 },
+    trafficLightPosition: { x: 14, y: 14 },
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
