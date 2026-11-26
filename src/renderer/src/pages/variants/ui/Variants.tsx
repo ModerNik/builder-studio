@@ -33,6 +33,7 @@ import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import { buildUrl } from '@/shared/lib/urls'
 import { useAvailability } from '@/entities/availability/model/availability'
 import { useBuild, useShow } from '@/entities/build/model/builds'
+import { openSheetViewer } from '@/features/render-studio/model/store'
 import { useSettings } from '@/entities/settings/model/settings'
 import {
   busy,
@@ -410,11 +411,11 @@ function LaneColumn({
         onShowFile={(path, sheet) => {
           const build = /^builds\/(.+?)\/out\//.exec(path)?.[1]
           if (!build) return
-          useShow.setState(
-            sheet
-              ? { path: null, sheet: path, t: Date.now() }
-              : { path, sheet: null, t: Date.now() }
-          )
+          if (sheet) {
+            openSheetViewer({ build, path, mtime: Date.now() })
+            return
+          }
+          useShow.setState({ path, sheet: null, t: Date.now() })
           void navigate({ to: '/build/$name', params: { name: build } })
         }}
         lintProblems={(counts) =>

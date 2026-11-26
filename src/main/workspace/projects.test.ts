@@ -188,6 +188,17 @@ describe('build file operations', () => {
     const finalBuild = (await listBuilds(r.root)).find((b) => b.name === 'ring')!
     expect(finalBuild.preview).toBe('builds/ring/out/final_v3_3d/iso_se.png')
     expect(finalBuild.previewMtime).toBeGreaterThan(0)
+
+    // Custom Render Studio thumbnail (preview.png) takes priority over iso_se.png
+    put('builds/ring/out/final_v3_3d/preview.png', 4000)
+    const customThumb = (await listBuilds(r.root)).find((b) => b.name === 'ring')!
+    expect(customThumb.preview).toBe('builds/ring/out/final_v3_3d/preview.png')
+
+    // A newer custom Render Studio thumbnail on a draft overrides an older shipped thumbnail
+    put('builds/ring/out/v2.litematic', 5000)
+    put('builds/ring/out/v2_3d/preview.png', 6000)
+    const newerThumb = (await listBuilds(r.root)).find((b) => b.name === 'ring')!
+    expect(newerThumb.preview).toBe('builds/ring/out/v2_3d/preview.png')
   })
 
   it('supports _ctx isometric fallback, custom iso_*.png views, and malformed project.json fallback', async () => {

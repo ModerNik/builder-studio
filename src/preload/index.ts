@@ -93,6 +93,15 @@ const studio: StudioApi = {
     commit: (build, message) => invoke('ship:commit', { build, message }),
     reveal: (path) => invoke('ship:reveal', path)
   },
+  render: {
+    copyImage: (data) => invoke('render:copyImage', { data }),
+    saveImage: (defaultName, format, data) =>
+      invoke('render:saveImage', { defaultName, format, data }),
+    saveBatch: (files) => invoke('render:saveBatch', { files }),
+    saveBuildPreview: (build, versionPath, kind, data) =>
+      invoke('render:saveBuildPreview', { build, versionPath, kind, data }),
+    reveal: (path) => invoke('render:reveal', path)
+  },
   app: {
     report: (s) => void invoke('app:report', s),
     onShow: (cb) => on('app:show', cb),

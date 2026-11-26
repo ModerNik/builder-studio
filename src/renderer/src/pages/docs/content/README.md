@@ -10,16 +10,16 @@ Documentation**.
 
 ## Pages
 
-| Page                                                  | Covers                                                                                        |
-| ----------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| [Getting started](getting-started.md)                 | Install, first-run setup, what each setup step needs, updates                                 |
-| [Workspace and files](workspace.md)                   | The workspace folder, a build's files, DESIGN.md, Git, importing old projects                 |
-| [Building and viewing](building.md)                   | Gallery, the build workspace, 3D view, Preview, Compare, Diff, Parts, Checks, materials, keys |
-| [Review, design log and export](review-and-export.md) | Reviews, pins and picks, the Design log, the Export checklist                                 |
-| [Planning tools](planning-tools.md)                   | Build location (site picker), References board, Variants, Labs                                |
-| [AI assistant](ai-assistant.md)                       | Claude Code, Codex and Ollama; the Agent panel, permissions, sessions, studio tools           |
-| [External agents (MCP)](external-agents.md)           | The local MCP server and how to connect Claude Code, Codex or Claude Desktop                  |
-| [Settings reference](settings.md)                     | Every Settings section, every `settings.json` key and its default                             |
+| Page                                                  | Covers                                                                                              |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| [Getting started](getting-started.md)                 | Install, first-run setup, what each setup step needs, updates                                       |
+| [Workspace and files](workspace.md)                   | The workspace folder, a build's files, DESIGN.md, Git, importing old projects                       |
+| [Building and viewing](building.md)                   | Gallery, the build workspace, 3D view, Render Studio, Compare, Diff, Parts, Checks, materials, keys |
+| [Review, design log and export](review-and-export.md) | Reviews, pins and picks, the Design log, the Export checklist                                       |
+| [Planning tools](planning-tools.md)                   | Build location (site picker), References board, Variants, Labs                                      |
+| [AI assistant](ai-assistant.md)                       | Claude Code, Codex and Ollama; the Agent panel, permissions, sessions, studio tools                 |
+| [External agents (MCP)](external-agents.md)           | The local MCP server and how to connect Claude Code, Codex or Claude Desktop                        |
+| [Settings reference](settings.md)                     | Every Settings section, every `settings.json` key and its default                                   |
 
 ## Key facts
 

@@ -929,6 +929,45 @@ export interface ShipCommitResult {
   output: string
 }
 
+export const RENDER_IMAGE_FORMATS = ['png', 'webp', 'jpeg'] as const
+export const RenderImageFormatSchema = z.enum(RENDER_IMAGE_FORMATS)
+export type RenderImageFormat = z.infer<typeof RenderImageFormatSchema>
+
+const NonEmptyBytes = z.instanceof(Uint8Array).refine((b) => b.byteLength > 0, 'Empty image data')
+
+export const RenderCopyImageSchema = z.object({
+  data: NonEmptyBytes
+})
+export const RenderSaveImageSchema = z.object({
+  defaultName: z.string().min(1).max(200),
+  format: RenderImageFormatSchema,
+  data: NonEmptyBytes
+})
+export const RenderSaveBatchSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(200)
+          .refine(
+            (n) => !n.includes('/') && !n.includes('\\') && !n.includes('..'),
+            'Invalid filename'
+          ),
+        data: NonEmptyBytes
+      })
+    )
+    .min(1)
+    .max(32)
+})
+export const RenderSaveBuildPreviewSchema = z.object({
+  build: z.string().min(1),
+  versionPath: RepoPath,
+  kind: z.enum(['thumbnail', 'sheet']),
+  data: NonEmptyBytes
+})
+
 /** window.studio: everything the renderer may ask of main. */
 export interface StudioApi {
   setup: {
@@ -1011,6 +1050,24 @@ export interface StudioApi {
     results(build: string, title: string, rows: [string, string][]): Promise<void> // a table in the DESIGN.md log
     commit(build: string, message: string): Promise<ShipCommitResult> // git, builds/<name> only; succeeds cleanly if nothing changed
     reveal(path: string): Promise<void> // reveals an exported file in the OS file manager
+  }
+  render: {
+    copyImage(data: Uint8Array): Promise<void>
+    saveImage(
+      defaultName: string,
+      format: RenderImageFormat,
+      data: Uint8Array
+    ): Promise<string | null>
+    saveBatch(
+      files: { name: string; data: Uint8Array }[]
+    ): Promise<{ dir: string; count: number } | null>
+    saveBuildPreview(
+      build: string,
+      versionPath: string,
+      kind: 'thumbnail' | 'sheet',
+      data: Uint8Array
+    ): Promise<string>
+    reveal(path: string): Promise<void> // reveals a saved render file or batch folder in the OS file manager
   }
   app: {
     report(s: AppState): void // what the user has open, for the MCP status() tool
@@ -1159,6 +1216,11 @@ export const CHANNELS = [
   'ship:results',
   'ship:commit',
   'ship:reveal',
+  'render:copyImage',
+  'render:saveImage',
+  'render:saveBatch',
+  'render:saveBuildPreview',
+  'render:reveal',
   'app:report',
   'updater:get',
   'updater:check',

@@ -37,6 +37,9 @@ import { SetupChip, SetupMenuItem } from '@/entities/availability/ui/SetupChip'
 import { useSetupNotices } from '@/entities/availability/model/setupFix'
 import { useAppSubscriptions } from '../model/subscriptions'
 import { BUILD_ROUTE, BUILD_SCREENS, hasChatDock, type ScreenId } from '../model/screens'
+import { RenderStudioPortal } from '@/features/render-studio/ui/RenderStudioPortal'
+import { SheetViewerHost } from '@/features/render-studio/ui/SheetViewerLightbox'
+import { openRenderStudio } from '@/features/render-studio/model/store'
 
 export function Shell(): ReactElement {
   const [palette, setPalette] = useState(false)
@@ -203,6 +206,8 @@ export function Shell(): ReactElement {
         <Outlet />
       </WorkbenchShell>
       <Palette open={palette} setOpen={setPalette} current={current} />
+      <RenderStudioPortal />
+      <SheetViewerHost />
       <Toaster position="bottom-right" />
     </>
   )
@@ -270,6 +275,10 @@ function Palette({
               )}
             >
               Export: {currentLabel}
+            </CommandItem>
+            <CommandItem onSelect={go(() => openRenderStudio({ build: current }))}>
+              Render images: {currentLabel}
+              <CommandShortcut>Ctrl Shift E</CommandShortcut>
             </CommandItem>
           </CommandGroup>
         )}

@@ -36,7 +36,8 @@ const OPERATION_FEATURES: Partial<Record<Channel, Feature>> = {
   'refs:remove': 'browse',
   'blocks:list': 'browse',
   'edits:read': 'browse',
-  'edits:save': 'browse'
+  'edits:save': 'browse',
+  'render:saveBuildPreview': 'browse'
 }
 const RUNTIME_EXCLUSIVE_CHANNELS = new Set<Channel>([
   'settings:set',

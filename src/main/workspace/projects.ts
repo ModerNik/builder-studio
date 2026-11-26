@@ -9,7 +9,7 @@ import { DEFAULT_MINECRAFT_VERSION, isMinecraftVersion } from '@shared/minecraft
 import { toolPath, under, writeAtomic } from './paths'
 
 const PROJECT_META_FILE = 'project.json'
-const ISO_VIEWS = ['iso_se.png', 'iso_sw.png', 'iso_ne.png', 'iso_nw.png'] as const
+const ISO_VIEWS = ['preview.png', 'iso_se.png', 'iso_sw.png', 'iso_ne.png', 'iso_nw.png'] as const
 
 export function readProjectDisplayName(repo: string, name: string): string {
   try {
@@ -178,11 +178,20 @@ async function summary(repo: string, name: string): Promise<BuildSummary> {
   ]
   const seen = new Set<string>()
   let preview: { path: string; mtime: number } | undefined
-  for (const stem of previewCandidates) {
-    if (!stem || seen.has(stem)) continue
-    seen.add(stem)
-    preview = await findIsoRender(out, rel, renders, stem)
-    if (preview) break
+  // Custom Render Studio thumbnails (preview.png) take priority over auto-rendered iso views
+  for (const dir of renders) {
+    if (!dir.endsWith('_3d') && !dir.endsWith('_ctx')) continue
+    const s = await stat(join(out, dir, 'preview.png')).catch(() => null)
+    if (s?.isFile() && (!preview || s.mtimeMs > preview.mtime))
+      preview = { path: rel('out', dir, 'preview.png'), mtime: s.mtimeMs }
+  }
+  if (!preview) {
+    for (const stem of previewCandidates) {
+      if (!stem || seen.has(stem)) continue
+      seen.add(stem)
+      preview = await findIsoRender(out, rel, renders, stem)
+      if (preview) break
+    }
   }
   const mtime = Math.max(0, versions[0]?.mtime ?? 0, sheet?.mtime ?? 0, preview?.mtime ?? 0)
   return {
