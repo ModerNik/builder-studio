@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type SetStateAction } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { create } from 'zustand'
-import type { BridgeMethods } from '@shared/api'
+import { DEFAULT_LINTER_SETTINGS, type BridgeMethods, type LinterSettings } from '@shared/api'
 import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import type { Cell, Marker, ViewerOverlayFile } from '@/entities/viewer/ui/BuildViewer'
 import { partsCall } from '@/entities/parts/model/parts-progress'
@@ -12,6 +12,7 @@ import { queryClient, studio } from '@/shared/api/studio'
 import { buildUrl } from '@/shared/lib/urls'
 import { useMinecraftPack } from '@/entities/settings/model/settings'
 import { cssColor } from '@/shared/lib/theme'
+import { hasEnabledLintRule } from '@/shared/lib/format'
 import {
   AUTO_LINT_BYTES,
   CHECK_COLORS,
@@ -38,7 +39,8 @@ export function useVersionAnalysis({
   engine,
   jobCounts,
   anchor,
-  theme
+  theme,
+  linter = DEFAULT_LINTER_SETTINGS
 }: {
   version: BuildVersion | null
   engine: boolean
@@ -47,6 +49,7 @@ export function useVersionAnalysis({
   anchor?: 'edges'
   /** Read the marker colours again when it changes. */
   theme: string
+  linter?: LinterSettings
 }) {
   const source = version ? buildUrl(version.path, Math.round(version.mtime)) : null
   const minecraftVersion = version
@@ -54,7 +57,10 @@ export function useVersionAnalysis({
     : undefined
   const pack = useMinecraftPack(minecraftVersion)
   const [force, setForce] = useState<string | null>(null)
+  const [highlightChecks, setHighlightChecks] = useState(false)
   const auto = !!version && (version.size < AUTO_LINT_BYTES || force === source)
+  const lintActive = linter.enabled && hasEnabledLintRule(linter.rules)
+  const wantDark = linter.rules.dark
   // Parts has its own serial worker so lint cannot delay selection.
   const canParts = !!version?.parts && engine
   const key = [version?.path, version?.mtime, minecraftVersion]
@@ -67,15 +73,15 @@ export function useVersionAnalysis({
     enabled: canParts
   })
   const lint = useQuery({
-    queryKey: ['lint', ...key, anchor],
+    queryKey: ['lint', ...key, anchor, wantDark],
     queryFn: () =>
       studio.bridge.call(
         'lint',
-        { path: version!.path, n: 25, anchor },
+        { path: version!.path, n: 25, anchor, dark: wantDark },
         undefined,
         minecraftVersion
       ),
-    enabled: auto && engine
+    enabled: lintActive && auto && engine
   })
   const bill = useQuery({
     queryKey: ['bill', ...key],
@@ -231,17 +237,22 @@ export function useVersionAnalysis({
   }, [source])
 
   const where = useMemo(
-    () => (lint.data ? locatableChecks(lint.data.where, lint.data.counts, jobCounts) : []),
-    [lint.data, jobCounts]
+    () =>
+      lintActive && lint.data
+        ? locatableChecks(lint.data.where, lint.data.counts, jobCounts, linter.rules)
+        : [],
+    [lintActive, lint.data, jobCounts, linter.rules]
   )
   const markers = useMemo<Marker[]>(
     () =>
-      where.flatMap(([k, rows]) => {
-        const color = cssColor(CHECK_COLORS[k] ?? '--fg')
-        return rows.map(([, , cell]) => ({ cell, color }))
-      }),
+      highlightChecks
+        ? where.flatMap(([k, rows]) => {
+            const color = cssColor(CHECK_COLORS[k] ?? '--fg')
+            return rows.map(([, , cell]) => ({ cell, color }))
+          })
+        : [],
     // eslint-disable-next-line react-hooks/exhaustive-deps -- read the colours again when the theme changes
-    [where, theme]
+    [highlightChecks, where, theme]
   )
 
   return {
@@ -254,6 +265,8 @@ export function useVersionAnalysis({
     packError: pack.error,
     auto,
     analyze: () => setForce(source),
+    highlightChecks,
+    setHighlightChecks,
     parts,
     lint,
     bill,

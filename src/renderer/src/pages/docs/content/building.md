@@ -171,23 +171,29 @@ Parts are the named `c.op` blocks in `build.py` that built the version, read fro
 
 #### Checks
 
+The linter is optional and can be toggled on or off from the **Checks** tab or **Settings → Linter**.
+Each rule has its own toggle, and **Highlight in 3D** is turned off by default so check markers only
+appear in the 3D view when you enable them.
+
 The engine's lint reports each kind separately; the app labels them:
 
-| Label                    | Engine key    |
-| ------------------------ | ------------- |
-| Floating blocks          | `floating`    |
-| Missing support          | `unattached`  |
-| Blocks that will fall    | `gravity`     |
-| Incomplete doors or beds | `halves`      |
-| Fire risk                | `fire`        |
-| Leaves that may decay    | `leaves`      |
-| Invalid block states     | `invalid`     |
-| Dark areas               | `dark`        |
-| See-through gaps         | `see_through` |
-| Slab gaps                | `groove`      |
-| Block types              | `palette`     |
+| Label                    | Engine key    | Default |
+| ------------------------ | ------------- | ------- |
+| Floating blocks          | `floating`    | Off     |
+| Missing support          | `unattached`  | On      |
+| Blocks that will fall    | `gravity`     | On      |
+| Incomplete doors or beds | `halves`      | On      |
+| Fire risk                | `fire`        | On      |
+| Leaves that may decay    | `leaves`      | On      |
+| Invalid block states     | `invalid`     | On      |
+| Dark areas               | `dark`        | On      |
+| See-through gaps         | `see_through` | On      |
+| Slab gaps                | `groove`      | On      |
+| Block types              | `palette`     | Info    |
 
-The exact rules belong to the engine. **Export** requires zero lint problems before the full build.
+The exact rules belong to the engine. When the linter is enabled, **Export** requires zero problems
+across the enabled lint rules before the full build. When the linter (or every rule) is turned off,
+Export skips the lint check step.
 
 ## Keyboard shortcuts
 

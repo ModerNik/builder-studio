@@ -64,8 +64,8 @@ export interface TranscriptProps {
   onRevisePlan?: (feedback: string) => void
   /** Show / Sheet on a build.py job card: the path it wrote and whether it is the sheet. */
   onShowFile?: (path: string, sheet: boolean) => void
-  /** Lint problems in an @mcb lint event; every count by default. */
-  lintProblems?: (counts: Record<string, number>) => number
+  /** Lint problems in an @mcb lint event; every count by default, undefined hides the badge. */
+  lintProblems?: (counts: Record<string, number>) => number | undefined
   /** A thumbnail URL for an attached image. */
   fileUrl?: (path: string) => string
   /** Quick actions on user messages that have a persisted turn point. */

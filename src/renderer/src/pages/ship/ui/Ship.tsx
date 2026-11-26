@@ -31,6 +31,8 @@ import { CodeBlock } from '@/shared/ui/code/CodeBlock'
 import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import { endedText, isRare, jobStatus, lintText, percent, stacks } from '../model/ship'
 import { useExport } from '../model/useExport'
+import { checkLabel } from '@/entities/build/model/workspace'
+import { INFO, isLintRuleEnabled } from '@/shared/lib/format'
 
 const TITLES = [
   'Connect and check setup',
@@ -74,6 +76,8 @@ function Export({ name }: { name: string }): ReactElement {
     pending,
     check,
     full,
+    linter,
+    lintActive,
     lint,
     problems,
     f,
@@ -105,8 +109,9 @@ function Export({ name }: { name: string }): ReactElement {
   )
 
   // ── the ten rows ──
-  const lintFailed = check?.state === 'failed' || (problems !== null && problems > 0)
-  const buildOff = busy || problems !== 0 || !engine
+  const lintFailed =
+    lintActive && (check?.state === 'failed' || (problems !== null && problems > 0))
+  const buildOff = busy || (lintActive && problems !== 0) || !engine
   const rows: { status: CheckStatus; label: string; detail?: ReactNode; action?: ReactNode }[] = [
     {
       label: 'Connect and check setup',
@@ -116,14 +121,27 @@ function Export({ name }: { name: string }): ReactElement {
     },
     {
       label: 'Lint zero',
-      status: jobStatus(check, problems === 0),
-      detail: (
+      status: !lintActive ? 'skipped' : jobStatus(check, problems === 0),
+      detail: !lintActive ? (
+        <>
+          {!linter.enabled ? 'Linter is off.' : 'All lint rules are off.'}{' '}
+          <Link
+            to="/settings"
+            search={{ section: 'linter' }}
+            className="font-sans text-accent-text underline-offset-4 can-hover:hover:underline"
+          >
+            Open Settings › Linter
+          </Link>
+        </>
+      ) : (
         <span className={lintFailed ? 'text-danger-text' : undefined}>
-          {lint && (problems === 0 ? 'no problems' : lintText(lint.counts))}
+          {lint && (problems === 0 ? 'no problems' : lintText(lint.counts, linter.rules))}
           {check?.state === 'failed' && ` job failed (exit ${check.code})`}
         </span>
       ),
-      action: act('Run check', () => run({ part: 'check', build: name }), busy || !engine)
+      action: lintActive
+        ? act('Run check', () => run({ part: 'check', build: name }), busy || !engine)
+        : undefined
     },
     {
       label: 'Full build (finalizes into a staging folder)',
@@ -135,7 +153,7 @@ function Export({ name }: { name: string }): ReactElement {
             ? `${built.path} ${built.shape.join('×')}, paste at ${built.paste.join(', ')}${tier === 'phone' ? '' : `; ${f.done?.seconds ?? '?'}s`}`
             : full?.state === 'failed'
               ? `job failed (exit ${full.code}): ${logOf(full).at(-1) ?? ''}`
-              : problems !== 0
+              : lintActive && problems !== 0
                 ? 'Lint must be zero first'
                 : undefined,
       action: act(
@@ -304,13 +322,20 @@ function Export({ name }: { name: string }): ReactElement {
           </p>
         )
       case 2:
-        return check ? (
+        return !lintActive ? (
+          <p className="text-sm text-fg-muted">
+            {!linter.enabled
+              ? 'Linter is turned off in Settings, so build checks are skipped.'
+              : 'All lint rules are turned off in Settings, so build checks are skipped.'}
+          </p>
+        ) : check ? (
           <div className="flex flex-col gap-3">
             {lint && (
               <KeyValueList
                 items={Object.entries(lint.counts).map(([k, c]) => ({
-                  label: k,
-                  value: String(c),
+                  label: checkLabel(k),
+                  value:
+                    !INFO.has(k) && !isLintRuleEnabled(k, linter.rules) ? `${c} (off)` : String(c),
                   mono: true
                 }))}
               />
@@ -341,7 +366,7 @@ function Export({ name }: { name: string }): ReactElement {
               height="h-96"
             />
           </div>
-        ) : problems !== 0 ? (
+        ) : lintActive && problems !== 0 ? (
           <p className="text-sm text-fg-muted">Lint must be zero first.</p>
         ) : (
           nothing

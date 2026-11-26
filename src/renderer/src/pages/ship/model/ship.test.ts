@@ -23,10 +23,13 @@ describe('ship', () => {
     expect(rejectedVariants([], []).round).toBeUndefined()
   })
 
-  it('says lint in words, leaving out info counts', () => {
+  it('says lint in words, leaving out info counts and disabled rules', () => {
     expect(lintText(undefined)).toBe('not run')
     expect(lintText({ palette: 4, floating: 1 })).toBe('clean')
+    expect(lintText({ palette: 4, floating: 1 }, { floating: true })).toBe('floating 1')
     expect(lintText({ gravity: 3, palette: 1 })).toBe('falls (gravity) 3')
+    expect(lintText({ gravity: 3, dark: 2, palette: 1 }, { gravity: false })).toBe('dark 2')
+    expect(lintText({ gravity: 3, dark: 2 }, { gravity: false, dark: false })).toBe('clean')
   })
 
   it('flags rare blocks', () => {

@@ -96,6 +96,57 @@ export interface Availability {
 /** UI scale steps for Ctrl - and Ctrl +, as in browsers. */
 export const UI_SCALES = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const
 
+export const LINT_RULES = [
+  'floating',
+  'unattached',
+  'gravity',
+  'halves',
+  'fire',
+  'leaves',
+  'invalid',
+  'dark',
+  'see_through',
+  'groove'
+] as const
+export type LintRule = (typeof LINT_RULES)[number]
+export type LintRuleToggles = Record<LintRule, boolean>
+
+export const DEFAULT_LINT_RULES: LintRuleToggles = {
+  floating: false,
+  unattached: true,
+  gravity: true,
+  halves: true,
+  fire: true,
+  leaves: true,
+  invalid: true,
+  dark: true,
+  see_through: true,
+  groove: true
+}
+
+export const LinterSettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  rules: z
+    .object({
+      floating: z.boolean().default(false),
+      unattached: z.boolean().default(true),
+      gravity: z.boolean().default(true),
+      halves: z.boolean().default(true),
+      fire: z.boolean().default(true),
+      leaves: z.boolean().default(true),
+      invalid: z.boolean().default(true),
+      dark: z.boolean().default(true),
+      see_through: z.boolean().default(true),
+      groove: z.boolean().default(true)
+    })
+    .default(DEFAULT_LINT_RULES)
+})
+export type LinterSettings = z.infer<typeof LinterSettingsSchema>
+export const DEFAULT_LINTER_SETTINGS: LinterSettings = {
+  enabled: true,
+  rules: { ...DEFAULT_LINT_RULES }
+}
+
 export const MinecraftVersionSchema = z
   .string()
   .refine(isMinecraftVersion, 'Unsupported Minecraft version')
@@ -139,7 +190,8 @@ export const SettingsSchema = z.object({
       theme: z.enum(['dark', 'light', 'system']).default('dark'), // system follows the OS
       scale: z.number().min(UI_SCALES[0]).max(UI_SCALES.at(-1)!).default(1) // whole-UI zoom, Ctrl - / + / 0
     })
-    .default({ theme: 'dark', scale: 1 })
+    .default({ theme: 'dark', scale: 1 }),
+  linter: LinterSettingsSchema.default(DEFAULT_LINTER_SETTINGS)
 })
 export type Settings = z.infer<typeof SettingsSchema>
 

@@ -6,6 +6,7 @@ import { Button } from '@/shared/ui/primitives/button'
 import { Checkbox } from '@/shared/ui/primitives/checkbox'
 import { IconButton } from '@/shared/ui/primitives/icon-button'
 import { Input } from '@/shared/ui/primitives/input'
+import { Switch } from '@/shared/ui/primitives/switch'
 import { Tabs, TabsContent } from '@/shared/ui/primitives/tabs'
 import { EditorTabs } from '@/widgets/workbench-shell/ui/EditorTabs'
 import { Alert, InlineNotice } from '@/shared/ui/feedback/Alert'
@@ -27,8 +28,8 @@ import {
 } from '@/entities/build/model/workspace'
 import type { VersionAnalysis } from '@/pages/workspace/model/analysis'
 import type { Cell } from '@/entities/viewer/ui/BuildViewer'
-import type { PartInfo } from '@shared/api'
-import { INFO, lintProblems } from '@/shared/lib/format'
+import { LINT_RULES, type LinterSettings, type LintRule, type PartInfo } from '@shared/api'
+import { hasEnabledLintRule, lintProblems } from '@/shared/lib/format'
 import { useBlockColor } from '@/entities/build/model/blocks'
 import type { Section } from '@/entities/availability/model/setupIssues'
 import type { BlockEditor } from '@/widgets/block-editor/model/editor'
@@ -45,6 +46,9 @@ export function Editor({
   onShowNewest,
   version,
   engine,
+  linter,
+  onLinterEnabled,
+  onLintRule,
   jobCounts,
   canDraft,
   onDraft,
@@ -62,6 +66,9 @@ export function Editor({
   version: BuildVersion | null
   /** The build tools are ready. */
   engine: boolean
+  linter: LinterSettings
+  onLinterEnabled: (enabled: boolean) => void
+  onLintRule: (rule: LintRule, enabled: boolean) => void
   jobCounts?: Record<string, number>
   canDraft: boolean
   onDraft: () => void
@@ -133,16 +140,59 @@ export function Editor({
       </TabsContent>
       <TabsContent value="checks" forceMount className={pane}>
         <PaneHead title="Build checks">
-          <Button size="sm" variant="outline" disabled={!canCheck} onClick={onCheck}>
-            <ScanSearch aria-hidden="true" /> Check build
-          </Button>
+          {linter.enabled && (
+            <Button size="sm" variant="outline" disabled={!canCheck} onClick={onCheck}>
+              <ScanSearch aria-hidden="true" /> Check build
+            </Button>
+          )}
         </PaneHead>
-        {!engine ? (
+        <div className="mb-3 divide-y divide-border-subtle rounded-md border border-border-subtle bg-surface-raised">
+          <div className="flex min-h-(--density-row) items-center justify-between gap-2 px-2.5 text-sm">
+            <label htmlFor="checks-linter-enabled" className="cursor-pointer font-medium text-fg">
+              Linter
+            </label>
+            <Switch
+              id="checks-linter-enabled"
+              checked={linter.enabled}
+              onCheckedChange={onLinterEnabled}
+            />
+          </div>
+          {linter.enabled && (
+            <div className="flex min-h-(--density-row) items-center justify-between gap-2 px-2.5 text-sm">
+              <label htmlFor="checks-highlight-3d" className="cursor-pointer text-fg-secondary">
+                Highlight in 3D
+              </label>
+              <Switch
+                id="checks-highlight-3d"
+                checked={a.highlightChecks}
+                onCheckedChange={a.setHighlightChecks}
+              />
+            </div>
+          )}
+        </div>
+        {!linter.enabled ? (
+          <div className="space-y-3">
+            <InlineNotice tone="info">
+              Linter is off. Build checks are skipped in the workspace and optional during export.
+            </InlineNotice>
+            <Button size="sm" variant="outline" asChild>
+              <Link to="/settings" search={{ section: 'linter' }}>
+                Linter settings
+              </Link>
+            </Button>
+          </div>
+        ) : !engine ? (
           <SetupHint text="Build checks need the build tools." section="tools" />
         ) : version && !a.auto ? (
           <AnalysisRequest size={version.size} onRun={a.analyze} />
         ) : (
-          <ChecksList a={a} jobCounts={jobCounts} onLocate={onLocate} />
+          <ChecksList
+            a={a}
+            linter={linter}
+            onLintRule={onLintRule}
+            jobCounts={jobCounts}
+            onLocate={onLocate}
+          />
         )}
       </TabsContent>
       <TabsContent value="materials" forceMount className={pane}>
@@ -349,46 +399,112 @@ function PartsList({
   )
 }
 
+function LintRuleList({
+  linter,
+  counts,
+  onLintRule
+}: {
+  linter: LinterSettings
+  counts?: Record<string, number>
+  onLintRule: (rule: LintRule, enabled: boolean) => void
+}): ReactElement {
+  return (
+    <div className="space-y-2">
+      <ul aria-label="Lint rules" className="-mx-1 space-y-0.5">
+        {LINT_RULES.map((rule) => {
+          const enabled = linter.rules[rule]
+          const count = counts?.[rule]
+          const id = `check-rule-${rule}`
+          return (
+            <li
+              key={rule}
+              className="flex min-h-8 items-center justify-between gap-2 rounded-md px-1 text-sm"
+            >
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <Switch id={id} checked={enabled} onCheckedChange={(on) => onLintRule(rule, on)} />
+                <label
+                  htmlFor={id}
+                  className={cn(
+                    'min-w-0 flex-1 cursor-pointer truncate',
+                    enabled ? 'text-fg-secondary' : 'text-fg-disabled'
+                  )}
+                >
+                  {checkLabel(rule)}
+                </label>
+              </div>
+              {counts !== undefined && (
+                <span
+                  className={cn(
+                    'shrink-0 font-mono tabular-nums',
+                    !enabled
+                      ? 'text-fg-disabled'
+                      : (count ?? 0) > 0
+                        ? 'text-warning-text'
+                        : 'text-fg-secondary'
+                  )}
+                >
+                  {enabled ? (count ?? 0).toLocaleString() : 'Off'}
+                </span>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {counts?.palette !== undefined && (
+        <div className="flex items-baseline justify-between gap-3 border-t border-border-subtle pt-2 text-sm">
+          <span className="text-fg-secondary">{checkLabel('palette')}</span>
+          <span className="font-mono tabular-nums">{counts.palette.toLocaleString()}</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ChecksList({
   a,
+  linter,
+  onLintRule,
   jobCounts,
   onLocate
 }: {
   a: VersionAnalysis
+  linter: LinterSettings
+  onLintRule: (rule: LintRule, enabled: boolean) => void
   jobCounts?: Record<string, number>
   onLocate: (cell: Cell) => void
 }): ReactElement {
   const colorOf = useBlockColor()
   const { lint } = a
+  if (!hasEnabledLintRule(linter.rules))
+    return (
+      <div className="space-y-4">
+        <InlineNotice tone="info">
+          All lint rules are off. Turn on a rule below to check this version.
+        </InlineNotice>
+        <LintRuleList linter={linter} onLintRule={onLintRule} />
+      </div>
+    )
   if (lint.isFetching) return <LoadingState label="Checking this version" rows={4} />
   if (lint.error)
     return <ErrorState title="This version could not be checked." error={lint.error} />
-  if (!lint.data) return <p className="text-fg-secondary">Select a version to see its checks.</p>
+  if (!lint.data)
+    return (
+      <div className="space-y-4">
+        <p className="text-fg-secondary">Select a version to see its checks.</p>
+        <LintRuleList linter={linter} onLintRule={onLintRule} />
+      </div>
+    )
   const counts = jobCounts ?? lint.data.counts
-  const problems = lintProblems(counts)
+  const problems = lintProblems(counts, linter.rules)
   return (
     <div className="space-y-4">
       <InlineNotice tone={problems ? 'warning' : 'success'}>
-        {problems ? `${problems.toLocaleString()} potential issues` : 'No issues found'}
+        {problems
+          ? `${problems.toLocaleString()} potential ${problems === 1 ? 'issue' : 'issues'}`
+          : 'No issues found'}
       </InlineNotice>
-      <dl className="space-y-1">
-        {Object.entries(counts)
-          .filter(([key]) => key !== 'floating')
-          .map(([key, n]) => (
-            <div key={key} className="flex items-baseline justify-between gap-3 text-sm">
-              <dt className="text-fg-secondary">{checkLabel(key)}</dt>
-              <dd
-                className={cn(
-                  'font-mono tabular-nums',
-                  !INFO.has(key) && n > 0 && 'text-warning-text'
-                )}
-              >
-                {n.toLocaleString()}
-              </dd>
-            </div>
-          ))}
-      </dl>
-      {shiftedChecks(lint.data.counts, jobCounts).length > 0 && (
+      <LintRuleList linter={linter} counts={counts} onLintRule={onLintRule} />
+      {shiftedChecks(lint.data.counts, jobCounts, linter.rules).length > 0 && (
         <p className="text-sm text-fg-muted">
           Some issues were found during generation. Their locations may differ in the saved version.
         </p>

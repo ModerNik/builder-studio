@@ -14,6 +14,9 @@ import { lastOf, useJobs } from '@/entities/job/model/jobs'
 import { useAvailability } from '@/entities/availability/model/availability'
 import { clearShow, matchShow, useBuild, useShow } from '@/entities/build/model/builds'
 import { useMinecraftPack, useSettings } from '@/entities/settings/model/settings'
+import { useSaveSettings } from '@/entities/settings/model/save'
+import { DEFAULT_LINTER_SETTINGS, type LintRule } from '@shared/api'
+import { hasEnabledLintRule } from '@/shared/lib/format'
 import { useAgentPrefs } from '@/features/agent-chat/model/agent'
 import { useAskParts } from '@/entities/parts/model/parts'
 import { comparisonBaseline } from '@/widgets/version-compare/model/comparison'
@@ -164,12 +167,15 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   const writer = jobs.find((j) => version && lastOf(j).wrote?.path === version.path)
   const jobCounts = writer && lastOf(writer).lint?.counts
   const theme = useResolvedTheme()
+  const linter = settings?.linter ?? DEFAULT_LINTER_SETTINGS
+  const saveSettings = useSaveSettings()
   const a = useVersionAnalysis({
     version,
     engine,
     jobCounts,
     anchor: writer?.spec.part !== 'dump' && writer?.spec.sx != null ? 'edges' : undefined,
-    theme
+    theme,
+    linter
   })
   // hand edits draw over the newest version and are made there; other versions show their files as they are
   const edit = useBlockEditor({
@@ -204,7 +210,11 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   const run = useRunOptions((s) => s.byBuild[name]) ?? {}
   const setRun = useRunOptions((s) => s.set)
   const canDraft = !running && engine
-  const canCheck = !running && engine
+  const canCheck = !running && engine && linter.enabled && hasEnabledLintRule(linter.rules)
+  const onLinterEnabled = (enabled: boolean): void =>
+    saveSettings.mutate({ linter: { ...linter, enabled } })
+  const onLintRule = (rule: LintRule, enabled: boolean): void =>
+    saveSettings.mutate({ linter: { ...linter, rules: { ...linter.rules, [rule]: enabled } } })
   const start = (part: 'proto' | 'check'): void =>
     void runJob(name, part, {
       ...run,
@@ -271,6 +281,9 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
       onShowNewest={() => setPicked(null)}
       version={version}
       engine={engine}
+      linter={linter}
+      onLinterEnabled={onLinterEnabled}
+      onLintRule={onLintRule}
       jobCounts={jobCounts}
       canDraft={canDraft}
       onDraft={() => start('proto')}

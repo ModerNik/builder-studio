@@ -1,9 +1,16 @@
 // The Workspace's labels and pure helpers. The bridge data and parts overlays are in lib/analysis.ts;
 // UI lives in app/workspace/*.
-import type { Job, LintWhere, PartInfo } from '@shared/api'
+import {
+  DEFAULT_LINT_RULES,
+  type Job,
+  type LintRule,
+  type LintRuleToggles,
+  type LintWhere,
+  type PartInfo
+} from '@shared/api'
 import type { Cell } from '@/entities/viewer/ui/BuildViewer'
 import type { ViewName } from '@/entities/viewer/model/look'
-import { INFO, short } from '@/shared/lib/format'
+import { isLintRuleEnabled, short } from '@/shared/lib/format'
 export { errorMessage as errorText } from '@/shared/ui/feedback/errors'
 
 /** Files over this size are checked and counted only when asked: the bridge reads the whole array. */
@@ -82,6 +89,20 @@ export const CHECK_COLORS: Record<string, string> = {
   groove: '--warning-solid'
 }
 
+export const CHECK_DESCRIPTIONS: Record<LintRule, string> = {
+  floating: 'Blocks that aren’t connected to the ground or build edges.',
+  unattached:
+    'Torches, lanterns, signs, carpets, rails and other blocks with nothing to attach to.',
+  gravity: 'Sand, gravel, concrete powder and other gravity blocks over air.',
+  halves: 'Door or bed halves missing their matching half.',
+  fire: 'Flammable blocks near lava or fire.',
+  leaves: 'Non-persistent leaves that can decay in game.',
+  invalid: 'Blocks or block-state properties unavailable in the target Minecraft version.',
+  dark: 'Covered spawnable cells at block light 0. Turning this off also speeds up checks.',
+  see_through: 'Stair or slab notches that leave an open gap through a wall.',
+  groove: 'Half-block grooves where a slab or stair meets a full block.'
+}
+
 export const JOB_LABELS: Record<Job['spec']['part'], string> = {
   proto: 'Draft generation',
   check: 'Build check',
@@ -111,18 +132,22 @@ export function groupMaterials(
 export function locatableChecks(
   where: Record<string, LintWhere>,
   counts: Record<string, number>,
-  jobCounts?: Record<string, number>
+  jobCounts?: Record<string, number>,
+  rules: Partial<LintRuleToggles> = DEFAULT_LINT_RULES
 ): [string, LintWhere][] {
   return Object.entries(where).filter(
-    ([k]) => !INFO.has(k) && (!jobCounts || (jobCounts[k] > 0 && counts[k] === jobCounts[k]))
+    ([k]) =>
+      isLintRuleEnabled(k, rules) &&
+      (!jobCounts || (jobCounts[k] > 0 && counts[k] === jobCounts[k]))
   )
 }
 
 /** Checks the job counted that the saved file counts differently. */
 export const shiftedChecks = (
   counts: Record<string, number>,
-  jobCounts?: Record<string, number>
+  jobCounts?: Record<string, number>,
+  rules: Partial<LintRuleToggles> = DEFAULT_LINT_RULES
 ): string[] =>
   Object.entries(jobCounts ?? {})
-    .filter(([k, n]) => !INFO.has(k) && n > 0 && counts[k] !== n)
+    .filter(([k, n]) => isLintRuleEnabled(k, rules) && n > 0 && counts[k] !== n)
     .map(([k]) => k)
