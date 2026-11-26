@@ -124,17 +124,24 @@ export function TitleBar({
             onClick={onHome}
             aria-label="Builder Studio: all builds"
             className={cn(
-              chromeButton,
-              'h-[max(2rem,var(--density-control-sm))] w-[max(2rem,var(--density-control-sm))] rounded-lg border border-border-subtle bg-surface-panel text-accent-text',
-              'hover:border-border-default hover:bg-surface-hover hover:text-accent-text'
+              'group inline-flex min-w-0 shrink items-center gap-2 rounded-lg text-left transition-colors duration-fast ease-standard',
+              showBrandWordmark && 'pe-1.5 hover:bg-surface-hover',
+              focusRing
             )}
           >
-            <Boxes aria-hidden="true" className="size-4" />
+            <span
+              className={cn(
+                'inline-flex h-[max(2rem,var(--density-control-sm))] w-[max(2rem,var(--density-control-sm))] shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-surface-panel text-accent-text transition-colors duration-fast ease-standard',
+                'group-hover:border-border-default group-hover:bg-surface-hover'
+              )}
+            >
+              <Boxes aria-hidden="true" className="size-4" />
+            </span>
+            {showBrandWordmark && (
+              <span className="truncate text-sm font-semibold text-fg">Builder Studio</span>
+            )}
           </button>
         </Tip>
-        {showBrandWordmark && (
-          <span className="truncate text-sm font-semibold text-fg">Builder Studio</span>
-        )}
         {shownCrumbs.length > 0 && (
           <nav aria-label="Breadcrumb" className="min-w-0">
             <ol className="flex min-w-0 items-center gap-0.5">
