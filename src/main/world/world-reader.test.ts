@@ -311,4 +311,109 @@ describe('world-reader & site-meta', () => {
     const src = await readFile(join(ws, 'builds', 'keep', 'build.py'), 'utf8')
     expect(src).toContain('ORIGIN = (100, 69, -50)  # paste origin')
   })
+
+  it('reads singleplayer position and dimension from players/data/<uuid>.dat on 26.1+ saves', async () => {
+    const root = join(
+      tmpdir(),
+      `bs-263-player-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    )
+    dirs.push(root)
+    const world = join(root, 'save')
+    await mkdir(join(world, 'dimensions', 'minecraft', 'overworld', 'region'), { recursive: true })
+    await mkdir(join(world, 'players', 'data'), { recursive: true })
+
+    const encodeNbt = (build: (ops: {
+      b: (v: number) => void
+      s: (v: string) => void
+      i32: (v: number) => void
+      f64: (v: number) => void
+      tag: (t: number, name: string) => void
+    }) => void): Uint8Array => {
+      const parts: Uint8Array[] = []
+      const b = (v: number): void => void parts.push(new Uint8Array([v & 0xff]))
+      const s = (str: string): void => {
+        const bytes = new TextEncoder().encode(str)
+        const len = new Uint8Array(2)
+        new DataView(len.buffer).setInt16(0, bytes.length)
+        parts.push(len, bytes)
+      }
+      const i32 = (v: number): void => {
+        const buf = new Uint8Array(4)
+        new DataView(buf.buffer).setInt32(0, v)
+        parts.push(buf)
+      }
+      const f64 = (v: number): void => {
+        const buf = new Uint8Array(8)
+        new DataView(buf.buffer).setFloat64(0, v)
+        parts.push(buf)
+      }
+      const tag = (t: number, name: string): void => {
+        b(t)
+        s(name)
+      }
+      build({ b, s, i32, f64, tag })
+      const total = parts.reduce((sum, p) => sum + p.length, 0)
+      const out = new Uint8Array(total)
+      let off = 0
+      for (const p of parts) {
+        out.set(p, off)
+        off += p.length
+      }
+      return gzipSync(out)
+    }
+
+    // UUID: 5cf79ec3-f9c7-40a9-8d58-f1f1c980d966
+    const uuidInts = [1559731907, -104382295, -1923550735, -914302618]
+    const levelDat = encodeNbt(({ b, s, i32, tag }) => {
+      tag(10, '')
+      tag(10, 'Data')
+      tag(8, 'LevelName')
+      s('Modern 26.3 World')
+      tag(3, 'DataVersion')
+      i32(5023)
+      tag(11, 'singleplayer_uuid')
+      i32(4)
+      for (const n of uuidInts) i32(n)
+      b(0)
+      b(0)
+    })
+    const playerDat = encodeNbt(({ b, s, i32, f64, tag }) => {
+      tag(10, '')
+      tag(9, 'Pos')
+      b(6)
+      i32(3)
+      f64(205.87)
+      f64(22.49)
+      f64(-4836.5)
+      tag(8, 'Dimension')
+      s('minecraft:overworld')
+      b(0)
+    })
+
+    await writeFile(join(world, 'level.dat'), levelDat)
+    await writeFile(
+      join(world, 'players', 'data', '5cf79ec3-f9c7-40a9-8d58-f1f1c980d966.dat'),
+      playerDat
+    )
+    await writeFile(
+      join(world, 'dimensions', 'minecraft', 'overworld', 'region', 'r.0.0.mca'),
+      makeRegionFile(makeTestNbtChunk('minecraft:grass_block', 64))
+    )
+
+    const info = await inspectWorld(world)
+    expect(info.name).toBe('Modern 26.3 World')
+    expect(info.player).toEqual([206, 22, -4836])
+    expect(info.playerDimension).toBe('overworld')
+    expect(info.dimensions).toEqual(['overworld'])
+  })
+
+  it('allows world:// fetches in the renderer Content-Security-Policy', async () => {
+    const html = await readFile(join(process.cwd(), 'src', 'renderer', 'index.html'), 'utf8')
+    const csp = /http-equiv="Content-Security-Policy"[^>]*content="([^"]+)"/s.exec(html)?.[1]
+    expect(csp).toBeTruthy()
+    const connectSrc = /connect-src\s+([^;]+)/.exec(csp!)?.[1] ?? ''
+    expect(connectSrc).toContain('world:')
+    expect(connectSrc).toContain('build:')
+    expect(connectSrc).toContain('mcpack:')
+  })
 })

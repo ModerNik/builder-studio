@@ -111,6 +111,24 @@ function parseDimensionTag(tag: NbtTag | undefined): WorldDimension | null {
   return null
 }
 
+function formatUuidInts(ints: Int32Array): string | null {
+  if (ints.length !== 4) return null
+  const hex = Array.from(ints, (n) => (n >>> 0).toString(16).padStart(8, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+function extractPlayerLocation(p: NbtCompound): {
+  player: [number, number, number] | null
+  playerDimension: WorldDimension | null
+} {
+  let player: [number, number, number] | null = null
+  const pos = p.Pos as NbtTag[] | undefined
+  if (Array.isArray(pos) && pos.length >= 3) {
+    player = [Math.round(Number(pos[0])), Math.round(Number(pos[1])), Math.round(Number(pos[2]))]
+  }
+  return { player, playerDimension: parseDimensionTag(p.Dimension) }
+}
+
 /** Read level.dat (read-only) and list non-empty region coordinates for every available dimension. */
 export async function inspectWorld(worldPath: string): Promise<WorldInfo> {
   const levelPath = join(worldPath, 'level.dat')
@@ -145,15 +163,30 @@ export async function inspectWorld(worldPath: string): Promise<WorldInfo> {
 
     const p = data.Player as NbtCompound | undefined
     if (p) {
-      const pos = p.Pos as NbtTag[] | undefined
-      if (Array.isArray(pos) && pos.length >= 3) {
-        player = [
-          Math.round(Number(pos[0])),
-          Math.round(Number(pos[1])),
-          Math.round(Number(pos[2]))
+      const loc = extractPlayerLocation(p)
+      player = loc.player
+      playerDimension = loc.playerDimension
+    } else if (data.singleplayer_uuid instanceof Int32Array) {
+      // Minecraft 26.1+ stores singleplayer data under players/data/<uuid>.dat
+      const uuid = formatUuidInts(data.singleplayer_uuid)
+      if (uuid) {
+        const candidates = [
+          join(worldPath, 'players', 'data', `${uuid}.dat`),
+          join(worldPath, 'playerdata', `${uuid}.dat`)
         ]
+        for (const pFile of candidates) {
+          if (!existsSync(pFile)) continue
+          try {
+            const pRoot = parseGzippedNbt(await readFile(pFile))
+            const loc = extractPlayerLocation(pRoot)
+            player = loc.player
+            playerDimension = loc.playerDimension
+            break
+          } catch {
+            // Ignore unreadable player data file
+          }
+        }
       }
-      playerDimension = parseDimensionTag(p.Dimension)
     }
   } catch {
     // Allow worlds with minimal/stub level.dat (such as fixtures) to still map their regions

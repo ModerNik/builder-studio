@@ -101,7 +101,8 @@ export function handleProtocols(): void {
         })
       }
       return new Response('not found', { status: 404, headers: cors })
-    } catch {
+    } catch (err) {
+      console.error('[world://]', req.url, err)
       return new Response('error', { status: 500, headers: cors })
     }
   })

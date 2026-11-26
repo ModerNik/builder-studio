@@ -2,12 +2,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import type { SitePlacement, WorldDimension, WorldInfo } from '@shared/api'
+import type { SitePlacement, WorldDimension } from '@shared/api'
 import { studio } from '@/shared/api/studio'
 import { errorText, type BuildVersion } from '@/entities/build/model/workspace'
 import {
   buildBoxFromOrigin,
   centeredBox,
+  defaultAnchor,
   nextRotation,
   normalizeBox,
   originFromArea
@@ -27,18 +28,6 @@ import type { FlyTarget } from '@/entities/world-map/ui/WorldMapViewport'
 
 const DEFAULT_MARGIN = 48
 const DEFAULT_AREA_SIDE = 48
-
-function defaultAnchor(info: WorldInfo, dim: WorldDimension): Vec3 {
-  if (info.player && info.playerDimension === dim) return [...info.player]
-  if (dim === 'overworld' && info.spawn) return [...info.spawn]
-  const regs = info.regions[dim]
-  if (regs && regs.length > 0) {
-    // Pick the region closest to (0, 0)
-    const best = [...regs].sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]))[0]
-    return [best[0] * 512 + 256, 68, best[1] * 512 + 256]
-  }
-  return [0, 68, 0]
-}
 
 // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- screen reads full view model
 export function useSiteLocation(name: string, target: string, versions: BuildVersion[]) {

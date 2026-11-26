@@ -489,10 +489,18 @@ export function WorldMapViewport({
         <span className="text-fg-secondary">
           {cursor ? `X ${cursor.x}  Y ${cursor.y}  Z ${cursor.z}` : '—'}
         </span>
-        {streamStats.pending > 0 && (
+        {streamStats.pending > 0 ? (
           <span className="text-fg-muted" aria-live="polite">
             Loading…
           </span>
+        ) : (
+          streamStats.error &&
+          streamStats.lowresLoaded === 0 &&
+          streamStats.hiresLoaded === 0 && (
+            <span className="text-danger" role="alert">
+              {streamStats.error}
+            </span>
+          )
         )}
       </ViewerOverlay>
 

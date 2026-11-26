@@ -23,6 +23,7 @@ export interface StreamStats {
   lowresLoaded: number
   hiresLoaded: number
   pending: number
+  error?: string | null
 }
 
 /** Source of binary LOD-1 region tiles and LOD-0 voxel chunks (real world:// protocol or procedural /kit source). */
@@ -47,12 +48,14 @@ export function createWorldUrlSource(info: WorldInfo, dimension: WorldDimension)
     regions,
     async fetchLowres(rx, rz, signal) {
       const res = await fetch(qs('lowres', 'rx', 'rz', rx, rz), { signal })
-      if (res.status === 204 || !res.ok) return null
+      if (res.status === 204) return null
+      if (!res.ok) throw new Error(`Failed to load region (${rx}, ${rz}) (${res.status})`)
       return res.arrayBuffer()
     },
     async fetchHires(cx, cz, signal) {
       const res = await fetch(qs('hires', 'cx', 'cz', cx, cz), { signal })
-      if (res.status === 204 || !res.ok) return null
+      if (res.status === 204) return null
+      if (!res.ok) throw new Error(`Failed to load chunk (${cx}, ${cz}) (${res.status})`)
       return res.arrayBuffer()
     }
   }
