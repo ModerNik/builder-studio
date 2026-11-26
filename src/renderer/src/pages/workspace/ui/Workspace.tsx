@@ -9,7 +9,6 @@ import { Activity, PencilRuler } from 'lucide-react'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
 import { deleteVersion, useReportWorkspace } from '../model/actions'
 import { cancelJob } from '@/entities/job/model/jobs'
-import { buildUrl } from '@/shared/lib/urls'
 import { lastOf, useJobs } from '@/entities/job/model/jobs'
 import { useAvailability } from '@/entities/availability/model/availability'
 import { clearShow, matchShow, useBuild, useShow } from '@/entities/build/model/builds'
@@ -24,13 +23,16 @@ import { useShortcuts } from '@/shared/lib/shortcuts'
 import { clearScreenPanels, setScreenPanels } from '@/widgets/workbench-shell/model/screenPanels'
 import { useResolvedTheme } from '@/shared/lib/theme'
 import { useVersionAnalysis } from '@/pages/workspace/model/analysis'
-import { JOB_LABELS, sheetOf } from '@/entities/build/model/workspace'
+import { JOB_LABELS } from '@/entities/build/model/workspace'
 import type { Cell, ViewerStats } from '@/entities/viewer/ui/BuildViewer'
 import type { ViewName } from '@/entities/viewer/model/look'
+import { useProjection } from '@/entities/viewer/model/projection'
+import type { StudioCameraPreset } from '@/entities/viewer/lib/cinematic/presets'
+import { openRenderStudio, openSheetViewer } from '@/features/render-studio/model/store'
 import { runJob, useRunOptions } from '@/entities/job/model/run'
 import { WorkspaceCompare, type ComparisonMode } from '@/widgets/version-compare/ui/Compare'
 import { WorkspaceToolbar, type WorkspaceView } from './Toolbar'
-import { CanvasState, SheetView, Stage3D } from './Canvas'
+import { CanvasState, Stage3D } from './Canvas'
 import { Editor, type EditorTab } from './Editor'
 import { ActivityPane } from './Activity'
 import { DeleteVersion, DraftSettings, StopJob, UpgradeTarget } from './dialogs'
@@ -40,6 +42,18 @@ import { useBlockEditor } from '@/widgets/block-editor/model/editor'
 
 const EMPTY_STATS: ViewerStats = { dims: null, loadMs: 0 }
 type Ping = { cell: Cell; t: number } | null
+const STUDIO_PRESET_VIEWS = new Set<string>([
+  'iso_se',
+  'iso_ne',
+  'iso_nw',
+  'iso_sw',
+  'top',
+  'eye_s',
+  'elev_s',
+  'elev_e',
+  'elev_n',
+  'elev_w'
+])
 
 export function Workspace(): ReactElement {
   const { name } = useParams({ from: '/build/$name' })
@@ -77,7 +91,6 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   const [importDraft, setImportDraft] = useState<string>()
   const [doomed, setDoomed] = useState<string | null>(null)
   const [stopAsk, setStopAsk] = useState(false)
-  const [shownSheet, setShownSheet] = useState<string | null>(null)
   const importDraftFailed =
     !!importDraft &&
     job?.spec.part === 'proto' &&
@@ -155,14 +168,16 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     if (match && 'path' in match) {
       setPicked(match.path)
       setTab('3d')
-    } else if (match && 'sheet' in match) {
-      setShownSheet(match.sheet)
-      setTab('sheet')
     }
   }
   useEffect(() => {
-    if (matchShow(shown, name)) clearShow(shown)
-  }, [name, shown])
+    const match = matchShow(shown, name)
+    if (!match) return
+    if ('sheet' in match) {
+      openSheetViewer({ build: name, path: match.sheet, mtime: Math.round(build?.mtime ?? 0) })
+    }
+    clearShow(shown)
+  }, [name, shown, build?.mtime])
 
   const writer = jobs.find((j) => version && lastOf(j).wrote?.path === version.path)
   const jobCounts = writer && lastOf(writer).lint?.counts
@@ -196,7 +211,6 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     setStats(EMPTY_STATS)
     setClipY(null)
     setFocus(null)
-    setShownSheet(null)
   }
 
   useReportWorkspace(
@@ -237,20 +251,36 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     useAgentPrefs.setState({ open: true })
   }
 
+  const openRender = (): void => {
+    if (!version) return
+    openRenderStudio({
+      build: name,
+      versionPath: version.path,
+      initialView: STUDIO_PRESET_VIEWS.has(view) ? (view as StudioCameraPreset) : 'iso_se',
+      initialProjection: useProjection.getState().projection,
+      initialClipY: clipY
+    })
+  }
+
   useShortcuts([
     { keys: '1', label: '3D view', group: 'Workspace', run: () => showView('3d') },
-    { keys: '2', label: 'Preview', group: 'Workspace', run: () => showView('sheet') },
     {
-      keys: '3',
+      keys: '2',
       label: 'Compare side by side',
       group: 'Workspace',
       run: () => showView('compare', 'side-by-side')
     },
     {
-      keys: '4',
+      keys: '3',
       label: 'Highlight changes',
       group: 'Workspace',
       run: () => showView('compare', 'changes')
+    },
+    {
+      keys: 'Ctrl+Shift+E',
+      label: 'Render & export images',
+      group: 'Workspace',
+      run: () => version && openRender()
     },
     {
       keys: 'Ctrl+Enter',
@@ -306,12 +336,12 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
       onDraftSettings={() => setDraftOpen(true)}
     />
   )
-  const sheet = shownSheet ?? (version ? sheetOf(version) : build?.sheet)
   const panel = 'flex min-h-0 flex-1 flex-col'
 
   return (
     <div className="flex h-full min-w-0 flex-col">
       <WorkspaceToolbar
+        buildId={name}
         name={displayName}
         onUpgradeTarget={() => setUpgradeOpen(true)}
         canUpgradeTarget={!!build && !running}
@@ -324,6 +354,8 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
         onMode={setMode}
         base={base}
         onBase={setBaseline}
+        canRender={!!version}
+        onRender={openRender}
         canDraft={canDraft}
         onDraft={() => start('proto')}
         onDraftSettings={() => setDraftOpen(true)}
@@ -354,14 +386,6 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
                 />
               )}
             </section>
-            {tab === 'sheet' && (
-              <section aria-label="Preview" className={panel}>
-                <SheetView
-                  key={sheet}
-                  src={sheet ? buildUrl(sheet, Math.round(build?.mtime ?? 0)) : null}
-                />
-              </section>
-            )}
             {compareVisited && (
               <section aria-label="Compare" className={panel} hidden={tab !== 'compare'}>
                 <WorkspaceCompare

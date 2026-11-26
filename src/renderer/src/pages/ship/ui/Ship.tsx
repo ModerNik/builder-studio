@@ -5,6 +5,7 @@
 import type { KeyboardEvent, ReactElement, ReactNode } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import {
+  Camera,
   Check,
   ChevronDown,
   ChevronRight,
@@ -39,6 +40,7 @@ import { CodeBlock } from '@/shared/ui/code/CodeBlock'
 import type { CheckStatus } from '@/shared/ui/data/progress'
 import { endedText, exceedsVanillaStructureLimit } from '../model/ship'
 import { useExport, type ExportStepId } from '../model/useExport'
+import { openRenderStudio } from '@/features/render-studio/model/store'
 
 const STATUS_ICON: Record<CheckStatus, { icon: LucideIcon; cls: string; spoken: string }> = {
   idle: { icon: Circle, cls: 'text-fg-muted', spoken: 'Not run' },
@@ -345,9 +347,19 @@ function Export({ name }: { name: string }): ReactElement {
           title="Export"
           description={`Builds ${displayName}, saves the schematic to your folder, logs the export in DESIGN.md, and commits automatically.`}
           actions={
-            <Badge variant="outline" className="font-mono">
-              Minecraft {minecraftVersion}
-            </Badge>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!build.versions.length}
+                onClick={() => openRenderStudio({ build: name })}
+              >
+                <Camera aria-hidden="true" /> Render images…
+              </Button>
+              <Badge variant="outline" className="font-mono">
+                Minecraft {minecraftVersion}
+              </Badge>
+            </div>
           }
         />
 

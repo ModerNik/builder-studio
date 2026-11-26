@@ -40,6 +40,7 @@ import { registerAgent } from './ipc/agent'
 import { registerVariants } from './ipc/variants'
 import { registerRefs } from './ipc/refs'
 import { registerEditor } from './ipc/editor'
+import { registerRender } from './ipc/render'
 
 registerSchemes()
 
@@ -458,7 +459,8 @@ function registerIpc(): void {
     registerAgent,
     registerVariants,
     registerRefs,
-    registerEditor
+    registerEditor,
+    registerRender
   ])
     register(ctx, handle)
 }

@@ -7,6 +7,7 @@ import { queryClient, studio } from '@/shared/api/studio'
 import { useShow } from '@/entities/build/model/builds'
 import { PART_LABEL, useJobs } from '@/entities/job/model/jobs'
 import { useReview } from '@/entities/review/model/review'
+import { openSheetViewer } from '@/features/render-studio/model/store'
 
 const buildLabel = (id: string): string =>
   queryClient.getQueryData<BuildSummary[]>(['builds'])?.find((b) => b.name === id)?.displayName ||
@@ -42,8 +43,7 @@ export function useAppSubscriptions(pathname: string, current: string | null): v
       void navigate({ to: '/build/$name', params: { name: build } })
     })
     const offSheet = studio.app.onSheet(({ path, build }) => {
-      useShow.setState({ path: null, sheet: path, t: Date.now() })
-      void navigate({ to: '/build/$name', params: { name: build } })
+      openSheetViewer({ build, path, mtime: Date.now() })
     })
     return () => {
       offShow()

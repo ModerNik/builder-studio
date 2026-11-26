@@ -69,6 +69,7 @@ import { SchematicFileField } from '@/features/import-schematic/ui/ImportSchemat
 import { useFixIssue } from '@/entities/availability/model/setupFix'
 import { MinecraftVersionSelect } from '@/entities/settings/ui/MinecraftVersionSelect'
 import { openSetup, useDeleteBuild, useNewBuild, useRenameBuild } from '../model/buildActions'
+import { openRenderStudio } from '@/features/render-studio/model/store'
 
 const TONE: Record<BuildState, 'accent' | 'warning' | 'neutral' | 'success'> = {
   running: 'accent',
@@ -282,6 +283,7 @@ export function Gallery(): ReactElement {
                 build={b}
                 state={stateOf(b)}
                 onOpen={() => open(b.name)}
+                onRender={() => openRenderStudio({ build: b.name })}
                 onRename={() => setRenaming(b.name)}
                 onDelete={() => setDoomed(b.name)}
               />
@@ -296,6 +298,7 @@ export function Gallery(): ReactElement {
                   build={b}
                   state={stateOf(b)}
                   onOpen={() => open(b.name)}
+                  onRender={() => openRenderStudio({ build: b.name })}
                   onRename={() => setRenaming(b.name)}
                   onDelete={() => setDoomed(b.name)}
                 />
@@ -410,6 +413,7 @@ function Card({
   state,
   layout = 'card',
   onOpen,
+  onRender,
   onRename,
   onDelete
 }: {
@@ -417,6 +421,7 @@ function Card({
   state: BuildState
   layout?: 'card' | 'row'
   onOpen: () => void
+  onRender: () => void
   onRename: () => void
   onDelete: () => void
 }): ReactElement {
@@ -426,13 +431,16 @@ function Card({
   const failed = useJobs((s) => s.jobs.find((j) => j.spec.build === b.name)?.state === 'failed')
   const status =
     b.status.map(plain).find((s) => /^current/i.test(s)) ?? (b.status[0] && plain(b.status[0]))
-  // the same three items in the ⋯ menu and the context menu
+  // the same items in the ⋯ menu and the context menu
   const items = (
     Item: typeof DropdownMenuItem | typeof ContextMenuItem,
     Label: typeof DropdownMenuLabel | typeof ContextMenuLabel
   ): ReactNode => (
     <>
       <Item onSelect={onOpen}>Open</Item>
+      <Item disabled={!b.versions.length} onSelect={onRender}>
+        Render images…
+      </Item>
       <Item disabled={busy} onSelect={onRename}>
         Rename…
       </Item>

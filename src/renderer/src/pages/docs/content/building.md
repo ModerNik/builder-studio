@@ -27,12 +27,14 @@ panels.
 
 ### Header
 
-| Control                          | Does                                                                                                                           |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Version picker                   | Chooses which `.litematic` in `out/` is shown. The newest is selected by default                                               |
-| **3D / Preview / Compare** icons | The view mode (keys `1`–`4`); hover one for its name                                                                           |
-| **Perspective** (pyramid icon)   | Shown in 3D: switches from the isometric default                                                                               |
-| **⋯** menu                       | **Upgrade target…**, **Generate draft** (Ctrl Enter), **Draft settings…**, **Import schematic…**, **Delete selected version…** |
+| Control                        | Does                                                                                                                           |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
+| Version picker                 | Chooses which `.litematic` in `out/` is shown. The newest is selected by default                                               |
+| **3D / Compare** icons         | The view mode (keys `1`–`3`); hover one for its name                                                                           |
+| **Perspective** (pyramid icon) | Shown in 3D: switches from the isometric default                                                                               |
+| **Render** (camera icon)       | Opens the **Render Studio** lightbox (`Ctrl Shift E`) to shoot shaded renders and contact sheets                               |
+| **Export** (rocket icon)       | Opens the **Export** screen to build and save the schematic                                                                    |
+| **⋯** menu                     | **Upgrade target…**, **Generate draft** (Ctrl Enter), **Draft settings…**, **Import schematic…**, **Delete selected version…** |
 
 ### Importing a schematic as a part
 
@@ -80,12 +82,16 @@ A full build (finalized, with all checks) runs from the [Export checklist](revie
 
 ### View modes
 
-| Tab                        | Key | Shows                                                               |
-| -------------------------- | --- | ------------------------------------------------------------------- |
-| 3D                         | `1` | The version in the game's look (below)                              |
-| Preview                    | `2` | The engine's render sheet (`out/<stem>_3d/sheet.png`), zoom and pan |
-| Compare: Side by side      | `3` | Two versions next to each other, cameras linked                     |
-| Compare: Highlight changes | `4` | A diff drawn over the newer version                                 |
+| Tab                        | Key | Shows                                           |
+| -------------------------- | --- | ----------------------------------------------- |
+| 3D                         | `1` | The version in the game's look (below)          |
+| Compare: Side by side      | `2` | Two versions next to each other, cameras linked |
+| Compare: Highlight changes | `3` | A diff drawn over the newer version             |
+
+To export high-resolution renders or multi-angle contact sheets with sun shadows, physical sky,
+emissive block glow, bloom, water sheen, or transparent cutouts, click **Render** (`Ctrl Shift E`)
+in the Workspace toolbar, **Render images…** on the Export screen, or **Render images…** in a
+build card's menu.
 
 Pick the older version in **Compare with**. In **Highlight changes**, the bridge writes added (lime),
 removed (red) and changed (yellow) stained-glass overlays into `out/.diff/<a>__<b>/`; each kind
@@ -212,10 +218,10 @@ Export skips the advisory lint step.
 | Ctrl Enter                | Generate draft                                                                  |
 | Esc                       | Stop the running job (with a confirm)                                           |
 | `[` / `]`                 | Lower / raise the visible height                                                |
+| Ctrl Shift E              | Open Render Studio lightbox                                                     |
 | `1`                       | 3D                                                                              |
-| `2`                       | Preview                                                                         |
-| `3`                       | Compare side by side                                                            |
-| `4`                       | Compare: highlight changes                                                      |
+| `2`                       | Compare side by side                                                            |
+| `3`                       | Compare: highlight changes                                                      |
 | `S` `P` `E` `I`           | Select, Place, Erase, Pick tools                                                |
 | `B` `N` `G` `U` `T`       | Brush, Paint, Fill, Shape, Terrain tools                                        |
 | `M` `L`                   | Transform, Ruler tools                                                          |

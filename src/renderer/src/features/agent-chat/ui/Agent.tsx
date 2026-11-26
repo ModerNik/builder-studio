@@ -34,6 +34,7 @@ import { Transcript as KitTranscript } from '@/features/agent-chat/ui/Transcript
 import { SystemNote, type MessageBubbleEditState } from '@/features/agent-chat/ui/Messages'
 import { buildUrl } from '@/shared/lib/urls'
 import { useShow } from '@/entities/build/model/builds'
+import { openSheetViewer } from '@/features/render-studio/model/store'
 import {
   busy,
   follow,
@@ -538,7 +539,11 @@ export function Transcript({
       onShowFile={(path, sheet) => {
         const build = /^builds\/(.+?)\/out\//.exec(path)?.[1]
         if (!build) return
-        reveal(path, sheet)
+        if (sheet) {
+          openSheetViewer({ build, path, mtime: Date.now() })
+          return
+        }
+        reveal(path, false)
         void navigate({ to: '/build/$name', params: { name: build } })
       }}
       lintProblems={countLint}
