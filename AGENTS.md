@@ -5,7 +5,7 @@
 - **Build output:** put runtime builds, installers and `BS_ACCEPTANCE_ROOT` under `out/` in this repo, never in a temp, scratch or `~/.codex` folder, and delete them when you are done. Each runtime build is about 1 GB, and copies left elsewhere fill drive C.
 - **UI work:** keep the design system and the UI kit up to date. A new component, variant, state or token is designed in `docs/DESIGN.md` first, then added to the kit (`src/renderer/src/shared/ui/`, or the `ui/` folder of the slice that owns it, plus its `/kit` section in `src/renderer/src/pages/kit/sections/`), and only then used in a screen. Details: `docs/DESIGN.md`, "Working with the kit".
 - **Renderer layout:** `src/renderer/src/` follows Feature-Sliced Design: `shared` < `entities` < `features` < `widgets` < `pages` < `app`. A layer imports only from the layers below it (ESLint enforces this). Inside a slice, `ui/` holds components and `model/` holds stores, hooks and logic with their tests. Details: `docs/DESIGN.md`, "Renderer layout".
-- **GitHub Actions:** `.github/workflows/release.yml` on a `v*` tag push is the only pipeline. Do not add workflows or triggers that run on branch pushes, pull requests, schedules or anything else (CI, caching, lint, preview builds) unless explicitly asked for that specific pipeline.
+- **GitHub Actions:** `.github/workflows/ci.yml` (lint, typecheck, tests on pull requests) and `.github/workflows/release.yml` (a `v*` tag push) are the only pipelines. Do not add other workflows or triggers (branch pushes, schedules, caching, preview builds) unless explicitly asked for that specific pipeline.
 
 ## Branch and worktree lifecycle
 
