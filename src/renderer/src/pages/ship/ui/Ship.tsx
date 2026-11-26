@@ -346,26 +346,16 @@ function Export({ name }: { name: string }): ReactElement {
         <PageHeader
           title="Export"
           description={`Builds ${displayName}, saves the schematic to your folder, logs the export in DESIGN.md, and commits automatically.`}
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!build.versions.length}
-                onClick={() => openRenderStudio({ build: name })}
-              >
-                <Camera aria-hidden="true" /> Render images…
-              </Button>
-              <Badge variant="outline" className="font-mono">
-                Minecraft {minecraftVersion}
-              </Badge>
-            </div>
-          }
         />
 
         <Card className="gap-4 p-5">
           <div className="flex flex-col gap-2">
-            <span className="text-xs font-medium text-fg-secondary">Export format</span>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium text-fg-secondary">Export format</span>
+              <Badge variant="outline" className="font-mono">
+                Target: Minecraft {minecraftVersion}
+              </Badge>
+            </div>
             <FormatSelector
               formats={supportedFormats}
               value={format}
@@ -543,6 +533,25 @@ function Export({ name }: { name: string }): ReactElement {
             to folder → DESIGN.md &amp; Git commit
           </div>
         )}
+
+        <Card className="flex-row flex-wrap items-center justify-between gap-3 px-5 py-4">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-base font-medium text-fg">Showcase images</h2>
+            <p className="text-sm text-fg-muted">
+              {build.versions.length
+                ? 'Export high-resolution PNG, WebP, or JPEG renders and multi-angle contact sheets.'
+                : 'Generate a draft first to render showcase images.'}
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!build.versions.length}
+            onClick={() => openRenderStudio({ build: name })}
+          >
+            <Camera aria-hidden="true" /> Render images…
+          </Button>
+        </Card>
       </div>
     </div>
   )
