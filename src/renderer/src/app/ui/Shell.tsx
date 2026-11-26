@@ -9,7 +9,6 @@ import { DropdownMenu } from 'radix-ui'
 import {
   BookOpen,
   Box,
-  FlaskConical,
   GitBranch,
   Images,
   Map as MapIcon,
@@ -128,7 +127,6 @@ export function Shell(): ReactElement {
           }
         ]
   const links = [
-    { to: '/labs', icon: FlaskConical, label: 'Labs: palette, kit catalog, prefabs' },
     { to: '/docs', icon: BookOpen, label: 'Documentation' },
     { to: '/settings', icon: SettingsIcon, label: 'Settings', keys: 'Ctrl+,' }
   ] as const
