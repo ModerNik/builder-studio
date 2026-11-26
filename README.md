@@ -41,7 +41,7 @@ You can write and edit the script yourself, collaborate with an AI assistant dir
 
 ### 🧱 Live 3D view and hand editor
 
-Inspect every version in a live Three.js 3D viewport rendered with your own Minecraft textures, complete with an interactive axis gizmo, a vertical Y-level clip slider to see inside, and preview render sheets. Switch to the **Editor** panel to modify blocks directly by hand — place, erase, pick, brush, paint, fill, stamp shapes, sculpt terrain, transform selections, measure with the ruler, and undo or redo every edit. Compare any two versions side by side or highlight added, removed, and changed blocks in 3D.
+Inspect every version in a live Three.js 3D viewport rendered with your own Minecraft textures, complete with an interactive axis gizmo, a vertical Y-level clip slider to see inside, and preview render sheets. Switch to the **Editor** panel to modify blocks directly by hand — place, erase, pick, brush, paint, fill, stamp shapes, sculpt terrain, transform selections, measure with the ruler, and undo or redo every edit. Compare any two versions side by side or highlight added, removed, and changed blocks in 3D. Open **Render Studio** (`Ctrl+Shift+E`) to craft showcase renders with lighting presets, aspect framing, multi-angle sheets and up to 4K export.
 
 ### 🤖 Built-in AI assistant (optional)
 
@@ -65,7 +65,7 @@ Browse builds by named parts, colour-code or isolate parts in 3D, send selected 
 
 ### 🎨 Reference board and Labs
 
-Keep a per-build reference board (paste screenshots, drop images, save links and notes, and attach them to prompts) and use **Labs** to explore block palettes, colour gradients with shade checks, kit catalogs, and prefab libraries.
+Keep a per-build reference board (paste screenshots, drop images, save links and notes, filter by type, zoom images in a lightbox, and attach them to chat prompts) and read each build's **Design Log** as a scannable journal of its status, brief, decisions, reviews and exports. Use **Labs** to explore block palettes, colour gradients with shade checks, kit catalogs, and prefab libraries.
 
 ### 🚀 One-click automatic export
 
