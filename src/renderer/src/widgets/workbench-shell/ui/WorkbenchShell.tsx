@@ -214,10 +214,9 @@ export function WorkbenchShell({
 
   const Main = preview ? 'section' : 'main'
   const Header = preview ? 'div' : 'header'
-  const panelToggles = [
-    ...panels.filter((p) => p.side === 'right'),
-    ...panels.filter((p) => p.side === 'bottom')
-  ]
+  const rightPanels = panels.filter((p) => p.side === 'right')
+  const bottomPanels = panels.filter((p) => p.side === 'bottom')
+  const compactBar = tier === 'tablet' || tier === 'phone'
   const rightKey = layout.columns.map((c) => c.join('+')).join('|')
   // A shared dock uses the largest minimum of its panels.
   const minimumWidth = (id: string): number => {
@@ -284,19 +283,28 @@ export function WorkbenchShell({
         {screens.length > 0 && (
           <div
             data-workbench-region=""
-            className="flex h-[max(var(--shell-tabbar),var(--density-control))] shrink-0 items-stretch gap-1 border-b border-border-default bg-surface pr-1 pl-1"
+            className={cn(
+              'flex h-[max(var(--shell-tabbar),calc(var(--density-control)+var(--space-1)))] shrink-0 items-center gap-2 border-b border-border-default bg-surface-panel',
+              tier === 'phone' ? 'px-3' : 'px-4'
+            )}
           >
             <ScreenTabs
               screens={screens}
               value={screen}
               onChange={onScreenChange}
-              mode={tier === 'phone' ? 'menu' : 'tabs'}
+              mode={compactBar ? 'icons' : 'tabs'}
             />
 
             {/* a landmark beside the screen tabs' nav, so nothing on the screen sits outside one */}
-            {panelToggles.length > 0 && (
-              <nav aria-label="Panels" className="ml-auto flex shrink-0 items-center gap-0.5">
-                {panelToggles.map((p) => (
+            {(rightPanels.length > 0 || bottomPanels.length > 0) && (
+              <nav aria-label="Panels" className="ml-auto flex shrink-0 items-center gap-1">
+                {rightPanels.map((p) => (
+                  <PanelToggle key={p.id} panel={p} showLabel={!compactBar} />
+                ))}
+                {rightPanels.length > 0 && bottomPanels.length > 0 && (
+                  <span aria-hidden="true" className="mx-0.5 h-4 w-px shrink-0 bg-border-subtle" />
+                )}
+                {bottomPanels.map((p) => (
                   <PanelToggle key={p.id} panel={p} />
                 ))}
               </nav>

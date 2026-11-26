@@ -289,7 +289,7 @@ it.skipIf(process.platform === 'darwin')(
     expect(state.setTitleBarOverlay).toHaveBeenLastCalledWith({
       color: '#f2f2f3',
       symbolColor: '#17181b',
-      height: 44
+      height: 54
     })
 
     state.theme.shouldUseDarkColors = false
@@ -298,7 +298,7 @@ it.skipIf(process.platform === 'darwin')(
     expect(state.setTitleBarOverlay).toHaveBeenLastCalledWith({
       color: '#121316',
       symbolColor: '#ededef',
-      height: 44
+      height: 54
     })
 
     await setTheme('system')

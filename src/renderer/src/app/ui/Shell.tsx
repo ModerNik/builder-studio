@@ -6,7 +6,20 @@
 import { useEffect, useState, type ReactElement } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { DropdownMenu } from 'radix-ui'
-import { MessageCircle, BookOpen, FlaskConical, Settings as SettingsIcon } from 'lucide-react'
+import {
+  BookOpen,
+  Box,
+  FlaskConical,
+  GitBranch,
+  Images,
+  Map as MapIcon,
+  MessageCircle,
+  Rocket,
+  ScanEye,
+  ScrollText,
+  Settings as SettingsIcon,
+  type LucideIcon
+} from 'lucide-react'
 import { Toaster } from '@/shared/ui/primitives/sonner'
 import {
   CommandDialog,
@@ -37,6 +50,16 @@ import { SetupChip, SetupMenuItem } from '@/entities/availability/ui/SetupChip'
 import { useSetupNotices } from '@/entities/availability/model/setupFix'
 import { useAppSubscriptions } from '../model/subscriptions'
 import { BUILD_ROUTE, BUILD_SCREENS, hasChatDock, type ScreenId } from '../model/screens'
+
+const SCREEN_ICONS: Record<ScreenId, LucideIcon> = {
+  workspace: Box,
+  review: ScanEye,
+  variants: GitBranch,
+  ship: Rocket,
+  site: MapIcon,
+  refs: Images,
+  log: ScrollText
+}
 
 export function Shell(): ReactElement {
   const [palette, setPalette] = useState(false)
@@ -75,7 +98,6 @@ export function Shell(): ReactElement {
   const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName ?? id
   const crumbs: Crumb[] = current
     ? [
-        { label: 'Builds', onSelect: () => void navigate({ to: '/' }) },
         {
           label: labelOf(current),
           menu: {
@@ -140,6 +162,7 @@ export function Shell(): ReactElement {
             actions={links.map((l) => (
               <IconButton
                 key={l.to}
+                size="sm"
                 icon={l.icon}
                 label={l.label}
                 keys={'keys' in l ? l.keys : undefined}
@@ -171,6 +194,8 @@ export function Shell(): ReactElement {
                   ? {
                       id: s.id,
                       label: s.label,
+                      icon: SCREEN_ICONS[s.id],
+                      group: s.group,
                       badge: 'dot' as const,
                       badgeLabel: 'The agent is waiting',
                       badgeTone: 'attention' as const
@@ -179,11 +204,13 @@ export function Shell(): ReactElement {
                     ? {
                         id: s.id,
                         label: s.label,
+                        icon: SCREEN_ICONS[s.id],
+                        group: s.group,
                         badge: lanesAsking,
                         badgeLabel: `${lanesAsking} ${lanesAsking === 1 ? 'lane needs' : 'lanes need'} you`,
                         badgeTone: 'attention' as const
                       }
-                    : { id: s.id, label: s.label }
+                    : { id: s.id, label: s.label, icon: SCREEN_ICONS[s.id], group: s.group }
               )
         }
         screen={page ? '' : screen}

@@ -24,4 +24,18 @@ describe('hasChatDock', () => {
     expect(hasChatDock('district', 'ship', custom)).toBe(false)
     expect(hasChatDock(null, 'workspace', custom)).toBe(false)
   })
+
+  it('groups core build workflow tabs ahead of supporting context tabs', () => {
+    expect(BUILD_SCREENS.filter((s) => s.group === 'core').map((s) => s.id)).toEqual([
+      'workspace',
+      'review',
+      'variants',
+      'ship'
+    ])
+    expect(BUILD_SCREENS.filter((s) => s.group === 'support').map((s) => s.id)).toEqual([
+      'site',
+      'refs',
+      'log'
+    ])
+  })
 })

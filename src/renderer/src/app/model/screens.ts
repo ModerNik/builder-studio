@@ -6,20 +6,22 @@
  * its Ctrl+J shortcut on that tab.
  */
 export const BUILD_SCREENS = [
-  { id: 'workspace', label: 'Workspace', chat: true },
-  { id: 'review', label: 'Review', chat: true },
-  { id: 'variants', label: 'Variants', chat: true },
-  { id: 'ship', label: 'Export', chat: true },
-  { id: 'site', label: 'Location', chat: true },
-  { id: 'refs', label: 'Refs', chat: true },
-  { id: 'log', label: 'Log', chat: true }
+  { id: 'workspace', label: 'Workspace', group: 'core', chat: true },
+  { id: 'review', label: 'Review', group: 'core', chat: true },
+  { id: 'variants', label: 'Variants', group: 'core', chat: true },
+  { id: 'ship', label: 'Export', group: 'core', chat: true },
+  { id: 'site', label: 'Location', group: 'support', chat: true },
+  { id: 'refs', label: 'Refs', group: 'support', chat: true },
+  { id: 'log', label: 'Log', group: 'support', chat: true }
 ] as const
 
 export type ScreenId = (typeof BUILD_SCREENS)[number]['id']
+export type ScreenGroup = (typeof BUILD_SCREENS)[number]['group']
 
 export interface BuildScreen {
   readonly id: ScreenId
   readonly label: string
+  readonly group: ScreenGroup
   readonly chat: boolean
 }
 
