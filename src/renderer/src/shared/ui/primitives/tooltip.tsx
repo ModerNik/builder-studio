@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Tooltip as TooltipPrimitive } from 'radix-ui'
+import { Slot as SlotPrimitive, Tooltip as TooltipPrimitive } from 'radix-ui'
 import { cn } from '@/shared/lib/utils'
 
 // A Tooltip outside any TooltipProvider brings its own, so IconButton works anywhere;
@@ -28,10 +28,50 @@ function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>): Rea
   return React.useContext(Provided) ? root : <TooltipProvider>{root}</TooltipProvider>
 }
 
-function TooltipTrigger(
-  props: React.ComponentProps<typeof TooltipPrimitive.Trigger>
-): React.ReactElement {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+// TooltipPrimitive.Trigger injects `data-state` ("closed" | "delayed-open" | "instant-open") onto
+// its asChild target via Slot. When that child is another Radix primitive (SegmentedControlItem,
+// Toggle, TabsTrigger, DropdownMenuTrigger, ...), spreading the injected `data-state` overwrites
+// the child's own `data-state` ("on"/"off", "active"/"inactive", "open"/"closed"). Stripping the
+// tooltip's `data-state` here (while preserving any outer `data-state` passed to TooltipTrigger
+// itself) keeps the child's state intact while forwarding refs, aria-describedby and handlers.
+function TooltipTriggerSlot({
+  'data-state': _tooltipState,
+  preserveState,
+  children,
+  ...props
+}: React.ComponentProps<typeof SlotPrimitive.Root> & {
+  'data-state'?: string
+  preserveState?: string
+}): React.ReactElement {
+  void _tooltipState
+  return (
+    <SlotPrimitive.Root
+      {...props}
+      {...(preserveState !== undefined ? { 'data-state': preserveState } : {})}
+    >
+      {children}
+    </SlotPrimitive.Root>
+  )
+}
+
+function TooltipTrigger({
+  asChild,
+  children,
+  ...props
+}: React.ComponentProps<typeof TooltipPrimitive.Trigger>): React.ReactElement {
+  if (asChild && React.isValidElement(children)) {
+    const outerState = (props as { 'data-state'?: string })['data-state']
+    return (
+      <TooltipPrimitive.Trigger asChild {...props}>
+        <TooltipTriggerSlot preserveState={outerState}>{children}</TooltipTriggerSlot>
+      </TooltipPrimitive.Trigger>
+    )
+  }
+  return (
+    <TooltipPrimitive.Trigger data-slot="tooltip-trigger" asChild={asChild} {...props}>
+      {children}
+    </TooltipPrimitive.Trigger>
+  )
 }
 
 function TooltipContent({
