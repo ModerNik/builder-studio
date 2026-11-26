@@ -2,7 +2,7 @@
   "name": "builder-studio",
   "private": true,
   "license": "AGPL-3.0-only",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Desktop workstation for the Minecraft AI build engine",
   "main": "./out/main/index.js",
   "author": "ModerNik",
