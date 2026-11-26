@@ -88,9 +88,10 @@ const studio: StudioApi = {
     write: (build, base, md) => invoke('design:write', { build, base, md })
   },
   ship: {
-    finalize: (job, dry) => invoke('ship:finalize', { job, dry }),
+    finalize: (job, targetDir) => invoke('ship:finalize', { job, targetDir }),
     results: (build, title, rows) => invoke('ship:results', { build, title, rows }),
-    commit: (build, message, dry) => invoke('ship:commit', { build, message, dry })
+    commit: (build, message) => invoke('ship:commit', { build, message }),
+    reveal: (path) => invoke('ship:reveal', path)
   },
   app: {
     report: (s) => void invoke('app:report', s),

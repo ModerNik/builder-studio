@@ -13,7 +13,8 @@ const state = vi.hoisted(() => ({
   handlers: new Map<string, (event: unknown, arg: unknown) => unknown>(),
   settings: null as Settings | null,
   sender: {},
-  jobs: [] as { state: string }[],
+  jobs: [] as Record<string, unknown>[],
+  showItemInFolder: vi.fn(),
   agent: 'off',
   auth: false,
   variants: {} as Record<string, { status: string }>,
@@ -79,7 +80,7 @@ vi.mock('electron', () => ({
   },
   net: { fetch: vi.fn() },
   dialog: { showOpenDialog: vi.fn() },
-  shell: { openExternal: vi.fn() }
+  shell: { openExternal: vi.fn(), showItemInFolder: state.showItemInFolder }
 }))
 vi.mock('@electron-toolkit/utils', () => ({
   electronApp: { setAppUserModelId: vi.fn() },
@@ -515,7 +516,7 @@ it('enforces engine, rendering, provider and export prerequisites through IPC', 
       }
     })
   ).rejects.toThrow('provider login needed')
-  await expect(invoke('ship:finalize', { job: 1, dry: false })).rejects.toThrow('export folder')
+  await expect(invoke('ship:finalize', { job: 1 })).rejects.toThrow('export folder')
   expect(state.jobRun).not.toHaveBeenCalled()
   expect(state.bridgeCall).not.toHaveBeenCalled()
   expect(state.send).not.toHaveBeenCalled()
@@ -545,9 +546,9 @@ it('enforces engine, rendering, provider and export prerequisites through IPC', 
   expect(state.variantStart).toHaveBeenCalled()
   state.gitRoot = 'D:/parent repository'
   await invoke('availability:get', true)
-  await expect(
-    invoke('ship:commit', { build: 'starter', message: 'save', dry: false })
-  ).rejects.toThrow('parent repository')
+  await expect(invoke('ship:commit', { build: 'starter', message: 'save' })).rejects.toThrow(
+    'parent repository'
+  )
 })
 
 it('gates companion and application viewer tools while keeping existing sheets available without Python', async () => {
@@ -569,6 +570,56 @@ it('gates companion and application viewer tools while keeping existing sheets a
     })
     expect(state.bridgeCall).not.toHaveBeenCalled()
     expect(state.tools!.status()).toMatchObject({ jobs: [], reviews: [] })
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+it('finalizes into a custom targetDir while enforcing workspace checks and scopes ship:reveal to exported files', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'studio-ship-ipc-'))
+  const staging = join(root, 'staging')
+  const customOut = join(root, 'custom-out')
+  const outside = join(root, 'secret.txt')
+  try {
+    mkdirSync(join(staging, 'Starter'), { recursive: true })
+    mkdirSync(customOut, { recursive: true })
+    const stagedFile = join(staging, 'Starter', 'starter.litematic')
+    writeFileSync(stagedFile, 'payload')
+    writeFileSync(outside, 'secret')
+
+    state.settings!.workspace = root
+    state.settings!.schematics = ''
+    state.settings!.minecraftVersion = '26.3'
+    state.jobs = [
+      {
+        id: 7,
+        state: 'done',
+        staging,
+        minecraftVersion: '26.3',
+        spec: { build: 'starter', part: 'full', ship: true },
+        events: [{ event: 'copied', path: stagedFile }]
+      }
+    ]
+    state.showItemInFolder.mockReset()
+
+    // Even with targetDir, workspace availability must still be enforced
+    state.validate.mockRejectedValueOnce(new Error('workspace invalid'))
+    await invoke('availability:get', true)
+    await expect(invoke('ship:finalize', { job: 7, targetDir: customOut })).rejects.toThrow(
+      'workspace invalid'
+    )
+
+    // With a valid workspace, custom targetDir bypasses missing default schematics folder
+    state.validate.mockResolvedValue(undefined)
+    await invoke('availability:get', true)
+    const exported = (await invoke('ship:finalize', { job: 7, targetDir: customOut })) as string
+    expect(exported).toBe(join(customOut, 'Starter', 'starter.litematic'))
+
+    // ship:reveal allows the finalized file and rejects arbitrary or relative paths
+    await expect(invoke('ship:reveal', exported)).resolves.toBeUndefined()
+    expect(state.showItemInFolder).toHaveBeenCalledWith(exported)
+    await expect(invoke('ship:reveal', outside)).rejects.toThrow('Only exported schematic files')
+    await expect(invoke('ship:reveal', 'relative/file.litematic')).rejects.toThrow('absolute')
   } finally {
     rmSync(root, { recursive: true, force: true })
   }

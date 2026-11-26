@@ -14,6 +14,19 @@ describe('hasChatDock', () => {
     }
   })
 
+  it('places Export (ship) at the end of the build tabs', () => {
+    expect(BUILD_SCREENS.at(-1)).toEqual({ id: 'ship', label: 'Export', chat: true })
+    expect(BUILD_SCREENS.map((s) => s.id)).toEqual([
+      'workspace',
+      'review',
+      'variants',
+      'site',
+      'refs',
+      'log',
+      'ship'
+    ])
+  })
+
   it('respects per-tab chat flags when a tab opts out', () => {
     const custom: BuildScreen[] = BUILD_SCREENS.map((s) =>
       s.id === 'log' || s.id === 'ship' ? { ...s, chat: false } : s
