@@ -465,17 +465,15 @@ function registerIpc(): void {
     register(ctx, handle)
 }
 
-// Window chrome per theme: --surface-bg behind the title bar, --fg window buttons (renderer app/styles/main.css as sRGB)
-const CHROME = {
-  dark: { color: '#121316', symbolColor: '#ededef', height: 43 },
-  light: { color: '#f2f2f3', symbolColor: '#17181b', height: 43 }
+// Window background per theme: --surface-bg (renderer app/styles/main.css as sRGB)
+const WINDOW_BG = {
+  dark: '#121316',
+  light: '#f2f2f3'
 }
-// the header is 44 CSS px, so the OS button strip follows the UI scale
-const chrome = (): (typeof CHROME)['dark'] => {
-  const { theme, scale } = getSettings().appearance
+const windowBg = (): string => {
+  const { theme } = getSettings().appearance
   const mode = theme === 'system' ? (nativeTheme.shouldUseDarkColors ? 'dark' : 'light') : theme
-  const c = CHROME[mode]
-  return { ...c, height: Math.round(c.height * scale) }
+  return WINDOW_BG[mode]
 }
 // themeSource also sets the renderer's prefers-color-scheme, which picks the CSS theme (renderer/public/theme.js)
 function applyTheme(): void {
@@ -504,9 +502,7 @@ function zoomKeys(e: Electron.Event, input: Electron.Input): void {
 }
 function paintChrome(): void {
   if (!state.win) return
-  const overlay = chrome()
-  state.win.setBackgroundColor(overlay.color)
-  if (process.platform !== 'darwin') state.win.setTitleBarOverlay(overlay)
+  state.win.setBackgroundColor(windowBg())
 }
 
 function createWindow(): void {
@@ -516,14 +512,15 @@ function createWindow(): void {
     minWidth: 360,
     minHeight: 480,
     show: false,
-    backgroundColor: chrome().color,
+    backgroundColor: windowBg(),
     autoHideMenuBar: true,
     title: 'Builder Studio',
-    // one bar: the Shell header is the title bar, the OS draws the window buttons over it;
-    // 43 of the header's 44px so its bottom border runs under the buttons
+    // One bar: the Shell header is the title bar. Non-macOS renders caption buttons in the DOM so modals,
+    // scrims and tooltips layer above them; macOS keeps native traffic lights with titleBarOverlay for env insets.
     titleBarStyle: 'hidden',
-    titleBarOverlay: chrome(),
-    trafficLightPosition: { x: 14, y: 14 },
+    ...(process.platform === 'darwin'
+      ? { titleBarOverlay: true, trafficLightPosition: { x: 14, y: 14 } }
+      : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
@@ -533,6 +530,11 @@ function createWindow(): void {
       zoomFactor: getSettings().appearance.scale
     }
   })
+  const emitWindowState = (): void =>
+    broadcast('window:state', { maximized: !!state.win?.isMaximized() })
+  state.win.on('maximize', emitWindowState)
+  state.win.on('unmaximize', emitWindowState)
+  state.win.on('restore', emitWindowState)
   state.win.webContents.on('before-input-event', zoomKeys)
   state.win.on('ready-to-show', () => state.win?.show())
   state.win.on('closed', () => (state.win = null))

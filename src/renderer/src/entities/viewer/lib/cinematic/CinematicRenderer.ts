@@ -9,6 +9,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js'
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js'
 import { N8AOPass } from 'n8ao'
 import { CameraManager, SchematicObject, type Projection } from '../render/renderer'
+import { fitDirectionalShadow } from '../render/look'
 import { Mesher, type BlockColorMap } from '../render/mesher'
 import { LIQUID, TRANSLUCENT, type Resources } from '../render/resources'
 import { readSchematic, type Vec3 } from '../render/schematic'
@@ -120,7 +121,12 @@ export class CinematicRenderer {
     this.scene.add(this.skyDome.mesh)
     this.scene.add(this.studioBackdrop.mesh)
 
-    const catcherMat = new THREE.ShadowMaterial({ opacity: 0.35 })
+    const catcherMat = new THREE.ShadowMaterial({
+      opacity: 0.35,
+      polygonOffset: true,
+      polygonOffsetFactor: 1,
+      polygonOffsetUnits: 1
+    })
     this.shadowCatcher = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), catcherMat)
     this.shadowCatcher.rotation.x = -Math.PI / 2
     this.shadowCatcher.receiveShadow = true
@@ -243,11 +249,12 @@ export class CinematicRenderer {
     )
     this.centre = this.box.getCenter(new THREE.Vector3())
     this.radius = Math.max(this.box.getSize(new THREE.Vector3()).length() / 2, 1)
+    this.cameras.setBounds(this.box)
 
     // Position the invisible shadow catcher right under the schematic floor
     const span = Math.max(this.radius * 8, 64)
     this.shadowCatcher.scale.set(span, span, 1)
-    this.shadowCatcher.position.set(this.centre.x, this.box.min.y - 0.01, this.centre.z)
+    this.shadowCatcher.position.set(this.centre.x, this.box.min.y - 0.002, this.centre.z)
 
     this.applyClip()
     if (this.currentLook) this.applyLook(this.currentLook)
@@ -387,19 +394,7 @@ export class CinematicRenderer {
       )
       sun.castShadow = true
       const mapSize = Math.min(look.shadowMapSize, this.gl.capabilities.maxTextureSize)
-      sun.shadow.mapSize.set(mapSize, mapSize)
-      const extent = this.radius * 1.25
-      Object.assign(sun.shadow.camera, {
-        left: -extent,
-        right: extent,
-        top: extent,
-        bottom: -extent,
-        near: 0.1,
-        far: this.radius * 6
-      })
-      sun.shadow.camera.updateProjectionMatrix()
-      sun.shadow.bias = -0.0004
-      sun.shadow.normalBias = Math.max(0.02, (2.2 * extent) / mapSize)
+      fitDirectionalShadow(sun, this.box, lightDir, mapSize, look.groundShadow)
       const hemi = new THREE.HemisphereLight(
         palette.hemiSky.getHex(),
         palette.hemiGround.getHex(),
@@ -430,10 +425,10 @@ export class CinematicRenderer {
     this.skyDome.mesh.visible = look.backdrop === 'sky'
     this.studioBackdrop.mesh.visible = look.backdrop === 'studio'
     if (look.backdrop === 'sky') {
-      this.skyDome.update(dir, palette, this.radius, this.centre)
+      this.skyDome.update(dir, palette)
       this.scene.background = palette.horizon.clone()
     } else if (look.backdrop === 'studio') {
-      this.studioBackdrop.update(look.bgColor, this.radius, this.centre)
+      this.studioBackdrop.update(look.bgColor)
       this.scene.background = new THREE.Color(look.bgColor)
     } else if (look.backdrop === 'solid') {
       this.scene.background = new THREE.Color(look.bgColor)
@@ -509,6 +504,8 @@ export class CinematicRenderer {
     const cam = this.cameras.active
     const look = this.currentLook
     this.renderPass.camera = cam
+    if (this.skyDome.mesh.visible) this.skyDome.setCamera(cam)
+    if (this.studioBackdrop.mesh.visible) this.studioBackdrop.setCamera(cam)
 
     // Distance fog for perspective shots only (keeps iso clean)
     if (

@@ -11,17 +11,9 @@
 //   7. Bottom dock
 // Sheets and dialogs trap focus and give it back to their trigger.
 import './shell.css'
-import {
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactElement,
-  type ReactNode
-} from 'react'
+import { useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Group, Panel, Separator } from 'react-resizable-panels'
-import { Minus, Square, X } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { focusRing } from '@/shared/ui/common/styles'
 import {
@@ -43,24 +35,12 @@ import {
 } from '@/shared/lib/layout'
 import { useShortcuts } from '@/shared/lib/shortcuts'
 import { WorkbenchContext } from '../model/context'
+import { useWindowChrome } from '../model/windowControls'
 import { DockGroup, PanelSheet, type WorkbenchPanel } from './Dock'
 import { ScreenTabs, type Screen } from './ScreenTabs'
 import { ShortcutsDialog } from './ShortcutsDialog'
 import { PanelToggle } from './PanelToggle'
-
-type WindowControlsOverlay = EventTarget & { visible: boolean }
-const overlay = (): WindowControlsOverlay | undefined =>
-  (navigator as Navigator & { windowControlsOverlay?: WindowControlsOverlay }).windowControlsOverlay
-/** True in the desktop app, where the OS draws caption buttons over the title bar; false on the web. */
-function useWindowControls(): boolean {
-  return useSyncExternalStore(
-    (change) => {
-      overlay()?.addEventListener('geometrychange', change)
-      return () => overlay()?.removeEventListener('geometrychange', change)
-    },
-    () => !!overlay()?.visible
-  )
-}
+import { WindowControls } from './WindowControls'
 
 interface Remembered extends DockState {
   sizes: Record<string, number> // px: right columns by their first panel, `bottom` for the bottom dock
@@ -113,8 +93,11 @@ export function WorkbenchShell({
   const [rootEl, setRootEl] = useState<HTMLDivElement | null>(null)
   const width = useContainerWidth(root)
   const tier = tierOf((width || 1440) / remPx())
-  const windowControls = useWindowControls()
-  const chrome = preview ? 'preview' : windowControls ? 'app' : 'web'
+  const windowChrome = useWindowChrome()
+  const chrome = preview ? 'preview' : windowChrome.isApp ? 'app' : 'web'
+  const showCustomControls = !preview && windowChrome.customControls
+  const showPreviewControls = !!preview && preview.captionInset > 0
+  const controlsMode = showCustomControls ? 'custom' : showPreviewControls ? 'preview' : undefined
   const [help, setHelp] = useState(false)
   // the dock layout remounts its panels when docks open or the tier changes; the screen renders once into this
   // node, which moves into <main>, so it never reloads (a 3D view, its state)
@@ -243,11 +226,7 @@ export function WorkbenchShell({
         }}
         data-tier={tier}
         data-chrome={chrome}
-        style={
-          preview
-            ? ({ '--caption-inset': `${preview.captionInset}px` } as React.CSSProperties)
-            : undefined
-        }
+        data-window-controls={controlsMode}
         className={cn(
           'relative isolate flex h-full min-h-0 flex-col overflow-hidden bg-surface text-fg',
           className
@@ -262,22 +241,21 @@ export function WorkbenchShell({
         <Header
           data-workbench-region=""
           data-chrome={chrome}
+          data-window-controls={controlsMode}
           aria-label={preview ? 'Title bar' : undefined}
           className="workbench-titlebar flex shrink-0 items-center border-b border-border-default bg-surface"
         >
           {titleBar}
-          {preview && preview.captionInset > 0 && (
-            // where the OS draws minimise, maximise and close
-            <span
-              aria-hidden="true"
-              className="absolute top-0 right-0 flex h-(--shell-titlebar) items-center justify-around text-fg-muted"
-              style={{ width: preview.captionInset }}
-            >
-              <Minus className="size-3.5" />
-              <Square className="size-3" />
-              <X className="size-3.5" />
-            </span>
+          {showCustomControls && (
+            <WindowControls
+              maximized={windowChrome.maximized}
+              onMinimize={windowChrome.minimize}
+              onToggleMaximize={windowChrome.toggleMaximize}
+              onClose={windowChrome.close}
+              className="ms-2"
+            />
           )}
+          {showPreviewControls && <WindowControls maximized={false} decorative className="ms-2" />}
         </Header>
 
         {screens.length > 0 && (

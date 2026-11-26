@@ -15,6 +15,70 @@ export const CUTOUT = 1
 export const TRANSLUCENT = 2
 export const LIQUID = 3 // translucent water: its own material, so a look can keep it see-through
 
+// Sprites are packed on a 16px grid, so mip level 4 reduces each 16x16 tile to 1x1 texel.
+// Generating levels past 4 merges unrelated neighbor blocks and tints tilted/distant geometry.
+export const ATLAS_CELL = 16
+export const ATLAS_MAX_MIP_LEVEL = 4
+
+export interface AtlasMipLevel {
+  data: Uint8Array
+  width: number
+  height: number
+}
+
+/** Build alpha-weighted 2x2 mip levels up to `maxLevel`, stopping before unrelated 16px tiles merge. */
+export function buildAtlasMipmaps(
+  base: Uint8Array,
+  width: number,
+  height: number,
+  maxLevel = ATLAS_MAX_MIP_LEVEL
+): AtlasMipLevel[] {
+  const levels: AtlasMipLevel[] = [{ data: base, width, height }]
+  let prev = base
+  let pw = width
+  let ph = height
+  for (let level = 1; level <= maxLevel && pw >= 2 && ph >= 2; level++) {
+    const nw = pw >> 1
+    const nh = ph >> 1
+    const next = new Uint8Array(nw * nh * 4)
+    for (let y = 0; y < nh; y++) {
+      const sy = y << 1
+      const row0 = sy * pw
+      const row1 = (sy + 1) * pw
+      const dstRow = y * nw
+      for (let x = 0; x < nw; x++) {
+        const sx = x << 1
+        const i0 = (row0 + sx) << 2
+        const i1 = (row0 + sx + 1) << 2
+        const i2 = (row1 + sx) << 2
+        const i3 = (row1 + sx + 1) << 2
+        const a0 = prev[i0 + 3]
+        const a1 = prev[i1 + 3]
+        const a2 = prev[i2 + 3]
+        const a3 = prev[i3 + 3]
+        const aSum = a0 + a1 + a2 + a3
+        const dst = (dstRow + x) << 2
+        if (aSum > 0) {
+          // Weight RGB by alpha so transparent pixels never darken cutout edges (leaves, bars, rails).
+          next[dst] = Math.round((prev[i0] * a0 + prev[i1] * a1 + prev[i2] * a2 + prev[i3] * a3) / aSum)
+          next[dst + 1] = Math.round(
+            (prev[i0 + 1] * a0 + prev[i1 + 1] * a1 + prev[i2 + 1] * a2 + prev[i3 + 1] * a3) / aSum
+          )
+          next[dst + 2] = Math.round(
+            (prev[i0 + 2] * a0 + prev[i1 + 2] * a1 + prev[i2 + 2] * a2 + prev[i3 + 2] * a3) / aSum
+          )
+          next[dst + 3] = Math.round(aSum / 4)
+        }
+      }
+    }
+    levels.push({ data: next, width: nw, height: nh })
+    prev = next
+    pw = nw
+    ph = nh
+  }
+  return levels
+}
+
 export interface Sprite {
   uv: UV
   kind: number // OPAQUE, CUTOUT, TRANSLUCENT or LIQUID
@@ -122,7 +186,10 @@ export async function loadResources(zip: ArrayBuffer | Uint8Array): Promise<Reso
         else if (a < 255) semi++
       }
     const kind = semi > 0.05 * s.w * s.h ? TRANSLUCENT : clear || semi ? CUTOUT : OPAQUE
-    const uv: UV = [px / W, py / H, (px + s.w) / W, (py + s.h) / H]
+    // Tiny inset (1/256 of a level-0 texel) keeps exact quad edges from rounding into adjacent cells.
+    const epsU = Math.min(s.w / (4 * W), 1 / (W * 256))
+    const epsV = Math.min(s.h / (4 * H), 1 / (H * 256))
+    const uv: UV = [px / W + epsU, py / H + epsV, (px + s.w) / W - epsU, (py + s.h) / H - epsV]
     uvs[s.id] = uv
     rects.push({
       uv,
@@ -133,11 +200,13 @@ export async function loadResources(zip: ArrayBuffer | Uint8Array): Promise<Reso
   })
   const missing: Sprite = { uv: [0, 0, 16 / W, 16 / H], kind: OPAQUE }
 
-  const texture = new THREE.DataTexture(new Uint8Array(pixels.buffer), W, H)
+  const basePixels = new Uint8Array(pixels.buffer, pixels.byteOffset, pixels.byteLength)
+  const texture = new THREE.DataTexture(basePixels, W, H)
+  texture.mipmaps = buildAtlasMipmaps(basePixels, W, H, ATLAS_MAX_MIP_LEVEL)
   texture.flipY = false // atlas v grows downward, as deepslate's uvs do
   texture.magFilter = THREE.NearestFilter
   texture.minFilter = THREE.NearestMipmapLinearFilter
-  texture.generateMipmaps = true
+  texture.generateMipmaps = false
   texture.colorSpace = THREE.NoColorSpace // the game multiplies raw texels by the light
   texture.needsUpdate = true
 

@@ -68,26 +68,57 @@ export function skyPalette(elevationDeg: number): SkyPalette {
   }
 }
 
+interface BackdropCameraUniforms {
+  uCamForward: { value: THREE.Vector3 }
+  uCamRight: { value: THREE.Vector3 }
+  uCamUp: { value: THREE.Vector3 }
+  uTanHalfFov: { value: number }
+  uAspect: { value: number }
+}
+
+function makeBackdropCameraUniforms(): BackdropCameraUniforms {
+  return {
+    uCamForward: { value: new THREE.Vector3(0, 0, -1) },
+    uCamRight: { value: new THREE.Vector3(1, 0, 0) },
+    uCamUp: { value: new THREE.Vector3(0, 1, 0) },
+    uTanHalfFov: { value: 0.5 },
+    uAspect: { value: 16 / 9 }
+  }
+}
+
+function syncBackdropCamera(uniforms: BackdropCameraUniforms, cam: THREE.Camera): void {
+  cam.updateMatrixWorld()
+  const m = cam.matrixWorld
+  uniforms.uCamRight.value.setFromMatrixColumn(m, 0).normalize()
+  uniforms.uCamUp.value.setFromMatrixColumn(m, 1).normalize()
+  uniforms.uCamForward.value.setFromMatrixColumn(m, 2).negate().normalize()
+  if (cam instanceof THREE.PerspectiveCamera) {
+    uniforms.uTanHalfFov.value = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))
+    uniforms.uAspect.value = cam.aspect
+  } else if (cam instanceof THREE.OrthographicCamera) {
+    uniforms.uTanHalfFov.value = 0.45
+    const h = Math.max(1e-4, cam.top - cam.bottom)
+    uniforms.uAspect.value = (cam.right - cam.left) / h
+  }
+}
+
 export interface SkyDome {
-  mesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
-  update: (
-    sunDir: THREE.Vector3,
-    palette: SkyPalette,
-    radius: number,
-    center: THREE.Vector3
-  ) => void
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+  update: (sunDir: THREE.Vector3, palette: SkyPalette) => void
+  setCamera: (cam: THREE.Camera) => void
   dispose: () => void
 }
 
-/** Atmospheric sky dome with Rayleigh/Mie horizon glow, crisp sun disc, and procedural night starfield. */
+/** Atmospheric sky dome rendered in clip space so it never clips at any zoom, projection, or build size. */
 export function createSkyDome(): SkyDome {
-  const geo = new THREE.SphereGeometry(1, 32, 20)
+  const geo = new THREE.PlaneGeometry(2, 2)
+  const camUniforms = makeBackdropCameraUniforms()
   const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
     depthWrite: false,
-    depthTest: true,
+    depthTest: false,
     fog: false,
     uniforms: {
+      ...camUniforms,
       uSunDir: { value: new THREE.Vector3(0.4, 0.6, 0.5).normalize() },
       uZenith: { value: new THREE.Color(0x2b6fe8) },
       uHorizon: { value: new THREE.Color(0x9ecbff) },
@@ -96,20 +127,25 @@ export function createSkyDome(): SkyDome {
       uStars: { value: 0 }
     },
     vertexShader: /* glsl */ `
-      varying vec3 vDir;
+      varying vec2 vNdc;
       void main() {
-        vDir = normalize(position);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vNdc = position.xy;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform vec3 uCamForward;
+      uniform vec3 uCamRight;
+      uniform vec3 uCamUp;
+      uniform float uTanHalfFov;
+      uniform float uAspect;
       uniform vec3 uSunDir;
       uniform vec3 uZenith;
       uniform vec3 uHorizon;
       uniform vec3 uGround;
       uniform vec3 uSunColor;
       uniform float uStars;
-      varying vec3 vDir;
+      varying vec2 vNdc;
 
       float hash(vec3 p) {
         p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
@@ -118,7 +154,11 @@ export function createSkyDome(): SkyDome {
       }
 
       void main() {
-        vec3 d = normalize(vDir);
+        vec3 d = normalize(
+          uCamForward +
+          uCamRight * (vNdc.x * uTanHalfFov * uAspect) +
+          uCamUp * (vNdc.y * uTanHalfFov)
+        );
         float up = clamp(d.y, 0.0, 1.0);
         float down = clamp(-d.y, 0.0, 1.0);
 
@@ -148,10 +188,7 @@ export function createSkyDome(): SkyDome {
   mesh.renderOrder = -100
   return {
     mesh,
-    update: (sunDir, palette, radius, center) => {
-      mesh.position.copy(center)
-      const scale = Math.max(400, radius * 14)
-      mesh.scale.setScalar(scale)
+    update: (sunDir, palette) => {
       mat.uniforms.uSunDir.value.copy(sunDir).normalize()
       mat.uniforms.uZenith.value.copy(palette.zenith)
       mat.uniforms.uHorizon.value.copy(palette.horizon)
@@ -159,6 +196,7 @@ export function createSkyDome(): SkyDome {
       mat.uniforms.uSunColor.value.copy(palette.sunColor)
       mat.uniforms.uStars.value = palette.stars
     },
+    setCamera: (cam) => syncBackdropCamera(camUniforms, cam),
     dispose: () => {
       geo.dispose()
       mat.dispose()
@@ -167,38 +205,50 @@ export function createSkyDome(): SkyDome {
 }
 
 export interface StudioBackdrop {
-  mesh: THREE.Mesh<THREE.SphereGeometry, THREE.ShaderMaterial>
-  update: (baseHex: string, radius: number, center: THREE.Vector3) => void
+  mesh: THREE.Mesh<THREE.PlaneGeometry, THREE.ShaderMaterial>
+  update: (baseHex: string) => void
+  setCamera: (cam: THREE.Camera) => void
   dispose: () => void
 }
 
-/** Smooth studio gradient dome for clean architectural/product renders. */
+/** Smooth studio gradient rendered in clip space so it works identically in perspective and isometric views. */
 export function createStudioBackdrop(): StudioBackdrop {
-  const geo = new THREE.SphereGeometry(1, 24, 16)
+  const geo = new THREE.PlaneGeometry(2, 2)
+  const camUniforms = makeBackdropCameraUniforms()
   const mat = new THREE.ShaderMaterial({
-    side: THREE.BackSide,
     depthWrite: false,
-    depthTest: true,
+    depthTest: false,
     fog: false,
     uniforms: {
+      ...camUniforms,
       uTop: { value: new THREE.Color(0x2a2f3a) },
       uMid: { value: new THREE.Color(0x1c2028) },
       uBottom: { value: new THREE.Color(0x13161c) }
     },
     vertexShader: /* glsl */ `
-      varying vec3 vDir;
+      varying vec2 vNdc;
       void main() {
-        vDir = normalize(position);
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        vNdc = position.xy;
+        gl_Position = vec4(position.xy, 0.0, 1.0);
       }
     `,
     fragmentShader: /* glsl */ `
+      uniform vec3 uCamForward;
+      uniform vec3 uCamRight;
+      uniform vec3 uCamUp;
+      uniform float uTanHalfFov;
+      uniform float uAspect;
       uniform vec3 uTop;
       uniform vec3 uMid;
       uniform vec3 uBottom;
-      varying vec3 vDir;
+      varying vec2 vNdc;
       void main() {
-        float y = clamp(vDir.y, -1.0, 1.0);
+        vec3 d = normalize(
+          uCamForward +
+          uCamRight * (vNdc.x * uTanHalfFov * uAspect) +
+          uCamUp * (vNdc.y * uTanHalfFov)
+        );
+        float y = clamp(d.y, -1.0, 1.0);
         vec3 col = y >= 0.0 ? mix(uMid, uTop, pow(y, 0.65)) : mix(uMid, uBottom, pow(-y, 0.65));
         gl_FragColor = vec4(col, 1.0);
       }
@@ -210,9 +260,7 @@ export function createStudioBackdrop(): StudioBackdrop {
   mesh.renderOrder = -99
   return {
     mesh,
-    update: (baseHex, radius, center) => {
-      mesh.position.copy(center)
-      mesh.scale.setScalar(Math.max(400, radius * 14))
+    update: (baseHex) => {
       const base = new THREE.Color(baseHex)
       const hsl = { h: 0, s: 0, l: 0 }
       base.getHSL(hsl)
@@ -226,6 +274,7 @@ export function createStudioBackdrop(): StudioBackdrop {
       mat.uniforms.uTop.value.copy(top)
       mat.uniforms.uBottom.value.copy(bottom)
     },
+    setCamera: (cam) => syncBackdropCamera(camUniforms, cam),
     dispose: () => {
       geo.dispose()
       mat.dispose()
