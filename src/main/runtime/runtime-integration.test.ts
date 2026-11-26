@@ -6,6 +6,7 @@ import { join, resolve } from 'path'
 import { tmpdir } from 'os'
 import { expect, it } from 'vitest'
 import { SettingsSchema } from '@shared/api'
+import runtimeSources from '../../../runtime/sources.json'
 import { resolveLocations } from '../app/locations'
 import {
   command,
@@ -125,7 +126,7 @@ it.skipIf(process.env.BS_RUNTIME_CHECK !== '1')(
       }
       failure = ''
       await service.install('git')
-      expect(await command(s.git, ['--version'])).toContain('2.56.0')
+      expect(await command(s.git, ['--version'])).toContain(runtimeSources.git.version)
       await command(s.git, ['init', '-q'], { cwd: workspace })
       if (process.env.BS_BROWSER_CHECK === '1') {
         await service.install('browser')
