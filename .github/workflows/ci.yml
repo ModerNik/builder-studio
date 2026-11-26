@@ -32,7 +32,8 @@ jobs:
       - run: npm ci --no-audit --no-fund
       - run: npm run typecheck
   test:
-    runs-on: ubuntu-latest
+    # the suite exercises Windows paths, npm .cmd shims and Windows archive handling, so it needs a Windows runner
+    runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
