@@ -331,20 +331,20 @@ export class CinematicRenderer {
   }
 
   setCameraState(state: CinematicCameraState): void {
+    const size = this.gl.getSize(new THREE.Vector2())
+    const aspect = size.x / Math.max(1, size.y)
     this.cameras.perspective.fov = state.fov
     this.cameras.perspective.updateProjectionMatrix()
     this.cameras.setProjection(state.projection)
     this.cameras.lookAt(new THREE.Vector3(...state.position), new THREE.Vector3(...state.target))
     if (state.projection === 'isometric') {
-      const size = this.gl.getSize(new THREE.Vector2())
-      const aspect = size.x / Math.max(1, size.y)
       this.cameras.ortho.top = state.orthoTop
       this.cameras.ortho.bottom = -state.orthoTop
       this.cameras.ortho.near = state.orthoNear
       this.cameras.ortho.far = state.orthoFar
       this.cameras.ortho.zoom = state.zoom
-      this.cameras.setAspect(aspect)
     }
+    this.cameras.setAspect(aspect)
     this.invalidate()
   }
 
@@ -647,10 +647,13 @@ export class CinematicRenderer {
   ): { id: StudioCameraPreset; label: string; canvas: HTMLCanvasElement }[] {
     const saved = this.getCameraState()
     const results: { id: StudioCameraPreset; label: string; canvas: HTMLCanvasElement }[] = []
+    const tileAspect = opts.tileWidth / Math.max(1, opts.tileHeight)
     try {
       for (const id of views) {
         const spec = STUDIO_CAMERA_PRESETS.find((v) => v.id === id)
         if (!spec) continue
+        // Frame each angle against the tile's aspect ratio so wide builds are never cropped on export
+        this.cameras.setAspect(tileAspect)
         this.framePreset(id, spec.mode, opts.fov)
         const canvas = this.captureCanvas({
           width: opts.tileWidth,

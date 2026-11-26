@@ -172,9 +172,9 @@ async function summary(repo: string, name: string): Promise<BuildSummary> {
   const parsed = parseDesign(design)
   const previewCandidates = [
     ...[...parsed.shipped].reverse(),
+    ...versions.map((v) => posix.basename(v.path, '.litematic')),
     posix.basename(name),
-    'full',
-    ...versions.map((v) => posix.basename(v.path, '.litematic'))
+    'full'
   ]
   const seen = new Set<string>()
   let preview: { path: string; mtime: number } | undefined
