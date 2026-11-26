@@ -55,10 +55,17 @@ import {
   useRewindPreview
 } from '@/features/agent-chat/model/panel'
 import type { Item } from '@/features/agent-chat/model/transcript'
-import type { AgentMode, PermissionAsk, Permit, SessionRef } from '@shared/api'
-import { lintProblems } from '@/shared/lib/format'
+import {
+  DEFAULT_LINTER_SETTINGS,
+  type AgentMode,
+  type PermissionAsk,
+  type Permit,
+  type SessionRef
+} from '@shared/api'
+import { hasEnabledLintRule, lintProblems } from '@/shared/lib/format'
 import { useBuild } from '@/entities/build/model/builds'
 import { useCurrentBuild } from '@/entities/build/model/current-build'
+import { useSettings } from '@/entities/settings/model/settings'
 import { useBriefDialog } from './BriefDialog'
 import { AgentThreads } from './AgentThreads'
 import { AgentComposer } from './AgentComposer'
@@ -508,6 +515,11 @@ export function Transcript({
   children?: React.ReactNode
 }): ReactElement {
   const navigate = useNavigate()
+  const linter = useSettings().data?.linter ?? DEFAULT_LINTER_SETTINGS
+  const countLint = (counts: Record<string, number>): number | undefined =>
+    linter.enabled && hasEnabledLintRule(linter.rules)
+      ? lintProblems(counts, linter.rules)
+      : undefined
   return (
     <KitTranscript
       items={items}
@@ -529,7 +541,7 @@ export function Transcript({
         reveal(path, sheet)
         void navigate({ to: '/build/$name', params: { name: build } })
       }}
-      lintProblems={lintProblems}
+      lintProblems={countLint}
       fileUrl={buildUrl}
       empty={empty}
     >

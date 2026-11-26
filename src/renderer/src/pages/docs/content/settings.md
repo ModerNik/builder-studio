@@ -34,6 +34,12 @@ Leave a field empty to use what Builder Studio finds, shown in gray.
 | Exported schematics folder | `%APPDATA%\builder-studio\schematics`                                            | **Export → Finalize**                           |
 | Worlds folder              | Detected saves folder, if any                                                    | **Build location**                              |
 
+## Linter
+
+Toggle the linter on or off and enable or disable each lint rule individually. Turning the linter off
+skips automatic checks in the workspace and makes the lint step optional in **Export**. Turning off
+**Dark areas** also skips the dark-cell light flood fill during checks.
+
 ## AI assistant
 
 The provider (Claude, Codex or Ollama), its status, the Anthropic API key for Claude (saved
@@ -121,5 +127,6 @@ Older settings files are migrated automatically and backed up to `settings.json.
 | `agentAllow`       | `{ [build]: string[] }`                                   | `{}`                                    | Per-build **Always** permission rules, `Tool` or `Tool(prefix)`                  |
 | `variantCap`       | 2–6                                                       | `3`                                     | Variant sessions at once                                                         |
 | `appearance`       | `{ theme: "dark" \| "light" \| "system", scale: 0.67–2 }` | `{ theme: "dark", scale: 1 }`           | Color theme (`system` follows the OS) and UI zoom scale                          |
+| `linter`           | `{ enabled: boolean, rules: Record<LintRule, boolean> }`  | `{ enabled: true, rules: { ... } }`     | Master linter switch and per-rule toggles (`floating` defaults to `false`)       |
 
 The schema is `SettingsSchema` in `src/shared/api.ts`.

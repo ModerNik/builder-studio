@@ -42,6 +42,7 @@ export type PathKey = Exclude<
   | 'agentAllow'
   | 'variantCap'
   | 'appearance'
+  | 'linter'
   | 'version'
   | 'importSource'
   | 'setup'

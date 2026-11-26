@@ -3,10 +3,10 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import type { BillResult, Job, JobSpec } from '@shared/api'
+import { DEFAULT_LINTER_SETTINGS, type BillResult, type Job, type JobSpec } from '@shared/api'
 import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import type { CheckStatus } from '@/shared/ui/data/progress'
-import { lintProblems } from '@/shared/lib/format'
+import { hasEnabledLintRule, lintProblems } from '@/shared/lib/format'
 import { queryClient, studio } from '@/shared/api/studio'
 import { lastOf, useJobs } from '@/entities/job/model/jobs'
 import { useAvailability } from '@/entities/availability/model/availability'
@@ -55,8 +55,10 @@ export function useExport(name: string) {
       j.spec.ship &&
       (j.minecraftVersion ?? DEFAULT_MINECRAFT_VERSION) === minecraftVersion
   )
+  const linter = settings?.linter ?? DEFAULT_LINTER_SETTINGS
+  const lintActive = linter.enabled && hasEnabledLintRule(linter.rules)
   const lint = lastOf(check).lint
-  const problems = lint ? lintProblems(lint.counts) : null
+  const problems = !lintActive ? 0 : lint ? lintProblems(lint.counts, linter.rules) : null
   const f = lastOf(full)
   const built = full?.state === 'done' && f.wrote ? f.wrote : undefined
   const busy = sequencing || jobs.some((j) => j.spec.build === name && j.state === 'running')
@@ -143,10 +145,12 @@ export function useExport(name: string) {
     try {
       setSelected(1)
       if (!(await connect())) return
-      setSelected(2)
-      const c = await runJob({ part: 'check', build: name })
-      const counts = lastOf(c ?? undefined).lint?.counts
-      if (c?.state !== 'done' || !counts || lintProblems(counts) !== 0) return
+      if (lintActive) {
+        setSelected(2)
+        const c = await runJob({ part: 'check', build: name })
+        const counts = lastOf(c ?? undefined).lint?.counts
+        if (c?.state !== 'done' || !counts || lintProblems(counts, linter.rules) !== 0) return
+      }
       setSelected(3)
       const b = await runJob({ part: 'full', build: name, ship: true, noRender: !targetPack.data })
       if (b?.state !== 'done') return
@@ -174,7 +178,14 @@ export function useExport(name: string) {
       ['File', built.path],
       ['Shape', built.shape.join(' × ')],
       ['Paste at', built.paste.join(', ')],
-      ['Lint', lintText(lint?.counts)],
+      [
+        'Lint',
+        !linter.enabled
+          ? 'skipped (linter off)'
+          : !lintActive
+            ? 'skipped (all rules off)'
+            : lintText(lint?.counts, linter.rules)
+      ],
       [
         'Blocks',
         `${f.blocks?.total.toLocaleString() ?? '?'}, hidden removed ${f.blocks?.hidden_removed?.toLocaleString() ?? '?'}`
@@ -269,6 +280,8 @@ export function useExport(name: string) {
     pending,
     check,
     full,
+    linter,
+    lintActive,
     lint,
     problems,
     f,

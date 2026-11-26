@@ -1,7 +1,15 @@
-// Settings: six sections in a rail (a drill-in list on phone), one section at a time; only the pane scrolls.
+// Settings: seven sections in a rail (a drill-in list on phone), one section at a time; only the pane scrolls.
 import type { ReactElement } from 'react'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Bot, Cable, Gamepad2, Settings2, SlidersHorizontal, Wrench } from 'lucide-react'
+import {
+  Bot,
+  Cable,
+  Gamepad2,
+  ScanSearch,
+  Settings2,
+  SlidersHorizontal,
+  Wrench
+} from 'lucide-react'
 import { PageHeader } from '@/shared/ui/layout/PageHeader'
 import { SideNavLayout } from '@/shared/ui/layout/SideNavLayout'
 import { ErrorState } from '@/shared/ui/feedback/ErrorState'
@@ -16,6 +24,7 @@ import {
 } from '@/entities/availability/model/setupIssues'
 import { General } from './General'
 import { Minecraft } from './Minecraft'
+import { Linter } from './Linter'
 import { Ai } from './Ai'
 import { Agents } from './Agents'
 import { Tools } from './Tools'
@@ -32,6 +41,11 @@ const SECTION: Record<Section, { label: string; icon: typeof Bot; lead: string }
     label: 'Minecraft',
     icon: Gamepad2,
     lead: 'Leave a field empty to use what Builder Studio finds, shown in gray.'
+  },
+  linter: {
+    label: 'Linter',
+    icon: ScanSearch,
+    lead: 'Choose whether build checks run and which lint rules are active. Highlighting in 3D is toggled from the Checks tab.'
   },
   ai: {
     label: 'AI assistant',
@@ -119,6 +133,7 @@ export function SettingsPage(): ReactElement {
           />
           {section === 'general' && <General settings={data} />}
           {section === 'minecraft' && <Minecraft settings={data} />}
+          {section === 'linter' && <Linter settings={data} />}
           {section === 'ai' && <Ai settings={data} />}
           {section === 'agents' && <Agents />}
           {section === 'tools' && <Tools />}

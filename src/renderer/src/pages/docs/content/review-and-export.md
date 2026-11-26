@@ -57,7 +57,7 @@ draft to your schematics folder. Each line is one job or engine call, run top to
 | #   | Step                    | What happens                                                                                                                                        |
 | --- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 1   | Connect and check setup | Starts the engine bridge and checks the tools                                                                                                       |
-| 2   | Lint zero               | Runs the `check` job; must report zero problems to continue                                                                                         |
+| 2   | Lint zero               | Runs the `check` job against enabled lint rules; skipped automatically when the linter (or all rules) is off                                        |
 | 3   | Full build              | Builds and finalizes into a staging folder under the cache (`<cache>/ship/<build>-<time>/`), not the game                                           |
 | 4   | Hollow count            | Hidden interior blocks removed                                                                                                                      |
 | 5   | Bill of materials       | Block counts, with rare blocks flagged                                                                                                              |

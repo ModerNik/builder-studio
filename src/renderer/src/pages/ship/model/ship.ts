@@ -1,9 +1,9 @@
 // The Export screen's logic: step statuses from the jobs, lint and bill text, the rejected variants of the newest
 // round with a pick, and the rows of the results table it writes into DESIGN.md.
-import type { Job, ReviewRound } from '@shared/api'
+import { DEFAULT_LINT_RULES, type Job, type LintRuleToggles, type ReviewRound } from '@shared/api'
 import { useJobs } from '@/entities/job/model/jobs'
 import type { CheckStatus } from '@/shared/ui/data/progress'
-import { INFO, LINT_LABELS } from '@/shared/lib/format'
+import { isLintRuleEnabled, LINT_LABELS } from '@/shared/lib/format'
 
 // shortcut: a hand list of blocks that are slow or costly to gather in survival; the engine has no such notion yet
 const RARE =
@@ -22,11 +22,14 @@ export function jobStatus(j: Job | undefined, ok = true): CheckStatus {
 }
 
 /** "falls (gravity) 3, overhang 2", "clean", or "not run". */
-export function lintText(counts: Record<string, number> | undefined): string {
+export function lintText(
+  counts: Record<string, number> | undefined,
+  rules: Partial<LintRuleToggles> = DEFAULT_LINT_RULES
+): string {
   if (!counts) return 'not run'
   return (
     Object.entries(counts)
-      .filter(([k, c]) => c && !INFO.has(k))
+      .filter(([k, c]) => c && isLintRuleEnabled(k, rules))
       .map(([k, c]) => `${LINT_LABELS[k] ?? k} ${c}`)
       .join(', ') || 'clean'
   )
