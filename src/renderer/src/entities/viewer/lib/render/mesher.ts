@@ -176,7 +176,8 @@ export class Mesher {
   constructor(
     private s: Schematic,
     private res: Resources | null,
-    private colors: BlockColorMap | null
+    private colors: BlockColorMap | null,
+    private cullData: Uint16Array | null = null
   ) {}
 
   private info(p: number): Info {
@@ -306,8 +307,11 @@ export class Mesher {
     const [cx, cz, cy] = [id % nx, Math.floor(id / nx) % nz, Math.floor(id / nx / nz)].map(
       (c) => c * CHUNK
     )
+    const neighbors = this.cullData ?? data
     const at = (x: number, y: number, z: number): number =>
-      x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz ? -1 : data[(y * sz + z) * sx + x]
+      x < 0 || y < 0 || z < 0 || x >= sx || y >= sy || z >= sz
+        ? -1
+        : neighbors[(y * sz + z) * sx + x]
     const bufs = BUCKETS.map(() => new Buf())
     for (let y = cy; y < Math.min(cy + CHUNK, sy); y++)
       for (let z = cz; z < Math.min(cz + CHUNK, sz); z++)
