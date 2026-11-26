@@ -152,7 +152,8 @@ const dirs: string[] = []
 afterEach(async () => {
   while (dirs.length) {
     const d = dirs.pop()!
-    await rm(d, { recursive: true, force: true })
+    // retries: cache writes can still be finishing when cleanup starts, and Windows then reports ENOTEMPTY
+    await rm(d, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
   }
 })
 
