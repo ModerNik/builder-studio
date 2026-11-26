@@ -67,9 +67,9 @@ Browse builds by named parts, colour-code or isolate parts in 3D, send selected 
 
 Keep a per-build reference board (paste screenshots, drop images, save links and notes, and attach them to prompts) and use **Labs** to explore block palettes, colour gradients with shade checks, kit catalogs, and prefab libraries.
 
-### 🚀 Confidence-checked export
+### 🚀 One-click automatic export
 
-The 10-step **Export** checklist verifies tool availability, checks enabled lint rules when the linter is on, runs a full build, checks interior hollowing, lists materials with rare blocks flagged, reloads the schematic to confirm integrity, writes a results table to `DESIGN.md`, commits the build folder locally, and only then copies the output (`.litematic`, `.schem`, or `.schematic` depending on your project's Minecraft version) into your schematics folder. **Dry run** is enabled by default.
+**Export** (`Ctrl+7`, at the end of the build tabs) runs the full release flow from one button: verifies your setup and destination folder, runs enabled lint rules as non-blocking suggestions, builds and verifies the schematic in your chosen version-aware format (`.litematic`, `.schem`, `.nbt`, or `.schematic`), saves it to your schematics folder (or a per-session override), updates `DESIGN.md`, and commits `builds/<name>` locally.
 
 ### 📜 Plain files, Git history, and external agents (MCP)
 
@@ -108,7 +108,7 @@ Full documentation lives in [`src/renderer/src/pages/docs/content/`](src/rendere
 | [Getting started](src/renderer/src/pages/docs/content/getting-started.md)                 | Installation, first-run setup, build tools, updates                              |
 | [Workspace and files](src/renderer/src/pages/docs/content/workspace.md)                   | Workspace layout, build files, `DESIGN.md`, Git history, importing builds        |
 | [Building and viewing](src/renderer/src/pages/docs/content/building.md)                   | Gallery, 3D viewer, hand editor, Compare/Diff, Parts, Checks, keyboard shortcuts |
-| [Review, design log and export](src/renderer/src/pages/docs/content/review-and-export.md) | Visual reviews, block pins, Design log, 10-step Export checklist                 |
+| [Review, design log and export](src/renderer/src/pages/docs/content/review-and-export.md) | Visual reviews, block pins, Design log, automatic 1-button Export                |
 | [Planning tools](src/renderer/src/pages/docs/content/planning-tools.md)                   | Build location (site picker), References board, parallel Variants, Labs          |
 | [AI assistant](src/renderer/src/pages/docs/content/ai-assistant.md)                       | Claude, Codex, Ollama, permissions, sessions, slash commands, studio tools       |
 | [External agents (MCP)](src/renderer/src/pages/docs/content/external-agents.md)           | Loopback MCP server setup for Claude Code, Codex CLI, and Claude Desktop         |

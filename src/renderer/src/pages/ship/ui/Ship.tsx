@@ -2,7 +2,7 @@
 // automatically (setup -> advisory lint -> build -> verify -> save -> DESIGN.md & Git commit).
 // Hollow count, Bill of materials, Dry run, and Rejected variants are omitted; format and
 // destination folder are configurable right inside the card. State and flow: ../model/useExport.ts.
-import type { ReactElement, ReactNode } from 'react'
+import type { KeyboardEvent, ReactElement, ReactNode } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
 import {
   Check,
@@ -80,9 +80,26 @@ function FormatSelector({
   disabled: boolean
   onChange: (format: ExportFormat) => void
 }): ReactElement {
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    if (disabled || formats.length <= 1) return
+    let next = -1
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (index + 1) % formats.length
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      next = (index - 1 + formats.length) % formats.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = formats.length - 1
+    if (next < 0) return
+    e.preventDefault()
+    onChange(formats[next])
+    const buttons = e.currentTarget
+      .closest('[role="radiogroup"]')
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    buttons?.[next]?.focus()
+  }
+
   return (
     <div role="radiogroup" aria-label="Export format" className="flex flex-wrap gap-2">
-      {formats.map((id) => {
+      {formats.map((id, index) => {
         const info = EXPORT_FORMAT_INFO[id]
         const selected = id === value
         return (
@@ -91,12 +108,14 @@ function FormatSelector({
             type="button"
             role="radio"
             aria-checked={selected}
+            tabIndex={selected ? 0 : -1}
             disabled={disabled}
             onClick={() => onChange(id)}
+            onKeyDown={(e) => onKeyDown(e, index)}
             className={cn(
               'focus-ring flex min-w-36 flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors duration-fast ease-standard disabled:cursor-not-allowed disabled:opacity-50',
               selected
-                ? 'border-accent-solid bg-accent-subtle-bg text-fg'
+                ? 'border-accent-solid bg-accent-subtle text-fg'
                 : 'border-border-default bg-surface-sunken text-fg-secondary can-hover:border-border-strong can-hover:text-fg'
             )}
           >

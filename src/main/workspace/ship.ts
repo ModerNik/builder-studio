@@ -3,7 +3,7 @@
 import { execFile } from 'child_process'
 import { constants, copyFileSync, existsSync, mkdirSync } from 'fs'
 import { access, readFile, stat } from 'fs/promises'
-import { dirname, join, posix, relative } from 'path'
+import { dirname, isAbsolute, join, posix, relative } from 'path'
 import { promisify } from 'util'
 import type { ShipCommitResult } from '@shared/api'
 import { buildDir } from './projects'
@@ -14,15 +14,18 @@ import { appendGist, writeAtomic } from './review'
 export const stagingDir = (cache: string, build: string): string =>
   join(cache, 'ship', `${build.replace(/[^\w.-]/g, '_')}-${Date.now()}`)
 
-/** Validates that the export destination exists and is a writable folder. */
+/** Validates that the export destination is an absolute, existing, writable folder. */
 export async function validateExportDir(dir: string): Promise<string> {
-  if (!dir) throw new Error('Choose an export destination folder')
-  const info = await stat(dir).catch(() => null)
-  if (!info?.isDirectory()) throw new Error(`Export destination is not a folder: ${dir}`)
-  await access(dir, constants.W_OK).catch(() => {
-    throw new Error(`Export destination is not writable: ${dir}`)
+  const trimmed = dir.trim()
+  if (!trimmed) throw new Error('Choose an export destination folder')
+  if (!isAbsolute(trimmed))
+    throw new Error(`Export destination must be an absolute path: ${trimmed}`)
+  const info = await stat(trimmed).catch(() => null)
+  if (!info?.isDirectory()) throw new Error(`Export destination is not a folder: ${trimmed}`)
+  await access(trimmed, constants.W_OK).catch(() => {
+    throw new Error(`Export destination is not writable: ${trimmed}`)
   })
-  return dir
+  return trimmed
 }
 
 /** Copies the staged final to the same sub path under `target`; refuses a file outside the staging folder. */

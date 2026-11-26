@@ -191,9 +191,9 @@ The engine's lint reports each kind separately; the app labels them:
 | Slab gaps                | `groove`      | On      |
 | Block types              | `palette`     | Info    |
 
-The exact rules belong to the engine. When the linter is enabled, **Export** requires zero problems
-across the enabled lint rules as non-blocking suggestions during export. When the linter (or every
-rule) is turned off, Export skips the advisory lint step.
+The exact rules belong to the engine. When the linter is enabled, **Export** runs the enabled lint
+rules as non-blocking suggestions during export. When the linter (or every rule) is turned off,
+Export skips the advisory lint step.
 
 ## Keyboard shortcuts
 

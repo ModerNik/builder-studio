@@ -1,8 +1,18 @@
 import { describe, expect, it, vi } from 'vitest'
+import { defaultExportFormat, supportedExportFormats } from '@shared/minecraft'
 import { exceedsVanillaStructureLimit, exportResultsRows, lintText } from './ship'
 vi.mock('@/entities/job/model/jobs', () => ({ useJobs: {} }))
 
 describe('ship', () => {
+  it('returns version-aware export formats with the expected defaults', () => {
+    expect(supportedExportFormats('1.12.2')).toEqual(['schematic'])
+    expect(defaultExportFormat('1.12.2')).toBe('schematic')
+    expect(supportedExportFormats('1.13.2')).toEqual(['schem', 'nbt'])
+    expect(defaultExportFormat('1.13.2')).toBe('schem')
+    expect(supportedExportFormats('1.21.11')).toEqual(['litematic', 'schem', 'nbt'])
+    expect(defaultExportFormat('26.3')).toBe('litematic')
+  })
+
   it('says lint in words, leaving out info counts and disabled rules', () => {
     expect(lintText(undefined)).toBe('not run')
     expect(lintText({ palette: 4, floating: 1 })).toBe('clean')

@@ -1,16 +1,8 @@
-// The Export screen's pure logic: step statuses, lint formatting, DESIGN.md result rows, and job waiting.
+// The Export screen's pure logic: lint formatting, DESIGN.md result rows, and job waiting.
 import { DEFAULT_LINT_RULES, type Job, type LintRuleToggles } from '@shared/api'
 import { EXPORT_FORMAT_INFO, type ExportFormat } from '@shared/minecraft'
 import { useJobs } from '@/entities/job/model/jobs'
-import type { CheckStatus } from '@/shared/ui/data/progress'
 import { isLintRuleEnabled, LINT_LABELS } from '@/shared/lib/format'
-
-/** A job's step status; `ok` is the step's own pass test on a finished job. */
-export function jobStatus(j: Job | undefined, ok = true): CheckStatus {
-  if (!j) return 'idle'
-  if (j.state === 'running') return 'running'
-  return j.state === 'done' && ok ? 'done' : 'failed'
-}
 
 /** "falls (gravity) 3, overhang 2", "clean", or "not run". */
 export function lintText(

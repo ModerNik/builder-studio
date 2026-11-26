@@ -128,6 +128,10 @@ export function useExport(name: string) {
   async function runJob(spec: JobSpec, onStart?: (id: number) => void): Promise<Job | null> {
     try {
       const id = await studio.jobs.run(spec)
+      if (cancelled.current) {
+        await studio.jobs.cancel(id).catch(() => undefined)
+        return null
+      }
       activeJobId.current = id
       onStart?.(id)
       const finished = await waitForJob(id)
@@ -230,13 +234,18 @@ export function useExport(name: string) {
                 : 'No suggestions'
           })
         } else {
-          lintSummary = c ? `check exited ${c.code ?? 'with error'} (continuing)` : 'check failed'
+          lintSummary = c ? `check exited ${c.code ?? 'with error'}` : 'check failed'
           setLintStep({
             status: 'warning',
             counts,
             summary: `${lintSummary} — continuing to build`
           })
         }
+      }
+
+      if (cancelled.current) {
+        setBuildStep({ status: 'skipped', summary: 'Cancelled' })
+        return
       }
 
       // 3. Full build & format packaging (into staging)
@@ -252,7 +261,7 @@ export function useExport(name: string) {
           build: name,
           ship: true,
           format: chosenFmt === defaultFmt ? undefined : chosenFmt,
-          noRender: !targetPack.data
+          noRender: !targetPack.data || !checked.requirements.browser.ok
         },
         setFullJobId
       )
@@ -264,12 +273,18 @@ export function useExport(name: string) {
       const wrote = ev.wrote
       const staged = b?.events.find((e) => e.event === 'copied')
       if (b?.state !== 'done' || !wrote || staged?.event !== 'copied') {
-        const lastLine = logOf(b ?? undefined).at(-1)
+        const freshLog = b ? (useJobs.getState().logs[b.id] ?? b.log) : []
+        const lastLine = freshLog.at(-1)
+        const unsupportedFormat =
+          chosenFmt !== defaultFmt &&
+          freshLog.some((line) => line.includes('unrecognized arguments: --format'))
         setBuildStep({
           status: 'failed',
-          summary: b
-            ? `Build failed (exit ${b.code ?? '?'})${lastLine ? `: ${lastLine}` : ''}`
-            : 'Build could not start'
+          summary: unsupportedFormat
+            ? `Export format ${fmtInfo.extension} requires a newer engine runtime (default ${EXPORT_FORMAT_INFO[defaultFmt].extension} is available).`
+            : b
+              ? `Build failed (exit ${b.code ?? '?'})${lastLine ? `: ${lastLine}` : ''}`
+              : 'Build could not start'
         })
         return
       }
@@ -278,6 +293,11 @@ export function useExport(name: string) {
         status: 'done',
         summary: `${stagedName} · ${wrote.shape.join('×')} · paste at ${wrote.paste.join(', ')}${ev.done ? ` · ${ev.done.seconds}s` : ''}`
       })
+
+      if (cancelled.current) {
+        setVerify({ status: 'skipped', summary: 'Cancelled' })
+        return
+      }
 
       // 4. Verify export (bridge reads staged file back)
       setVerify({ status: 'running', summary: `Verifying ${stagedName}…` })
@@ -291,6 +311,10 @@ export function useExport(name: string) {
           undefined,
           artifactVersion
         )
+        if (cancelled.current) {
+          setVerify({ status: 'skipped', summary: 'Cancelled' })
+          return
+        }
         const layer = await studio.bridge.call(
           'layer',
           { path: staged.path, y: 0 },
@@ -314,6 +338,11 @@ export function useExport(name: string) {
         return
       }
 
+      if (cancelled.current) {
+        setSave({ status: 'skipped', summary: 'Cancelled' })
+        return
+      }
+
       // 5. Copy verified file to destination folder
       setSave({ status: 'running', summary: `Saving to ${exportDir}…` })
       setExpandedStep('save')
@@ -323,6 +352,11 @@ export function useExport(name: string) {
         setSave({ status: 'done', summary: exportedPath })
       } catch (e) {
         setSave({ status: 'failed', summary: errorText(e) })
+        return
+      }
+
+      if (cancelled.current) {
+        setRecord({ status: 'skipped', summary: 'Cancelled after saving file' })
         return
       }
 

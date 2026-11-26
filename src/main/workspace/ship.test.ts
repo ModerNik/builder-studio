@@ -24,12 +24,14 @@ describe('finalizeStaged', () => {
 })
 
 describe('validateExportDir', () => {
-  it('accepts an existing writable folder and rejects missing or file paths', async () => {
+  it('accepts an existing writable absolute folder and rejects empty, relative, missing or file paths', async () => {
     const dir = tmp()
     await expect(validateExportDir(dir)).resolves.toBe(dir)
     const file = join(dir, 'not-a-dir.txt')
     writeFileSync(file, 'x')
     await expect(validateExportDir('')).rejects.toThrow(/Choose an export/)
+    await expect(validateExportDir('   ')).rejects.toThrow(/Choose an export/)
+    await expect(validateExportDir('relative/path')).rejects.toThrow(/absolute path/)
     await expect(validateExportDir(file)).rejects.toThrow(/not a folder/)
     await expect(validateExportDir(join(dir, 'missing'))).rejects.toThrow(/not a folder/)
   })

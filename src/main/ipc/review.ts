@@ -1,6 +1,6 @@
 import { shell } from 'electron'
 import { existsSync } from 'fs'
-import { isAbsolute, join } from 'path'
+import { isAbsolute, join, relative, resolve } from 'path'
 import { z } from 'zod'
 import { ReviewRoundSchema } from '@shared/api'
 import { buildDir } from '../workspace/projects'
@@ -9,6 +9,7 @@ import { listRounds, saveRound, writeDesign } from '../workspace/review'
 import { projectSettings, resolved } from '../app/settings'
 import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import { appendResults, commitBuild, finalizeStaged, validateExportDir } from '../workspace/ship'
+import { under } from '../workspace/paths'
 import { installedGit } from '../runtime/runtime'
 import type { IpcContext } from '../index'
 import type { Handle } from './guard'
@@ -16,6 +17,7 @@ import type { Handle } from './guard'
 /** Review rounds, the design log and export. */
 export function registerReview(ctx: IpcContext, handle: Handle): void {
   const { jobs, reviews, idle } = ctx
+  const exportedPaths = new Set<string>()
   const none = z.undefined()
   handle('review:list', z.string(), (build) => listRounds(resolved().workspace, build))
   handle(
@@ -50,7 +52,10 @@ export function registerReview(ctx: IpcContext, handle: Handle): void {
         throw new Error('Build again for the project’s current Minecraft version before exporting')
       const target = await validateExportDir(targetDir || resolved().schematics)
       const staged = isAbsolute(copied.path) ? copied.path : join(resolved().workspace, copied.path)
-      return finalizeStaged(staged, j.staging, target)
+      const dest = finalizeStaged(staged, j.staging, target)
+      exportedPaths.add(resolve(dest))
+      if (exportedPaths.size > 50) exportedPaths.delete(exportedPaths.values().next().value!)
+      return dest
     }
   )
   handle(
@@ -72,7 +77,13 @@ export function registerReview(ctx: IpcContext, handle: Handle): void {
     )
   })
   handle('ship:reveal', z.string().min(1), (path) => {
-    if (!existsSync(path)) throw new Error(`File not found: ${path}`)
-    shell.showItemInFolder(path)
+    if (!isAbsolute(path)) throw new Error('Reveal path must be absolute')
+    const full = resolve(path)
+    const schematics = resolved().schematics
+    const inSchematics = !!schematics && !!under(schematics, relative(resolve(schematics), full))
+    if (!exportedPaths.has(full) && !inSchematics)
+      throw new Error('Only exported schematic files can be revealed')
+    if (!existsSync(full)) throw new Error(`File not found: ${path}`)
+    shell.showItemInFolder(full)
   })
 }

@@ -111,7 +111,7 @@ export function createHandle(ctx: IpcContext): Handle {
       if (bridgeSpec)
         feature = ['render', 'compare'].includes(bridgeSpec.method) ? 'render' : 'engine'
       if (channel === 'ship:finalize' && (parsed as { targetDir?: string }).targetDir)
-        feature = undefined
+        feature = 'browse'
       if (feature) {
         const scoped =
           jobSpec && feature === 'render'
