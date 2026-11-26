@@ -29,17 +29,13 @@ export default function DropOverlaySection(): ReactElement {
             <DropOverlay
               active={over !== null}
               label={`Drop to add ${over ?? 0} ${over === 1 ? 'image' : 'images'}`}
-              detail="They are copied into refs/ and listed in index.json."
+              detail="Saved with this build."
             />
           </div>
         </Specimen>
         <Specimen label="static: three images over the board" className="w-full max-w-lg">
           <div className="relative h-48 w-full rounded-lg border border-border-default bg-surface-raised">
-            <DropOverlay
-              active
-              label="Drop to add 3 images"
-              detail="They are copied into refs/ and listed in index.json."
-            />
+            <DropOverlay active label="Drop to add 3 images" detail="Saved with this build." />
           </div>
         </Specimen>
         <Specimen label="no detail line (the composer)" className="w-full max-w-lg">

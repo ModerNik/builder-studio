@@ -85,7 +85,8 @@ const studio: StudioApi = {
   },
   design: {
     read: (build) => invoke('design:read', build),
-    write: (build, base, md) => invoke('design:write', { build, base, md })
+    write: (build, base, md) => invoke('design:write', { build, base, md }),
+    reveal: (build) => invoke('design:reveal', build)
   },
   ship: {
     finalize: (job, targetDir) => invoke('ship:finalize', { job, targetDir }),
@@ -161,6 +162,7 @@ const studio: StudioApi = {
     list: (build) => invoke('refs:list', build),
     add: (build, ref) => invoke('refs:add', { build, ref }),
     note: (build, id, note) => invoke('refs:note', { build, id, note }),
+    update: (build, id, patch) => invoke('refs:update', { build, id, patch }),
     remove: (build, id) => invoke('refs:remove', { build, id })
   },
   blocks: {

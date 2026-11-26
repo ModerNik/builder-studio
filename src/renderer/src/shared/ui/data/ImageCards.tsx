@@ -1,8 +1,15 @@
 // Image cards: a preview on viewer grey with text under it. BuildCard (Gallery; with a row variant for the
 // list view), PrefabTile (Labs prefab sheets) and RefTile (References images). Each takes data and
 // callbacks; copying, opening and saving are the screen's.
-import { useState, type ComponentProps, type ReactElement, type ReactNode } from 'react'
-import { Check, ImageOff, Trash2, TriangleAlert } from 'lucide-react'
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ComponentProps,
+  type ReactElement,
+  type ReactNode
+} from 'react'
+import { Check, ImageOff, MessageSquarePlus, Pencil, Trash2, TriangleAlert } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { Badge } from '@/shared/ui/primitives/badge'
 import { Skeleton } from '@/shared/ui/primitives/skeleton'
@@ -305,9 +312,10 @@ export function PrefabTile({
 }
 
 /**
- * An image reference (References): an even 4:3 tile that opens the lightbox, with its editable note
- * under it (saved on blur) and Delete on hover and focus, always shown on touch. While it is copied in
- * (`adding`) it is a skeleton; a file gone from refs/ keeps its tile, note and Delete.
+ * An image reference (References): a visual-first 4:3 card that opens the lightbox. Empty notes stay
+ * hidden at rest; filled notes show as a clickable caption below the image. Hover, focus and touch
+ * reveal a compact action pill (Attach to chat, Add note, Delete). While copying (`adding`) it is a
+ * skeleton card; a missing file keeps its card, note and Delete with "Image missing".
  */
 export function RefTile({
   name,
@@ -316,6 +324,8 @@ export function RefTile({
   onNoteSave,
   onOpen,
   onDelete,
+  attached = false,
+  onToggleAttach,
   adding = false,
   missing = false,
   className
@@ -324,29 +334,51 @@ export function RefTile({
   name: string
   image?: string | null
   note: string
-  onNoteSave: (note: string) => void
+  onNoteSave: (note: string) => void | boolean | Promise<boolean | void>
   onOpen?: () => void
   onDelete?: () => void
+  /** Highlighted and badged when queued for the next assistant message. */
+  attached?: boolean
+  onToggleAttach?: () => void
   adding?: boolean
   missing?: boolean
   className?: string
 }): ReactElement {
+  const [editing, setEditing] = useState(false)
+  const trimmedNote = note.trim()
+
   if (adding)
     return (
-      <div aria-busy="true" className={cn('flex min-w-0 flex-col gap-2', className)}>
-        <Skeleton className="aspect-[4/3] w-full rounded-lg" />
-        <span className="text-sm text-fg-muted">Adding {name}…</span>
+      <div
+        aria-busy="true"
+        className={cn(
+          'flex min-w-0 flex-col overflow-hidden rounded-lg border border-border-default bg-surface-raised',
+          className
+        )}
+      >
+        <Skeleton className="aspect-[4/3] w-full rounded-none" />
+        <span className="truncate px-2.5 py-2 text-xs text-fg-muted">Adding {name}…</span>
       </div>
     )
+
+  const hasActions = Boolean(onToggleAttach || onDelete || (!trimmedNote && !editing))
   return (
-    <div className={cn('group/ref flex min-w-0 flex-col gap-2', className)}>
+    <article
+      className={cn(
+        'group/ref relative flex min-w-0 flex-col overflow-hidden rounded-lg border bg-surface-raised transition-[border-color] duration-fast ease-standard',
+        attached
+          ? 'border-accent-solid ring-1 ring-accent-solid/30'
+          : 'border-border-default can-hover:hover:border-border-strong',
+        className
+      )}
+    >
       <div className="relative">
         <button
           type="button"
           onClick={onOpen}
           disabled={!onOpen || missing}
           aria-label={`Open ${name}`}
-          className="focus-ring block w-full cursor-zoom-in overflow-hidden rounded-lg border border-border-default transition-[border-color] duration-fast ease-standard can-hover:hover:border-border-strong disabled:cursor-default"
+          className="focus-ring block w-full cursor-zoom-in overflow-hidden disabled:cursor-default"
         >
           <ImageMedia
             src={missing ? null : image}
@@ -355,42 +387,128 @@ export function RefTile({
             fallback={
               <>
                 <ImageOff aria-hidden className="size-5" />
-                <span className="font-mono text-xs">{name}</span>
-                <span>{missing ? 'Missing from refs/' : 'No image'}</span>
+                <span className="max-w-full truncate font-mono text-xs">{name}</span>
+                <span className="text-xs">{missing ? 'Image missing' : 'No image'}</span>
               </>
             }
           />
         </button>
-        {onDelete && (
-          <span className="absolute end-1.5 top-1.5 rounded-md bg-surface-overlay opacity-0 shadow-sm transition-opacity duration-fast group-focus-within/ref:opacity-100 group-hover/ref:opacity-100 pointer-coarse:opacity-100">
-            <IconAction label={`Delete ${name}`} icon={Trash2} onClick={onDelete} />
-          </span>
+        {attached && (
+          <Badge variant="default" className="pointer-events-none absolute start-2 top-2 shadow-sm">
+            <Check aria-hidden />
+            In chat
+          </Badge>
+        )}
+        {hasActions && (
+          <div className="absolute end-1.5 top-1.5 flex items-center gap-0.5 rounded-md border border-border-subtle bg-surface-overlay/95 p-0.5 opacity-0 shadow-sm backdrop-blur-xs transition-opacity duration-fast group-focus-within/ref:opacity-100 group-hover/ref:opacity-100 pointer-coarse:opacity-100">
+            {onToggleAttach && (
+              <IconAction
+                label={attached ? `Remove ${name} from chat` : `Attach ${name} to chat`}
+                tip={attached ? 'Remove from chat' : 'Attach to chat'}
+                icon={attached ? Check : MessageSquarePlus}
+                size="xs"
+                className={attached ? 'text-accent-text' : undefined}
+                onClick={onToggleAttach}
+              />
+            )}
+            {!trimmedNote && !editing && (
+              <IconAction
+                label={`Add note for ${name}`}
+                tip="Add note"
+                icon={Pencil}
+                size="xs"
+                onClick={() => setEditing(true)}
+              />
+            )}
+            {onDelete && (
+              <IconAction
+                label={`Delete ${name}`}
+                tip="Delete"
+                icon={Trash2}
+                size="xs"
+                onClick={onDelete}
+              />
+            )}
+          </div>
         )}
       </div>
-      <NoteField key={note} note={note} name={name} onSave={onNoteSave} />
-    </div>
+      {editing ? (
+        <RefNoteEditor
+          name={name}
+          note={note}
+          onDone={() => setEditing(false)}
+          onSave={onNoteSave}
+        />
+      ) : trimmedNote ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          aria-label={`Edit note for ${name}`}
+          className="focus-ring w-full cursor-text border-t border-border-subtle px-2.5 py-2 text-start text-sm text-fg-secondary transition-colors duration-fast can-hover:hover:bg-surface-hover can-hover:hover:text-fg"
+        >
+          <span className="line-clamp-2">{trimmedNote}</span>
+        </button>
+      ) : null}
+    </article>
   )
 }
 
-function NoteField({
+function RefNoteEditor({
   note,
   name,
-  onSave
+  onSave,
+  onDone
 }: {
   note: string
   name: string
-  onSave: (note: string) => void
+  onSave: (note: string) => void | boolean | Promise<boolean | void>
+  onDone: () => void
 }): ReactElement {
   const [text, setText] = useState(note)
+  const cancelled = useRef(false)
+  const saved = useRef(false)
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    el.focus()
+    el.setSelectionRange(el.value.length, el.value.length)
+  }, [])
+
+  const commit = async (): Promise<void> => {
+    if (cancelled.current || saved.current) return
+    saved.current = true
+    const trimmed = text.trim()
+    if (trimmed !== note.trim()) {
+      const ok = await onSave(trimmed)
+      if (ok === false) setText(note)
+    }
+    onDone()
+  }
+
   return (
-    <Textarea
-      aria-label={`Note for ${name}`}
-      placeholder="No note yet"
-      value={text}
-      rows={1}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => text !== note && onSave(text)}
-      className="min-h-(--density-control) border-transparent bg-transparent text-sm can-hover:hover:border-border-default focus-visible:border-border-strong focus-visible:bg-surface-sunken"
-    />
+    <div className="border-t border-border-subtle p-1.5">
+      <Textarea
+        ref={ref}
+        aria-label={`Note for ${name}`}
+        placeholder="Add a note…"
+        value={text}
+        rows={2}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            cancelled.current = true
+            onDone()
+          } else if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault()
+            void commit()
+          }
+        }}
+        onBlur={() => void commit()}
+        className="min-h-0 resize-none text-sm"
+      />
+    </div>
   )
 }

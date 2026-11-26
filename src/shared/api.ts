@@ -666,7 +666,8 @@ export const RefSchema = z.object({
     .regex(/^[\w-]+\.\w+$/)
     .optional(), // image, beside index.json
   title: z.string().optional(), // image: its original file name
-  url: z.string().optional() // link
+  url: z.string().optional(), // link
+  missing: z.boolean().optional() // runtime-only: true when an image file is absent from refs/
 })
 export type Ref = z.infer<typeof RefSchema>
 export const RefsIndexSchema = z.object({ refs: z.array(RefSchema) })
@@ -681,6 +682,12 @@ export const RefAddSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('note'), note: z.string() })
 ])
 export type RefAdd = z.infer<typeof RefAddSchema>
+export const RefUpdateSchema = z.object({
+  note: z.string().optional(),
+  url: z.string().optional(),
+  title: z.string().optional()
+})
+export type RefUpdate = z.infer<typeof RefUpdateSchema>
 
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof EFFORTS)[number]
@@ -1044,6 +1051,7 @@ export interface StudioApi {
   design: {
     read(build: string): Promise<string> // DESIGN.md, '' when there is none
     write(build: string, base: string, md: string): Promise<void> // refused if Status changed or base is stale
+    reveal(build: string): Promise<void> // reveals DESIGN.md (or the build folder) in the OS file manager
   }
   ship: {
     finalize(job: number, targetDir?: string): Promise<string> // copies the ship job's staged final into targetDir or the schematics folder
@@ -1133,6 +1141,7 @@ export interface StudioApi {
     list(build: string): Promise<Ref[]>
     add(build: string, ref: RefAdd): Promise<Ref>
     note(build: string, id: string, note: string): Promise<void>
+    update(build: string, id: string, patch: RefUpdate): Promise<Ref>
     remove(build: string, id: string): Promise<void> // its image to the Recycle Bin
   }
   blocks: {
@@ -1212,6 +1221,7 @@ export const CHANNELS = [
   'review:pending',
   'design:read',
   'design:write',
+  'design:reveal',
   'ship:finalize',
   'ship:results',
   'ship:commit',
@@ -1229,6 +1239,7 @@ export const CHANNELS = [
   'refs:list',
   'refs:add',
   'refs:note',
+  'refs:update',
   'refs:remove',
   'blocks:list',
   'edits:read',

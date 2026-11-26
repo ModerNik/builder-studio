@@ -37,6 +37,12 @@ export function registerReview(ctx: IpcContext, handle: Handle): void {
   handle('design:write', z.object({ build: z.string(), base: z.string(), md: z.string() }), (a) =>
     writeDesign(resolved().workspace, a.build, a.base, a.md)
   )
+  handle('design:reveal', z.string(), (build) => {
+    const dir = buildDir(resolved().workspace, build)
+    const file = join(dir, 'DESIGN.md')
+    if (existsSync(file)) shell.showItemInFolder(file)
+    else void shell.openPath(dir)
+  })
   handle(
     'ship:finalize',
     z.object({ job: z.number().int(), targetDir: z.string().min(1).optional() }),
