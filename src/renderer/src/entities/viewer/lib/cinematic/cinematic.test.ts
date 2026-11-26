@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { emissiveInfo } from './emissive'
 import { skyPalette } from './shaders'
-import { defaultStudioSettings, RENDER_PRESETS, resolveExportSize } from './presets'
+import {
+  defaultStudioSettings,
+  RENDER_PRESETS,
+  resolveExportSize,
+  STUDIO_CAMERA_PRESETS
+} from './presets'
 import { findCropRect } from './compose'
 
 describe('cinematic render helpers', () => {
@@ -55,5 +60,17 @@ describe('cinematic render helpers', () => {
     const d = defaultStudioSettings()
     expect(RENDER_PRESETS.some((p) => p.id === d.preset)).toBe(true)
     expect(d.sheetViews.length).toBeGreaterThan(0)
+  })
+
+  it('uses direction-only camera position names without an Iso prefix', () => {
+    const byId = Object.fromEntries(STUDIO_CAMERA_PRESETS.map((p) => [p.id, p]))
+    expect(byId.iso_se.short).toBe('SE')
+    expect(byId.iso_ne.short).toBe('NE')
+    expect(byId.iso_nw.short).toBe('NW')
+    expect(byId.iso_sw.short).toBe('SW')
+    for (const preset of STUDIO_CAMERA_PRESETS) {
+      expect(preset.short).not.toMatch(/\bIso\b/i)
+      expect(preset.label).not.toMatch(/\bIsometric\b/i)
+    }
   })
 })
