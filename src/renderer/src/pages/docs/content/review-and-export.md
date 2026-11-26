@@ -42,34 +42,43 @@ The schema is `ReviewRoundSchema` in `src/shared/api.ts`.
 
 ## Design log
 
-**Log** in a build's screen tabs (`Ctrl 7`, `/build/<name>/log`) renders `DESIGN.md`:
+**Log** in a build's screen tabs (`Ctrl 6`, `/build/<name>/log`) presents `DESIGN.md` and saved
+`review/round_N.json` files as a structured build journal:
 
-- The `## Status` block pinned at the top.
-- The reviews as a timeline with their sheets; click one to jump to it.
-- **Edit** opens the raw file. Saving writes the whole file, but refuses a change to the Status block,
-  and refuses if the file changed on disk since you opened it.
+- A single non-sticky **Status** summary at the top (hidden when empty and never duplicated below),
+  followed by **Brief**, **Decisions**, and any custom sections.
+- **History** lists saved reviews and export results (newest first by default, with a sort toggle
+  and live search). Review cards show the picked version, approved parts, structured pins, and
+  clickable render sheets that open in the zoomable Lightbox.
+- A slim **Contents** outline sits beside the journal on wide screens (or opens in a sheet when
+  narrow) for quick jumping.
+- **Edit** opens the raw Markdown editor while automatically preserving the assistant's `## Status`
+  block on save, and safely detects external changes on disk.
 
 ## Export
 
-**Export** (`/build/<name>/ship`, internally _ship_) is a checklist that takes the selected build from
-draft to your schematics folder. Each line is one job or engine call, run top to bottom.
+**Export** (`Ctrl 7`, `/build/<name>/ship`, internally _ship_) sits at the end of the build tabs and
+runs the full export automatically from a single **Export build** button.
 
-| #   | Step                    | What happens                                                                                                                                        |
-| --- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Connect and check setup | Starts the engine bridge and checks the tools                                                                                                       |
-| 2   | Lint zero               | Runs the `check` job; must report zero problems to continue                                                                                         |
-| 3   | Full build              | Builds and finalizes into a staging folder under the cache (`<cache>/ship/<build>-<time>/`), not the game                                           |
-| 4   | Hollow count            | Hidden interior blocks removed                                                                                                                      |
-| 5   | Bill of materials       | Block counts, with rare blocks flagged                                                                                                              |
-| 6   | Reload check            | The bridge reads the file back: same bill total and shape                                                                                           |
-| 7   | Finalize                | Asks first, then copies the staged file into the schematics folder                                                                                  |
-| 8   | Results table           | Written into the DESIGN.md log (always, even in a dry run)                                                                                          |
-| 9   | Git commit              | Shows `git status` of `builds/<name>` in its confirm, then stages and commits that folder only. Nothing is pushed                                   |
-| 10  | Rejected variants       | The unpicked files of the newest review with a pick: each `.litematic` with its `_3d/` and `_ctx/` renders goes to the Recycle Bin, after a confirm |
+Before exporting, you can choose:
 
-**Dry run** is on by default: Finalize copies into `<cache>/ship/dry-final/` instead of the game, and
-Git commit only shows `git status`. Turn it off for a real export.
+- **Export format:** adapts to the build's target Minecraft version — `.litematic` (Litematica,
+  1.14+), `.schem` (Sponge / WorldEdit / Axiom, 1.13+), `.nbt` (Minecraft Structure Block, 1.13+),
+  or `.schematic` (Legacy MCEdit / WorldEdit, 1.12.x).
+- **Destination folder:** defaults to **Exported schematics folder** in **Settings → Minecraft**,
+  with a **Change…** button to export to another folder for the session (and **Reset to default** to
+  restore it).
 
-Finalize needs **Exported schematics folder** set in **Settings → Minecraft**.
-It saves a legacy `.schematic` for Minecraft 1.12.x, a Sponge `.schem` for 1.13.x,
-or a `.litematic` for later releases. The build’s Minecraft target determines the export.
+Clicking **Export build** runs six automatic stages in order; click any stage to inspect its logs or
+details:
+
+| Stage                     | What happens                                                                                            |
+| ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Check setup               | Verifies the engine runtime and destination folder                                                      |
+| Lint check (advisory)     | Runs enabled lint rules as non-blocking suggestions; warnings never stop export                         |
+| Build schematic           | Runs the full build and packages the chosen format into a temporary staging folder                      |
+| Verify export             | Reads the packaged schematic back through the engine bridge to confirm block count and dimensions       |
+| Save to folder            | Copies the verified schematic into the chosen destination folder                                        |
+| Update DESIGN.md & commit | Appends the export summary table to `DESIGN.md` and commits `builds/<name>` locally if anything changed |
+
+Once finished, **Show in folder** opens the exported file in your file manager.

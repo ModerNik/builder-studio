@@ -384,3 +384,80 @@ it('rejects protected storage aliases before importing or creating a workspace',
   await expect(validateWorkspace(workspace, [alias], true)).rejects.toThrow('separate')
   expect(existsSync(workspace)).toBe(false)
 })
+
+it('does not persist stale state.error after a failed preview and gives friendly missing-folder errors', async () => {
+  const f = fixture()
+  await expect(
+    f.service.preview({ ...f.request, source: join(f.base, 'does-not-exist') })
+  ).rejects.toThrow('Source folder does not exist')
+  expect(f.service.state.error).toBeUndefined()
+  expect(f.service.state.busy).toBe(false)
+  expect(f.service.state.stage).toBe('idle')
+
+  const emptySource = join(f.base, 'no-builds-here')
+  mkdirSync(emptySource)
+  await expect(f.service.preview({ ...f.request, source: emptySource })).rejects.toThrow(
+    'No builds folder found'
+  )
+  expect(f.service.state.error).toBeUndefined()
+})
+
+it('previews and creates a destination folder that does not exist yet, and cleans it up on failure', async () => {
+  const f = fixture()
+  const freshDest = join(f.base, 'brand-new-workspace')
+  expect(existsSync(freshDest)).toBe(false)
+  const preview = await f.service.preview({ ...f.request, destination: freshDest })
+  expect(preview.builds).toBe(1)
+  expect(preview.files).toBe(9)
+  // Preview stays non-destructive
+  expect(existsSync(freshDest)).toBe(false)
+
+  // Successful run creates the destination and imports all files
+  expect(await f.service.run(preview.id)).toBe(freshDest)
+  expect(existsSync(join(freshDest, 'builds/alpha/build.py'))).toBe(true)
+
+  // Failed run into a non-existent destination cleans up the newly created directory
+  const doomedDest = join(f.base, 'failed-new-workspace')
+  const preview2 = await f.service.preview({ ...f.request, destination: doomedDest })
+  vi.mocked(fs.open).mockRejectedValueOnce(
+    Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+  )
+  await expect(f.service.run(preview2.id)).rejects.toThrow('disk full')
+  expect(existsSync(doomedDest)).toBe(false)
+  expect(f.service.state.error).toBe('disk full')
+})
+
+it('handles recover on a destination that does not exist yet', async () => {
+  const f = fixture()
+  const missingDest = join(f.base, 'not-created-yet')
+  await expect(f.service.recover(missingDest)).resolves.toBeUndefined()
+  expect(f.service.state).toMatchObject({ busy: false, stage: 'recovered', error: undefined })
+})
+
+it('rolls back multi-level newly created destination folders and rejects non-directory parents', async () => {
+  const f = fixture()
+  const blocker = join(f.base, 'not-a-dir')
+  writeFileSync(blocker, 'file')
+  await expect(
+    f.service.preview({ ...f.request, destination: join(blocker, 'child') })
+  ).rejects.toThrow('Destination parent must be a directory')
+
+  const nestedDest = join(f.base, 'a', 'b', 'c')
+  const preview = await f.service.preview({ ...f.request, destination: nestedDest })
+  vi.mocked(fs.open).mockRejectedValueOnce(
+    Object.assign(new Error('disk full'), { code: 'ENOSPC' })
+  )
+  await expect(f.service.run(preview.id)).rejects.toThrow('disk full')
+  expect(existsSync(join(f.base, 'a'))).toBe(false)
+})
+
+it('still probes hard links on run when destination is created externally after preview', async () => {
+  const f = fixture()
+  const freshDest = join(f.base, 'created-between-preview-and-run')
+  const preview = await f.service.preview({ ...f.request, destination: freshDest })
+  mkdirSync(freshDest, { recursive: true })
+  vi.mocked(fs.link).mockRejectedValueOnce(
+    Object.assign(new Error('operation not permitted'), { code: 'EPERM' })
+  )
+  await expect(f.service.run(preview.id)).rejects.toThrow("can't hold hard links")
+})

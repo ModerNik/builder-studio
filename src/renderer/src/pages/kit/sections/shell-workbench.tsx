@@ -16,10 +16,8 @@ import { useContainerWidth } from '@/shared/lib/layout'
 import { useShortcuts } from '@/shared/lib/shortcuts'
 import { WorkbenchShell } from '@/widgets/workbench-shell/ui/WorkbenchShell'
 import { TitleBar } from '@/widgets/workbench-shell/ui/TitleBar'
-import { PanelToggle } from '@/widgets/workbench-shell/ui/PanelToggle'
 import { EditorTabs } from '@/widgets/workbench-shell/ui/EditorTabs'
 import { Tabs, TabsContent } from '@/shared/ui/primitives/tabs'
-import { StatusBar } from '@/widgets/workbench-shell/ui/StatusBar'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
 import { IconButton } from '@/shared/ui/common/parts'
 import {
@@ -217,13 +215,12 @@ export function DemoWorkbench({
   preview
 }: {
   review: boolean
-  /** An app page (Gallery, Settings): no document tabs; the Assistant is the only dock. */
+  /** An app page (Gallery, Settings): no document tabs and no docks. */
   page?: boolean
   preview?: { captionInset: number }
 }): ReactElement {
   const [screen, setScreen] = useState(review ? 'review' : 'workspace')
   const [build, setBuild] = useState(BUILDS[0])
-  const [running, setRunning] = useState(true)
   const [searched, setSearched] = useState(0)
   useShortcuts([
     { keys: 'Ctrl+K', label: 'Command palette', group: 'App', run: () => setSearched((n) => n + 1) }
@@ -272,8 +269,9 @@ export function DemoWorkbench({
       keys: 'Ctrl+`',
       side: 'bottom',
       defaultOpen: false,
-      badge: 3,
-      badgeLabel: '3 problems',
+      badge: 'dot',
+      badgeTone: 'running',
+      badgeLabel: 'Generate draft: Checking blocks',
       content: <ActivityPane />
     }
   ]
@@ -285,14 +283,13 @@ export function DemoWorkbench({
       screens={page ? [] : SCREENS}
       screen={screen}
       onScreenChange={setScreen}
-      panels={page ? panels.filter((p) => p.id === 'assistant') : panels}
+      panels={page ? [] : panels}
       titleBar={
         <TitleBar
           crumbs={
             page
               ? [{ label: 'Settings' }]
               : [
-                  { label: 'Builds', onSelect: () => {} },
                   {
                     label: build,
                     menu: {
@@ -304,15 +301,14 @@ export function DemoWorkbench({
                   }
                 ]
           }
-          panelAction={page && <PanelToggle panel={panels.find((p) => p.id === 'assistant')!} />}
           onHome={() => {}}
           onSearch={() => setSearched((n) => n + 1)}
           setup={<SetupNoticesChip notices={NOTICES} />}
           actions={
             <>
-              <IconButton icon={FlaskConical} label="Labs" />
-              <IconButton icon={BookOpen} label="Documentation" />
-              <IconButton icon={Settings} label="Settings" />
+              <IconButton size="sm" icon={FlaskConical} label="Labs" />
+              <IconButton size="sm" icon={BookOpen} label="Documentation" />
+              <IconButton size="sm" icon={Settings} label="Settings" />
             </>
           }
           overflow={
@@ -334,34 +330,10 @@ export function DemoWorkbench({
           }
         />
       }
-      status={
-        <StatusBar
-          activity={screen === 'workspace' && !page}
-          job={
-            running
-              ? {
-                  label: 'Generate draft',
-                  stage: 'Checking blocks 2 of 5',
-                  elapsed: '0:21',
-                  state: 'running',
-                  onStop: () => setRunning(false),
-                  onOpen: () => {}
-                }
-              : null
-          }
-          problems={3}
-          onProblems={() => {}}
-          needsYou={2}
-          onNeedsYou={() => {}}
-          engine="ready"
-          assistant="waiting"
-          assistantName="Claude Code"
-        />
-      }
     >
       {page ? (
         <Placeholder title="Settings">
-          <p className="text-fg-secondary">Chat is available in the title bar.</p>
+          <p className="text-fg-secondary">App pages have no document tabs or docks.</p>
         </Placeholder>
       ) : (
         <WorkspaceCanvas screen={screen} build={build} searched={searched} />

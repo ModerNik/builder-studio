@@ -1,6 +1,14 @@
 // The one contract between main, preload and renderer. Main checks every input with these zod schemas.
 import { z } from 'zod'
-import { isMinecraftVersion } from './minecraft'
+import { EXPORT_FORMATS, isMinecraftVersion } from './minecraft'
+import {
+  BuildFolderNameSchema,
+  PROJECT_NAME_MAX_LENGTH,
+  ProjectMetaSchema,
+  ProjectNameSchema
+} from './project-name'
+
+export { BuildFolderNameSchema, PROJECT_NAME_MAX_LENGTH, ProjectMetaSchema, ProjectNameSchema }
 
 /** The companion MCP server for external agents (src/main/agent/mcp.ts), loopback only. */
 export const MCP_PORT = 7341
@@ -88,6 +96,57 @@ export interface Availability {
 /** UI scale steps for Ctrl - and Ctrl +, as in browsers. */
 export const UI_SCALES = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const
 
+export const LINT_RULES = [
+  'floating',
+  'unattached',
+  'gravity',
+  'halves',
+  'fire',
+  'leaves',
+  'invalid',
+  'dark',
+  'see_through',
+  'groove'
+] as const
+export type LintRule = (typeof LINT_RULES)[number]
+export type LintRuleToggles = Record<LintRule, boolean>
+
+export const DEFAULT_LINT_RULES: LintRuleToggles = {
+  floating: false,
+  unattached: true,
+  gravity: true,
+  halves: true,
+  fire: true,
+  leaves: true,
+  invalid: true,
+  dark: true,
+  see_through: true,
+  groove: true
+}
+
+export const LinterSettingsSchema = z.object({
+  enabled: z.boolean().default(true),
+  rules: z
+    .object({
+      floating: z.boolean().default(false),
+      unattached: z.boolean().default(true),
+      gravity: z.boolean().default(true),
+      halves: z.boolean().default(true),
+      fire: z.boolean().default(true),
+      leaves: z.boolean().default(true),
+      invalid: z.boolean().default(true),
+      dark: z.boolean().default(true),
+      see_through: z.boolean().default(true),
+      groove: z.boolean().default(true)
+    })
+    .default(DEFAULT_LINT_RULES)
+})
+export type LinterSettings = z.infer<typeof LinterSettingsSchema>
+export const DEFAULT_LINTER_SETTINGS: LinterSettings = {
+  enabled: true,
+  rules: { ...DEFAULT_LINT_RULES }
+}
+
 export const MinecraftVersionSchema = z
   .string()
   .refine(isMinecraftVersion, 'Unsupported Minecraft version')
@@ -131,18 +190,12 @@ export const SettingsSchema = z.object({
       theme: z.enum(['dark', 'light', 'system']).default('dark'), // system follows the OS
       scale: z.number().min(UI_SCALES[0]).max(UI_SCALES.at(-1)!).default(1) // whole-UI zoom, Ctrl - / + / 0
     })
-    .default({ theme: 'dark', scale: 1 })
+    .default({ theme: 'dark', scale: 1 }),
+  linter: LinterSettingsSchema.default(DEFAULT_LINTER_SETTINGS)
 })
 export type Settings = z.infer<typeof SettingsSchema>
 
-export const NewBuildNameSchema = z
-  .string()
-  .max(100)
-  .regex(
-    /^[a-z][a-z0-9_]*$/,
-    'Use lowercase letters, digits and underscores, starting with a letter'
-  )
-  .refine((s) => !/^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i.test(s), 'Reserved Windows name')
+export const NewBuildNameSchema = ProjectNameSchema
 export const ImportRequestSchema = z.object({
   source: z.string().min(1),
   destination: z.string().min(1),
@@ -238,6 +291,7 @@ export const JobSpecSchema = z
         .regex(/^[\w,]*$/)
         .optional(),
       look: z.enum(['game', 'sun', 'flat']).optional(),
+      format: z.enum(EXPORT_FORMATS).optional(), // full: export schematic format override
       ship: z.boolean().optional(), // full: finalize into a staging folder, not the game's (ship:finalize copies it)
       noRender: z.boolean().optional() // generate a draft or full export without a preview
     }),
@@ -378,9 +432,12 @@ export interface Round {
 
 export interface BuildSummary {
   name: string // relative to builds/, posix (e.g. castle, _examples/showcase)
+  displayName: string // user-facing project name from project.json, or `name` when absent
   minecraftVersion?: string
   status: string[] // bullet lines of the DESIGN.md "## Status" block
   rounds: Round[]
+  preview?: string // repo-relative posix path of the final/latest build's full isometric render PNG
+  previewMtime?: number // mtime of `preview` for cache busting
   sheet?: string // repo-relative posix path of the newest out/**/sheet.png
   // out/*.litematic, newest first; sheet: its <stem>_3d (or _ctx) sheet.png; parts: a <stem>.parts.npz beside it
   versions: {
@@ -609,7 +666,8 @@ export const RefSchema = z.object({
     .regex(/^[\w-]+\.\w+$/)
     .optional(), // image, beside index.json
   title: z.string().optional(), // image: its original file name
-  url: z.string().optional() // link
+  url: z.string().optional(), // link
+  missing: z.boolean().optional() // runtime-only: true when an image file is absent from refs/
 })
 export type Ref = z.infer<typeof RefSchema>
 export const RefsIndexSchema = z.object({ refs: z.array(RefSchema) })
@@ -624,6 +682,12 @@ export const RefAddSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('note'), note: z.string() })
 ])
 export type RefAdd = z.infer<typeof RefAddSchema>
+export const RefUpdateSchema = z.object({
+  note: z.string().optional(),
+  url: z.string().optional(),
+  title: z.string().optional()
+})
+export type RefUpdate = z.infer<typeof RefUpdateSchema>
 
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof EFFORTS)[number]
@@ -776,7 +840,7 @@ export interface AgentSession {
 
 /** Provider-independent events. Native SDK/protocol payloads stay in main. */
 export type AgentMsg =
-  | { type: 'user'; id: string; text: string }
+  | { type: 'user'; id: string; text: string; point?: string }
   | {
       type: 'text'
       id: string
@@ -796,6 +860,47 @@ export type AgentMsg =
   | { type: 'tool-result'; id: string; text: string; error: boolean }
   | { type: 'note' | 'turn-end'; id: string; text: string; error?: boolean }
   | { type: 'suggestion'; id: string; text: string | null }
+
+/** What each empty settings path field resolves to on this machine; null when nothing is found. */
+export const WORLD_DIMENSIONS = ['overworld', 'nether', 'end'] as const
+export const WorldDimensionSchema = z.enum(WORLD_DIMENSIONS)
+export type WorldDimension = z.infer<typeof WorldDimensionSchema>
+
+export interface WorldInfo {
+  name: string
+  path: string
+  dataVersion: number | null
+  spawn: [number, number, number] | null
+  player: [number, number, number] | null
+  playerDimension: WorldDimension | null
+  dimensions: WorldDimension[]
+  regions: Record<WorldDimension, [number, number][]>
+}
+
+export const SitePlacementSchema = z.object({
+  version: z.literal(1),
+  world: z.string().min(1),
+  dimension: WorldDimensionSchema.default('overworld'),
+  mode: z.enum(['area', 'build']),
+  box: z.tuple([z.int32(), z.int32(), z.int32(), z.int32()]),
+  origin: z.tuple([z.int32(), z.int32(), z.int32()]),
+  rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
+  margin: z.int32().min(0).default(48),
+  versionPath: z.string().optional(),
+  ground: z
+    .object({
+      min: z.int32(),
+      max: z.int32(),
+      median: z.int32()
+    })
+    .optional()
+})
+export type SitePlacement = z.infer<typeof SitePlacementSchema>
+export const SiteSaveMetaSchema = z.object({
+  build: z.string().min(1),
+  placement: SitePlacementSchema,
+  updateBuildOrigin: z.boolean().optional()
+})
 
 /** What each empty settings path field resolves to on this machine; null when nothing is found. */
 export type Detected = {
@@ -825,6 +930,50 @@ export type UpdateState =
   | { s: 'downloading'; version: string; percent: number }
   | { s: 'ready'; version: string } // downloaded: restart to install
   | { s: 'error' }
+
+export interface ShipCommitResult {
+  committed: boolean
+  output: string
+}
+
+export const RENDER_IMAGE_FORMATS = ['png', 'webp', 'jpeg'] as const
+export const RenderImageFormatSchema = z.enum(RENDER_IMAGE_FORMATS)
+export type RenderImageFormat = z.infer<typeof RenderImageFormatSchema>
+
+const NonEmptyBytes = z.instanceof(Uint8Array).refine((b) => b.byteLength > 0, 'Empty image data')
+
+export const RenderCopyImageSchema = z.object({
+  data: NonEmptyBytes
+})
+export const RenderSaveImageSchema = z.object({
+  defaultName: z.string().min(1).max(200),
+  format: RenderImageFormatSchema,
+  data: NonEmptyBytes
+})
+export const RenderSaveBatchSchema = z.object({
+  files: z
+    .array(
+      z.object({
+        name: z
+          .string()
+          .min(1)
+          .max(200)
+          .refine(
+            (n) => !n.includes('/') && !n.includes('\\') && !n.includes('..'),
+            'Invalid filename'
+          ),
+        data: NonEmptyBytes
+      })
+    )
+    .min(1)
+    .max(32)
+})
+export const RenderSaveBuildPreviewSchema = z.object({
+  build: z.string().min(1),
+  versionPath: RepoPath,
+  kind: z.enum(['thumbnail', 'sheet']),
+  data: NonEmptyBytes
+})
 
 /** window.studio: everything the renderer may ask of main. */
 export interface StudioApi {
@@ -902,11 +1051,31 @@ export interface StudioApi {
   design: {
     read(build: string): Promise<string> // DESIGN.md, '' when there is none
     write(build: string, base: string, md: string): Promise<void> // refused if Status changed or base is stale
+    reveal(build: string): Promise<void> // reveals DESIGN.md (or the build folder) in the OS file manager
   }
   ship: {
-    finalize(job: number, dry: boolean): Promise<string> // the ship job's staged final into the schematics folder (dry: a temp one)
+    finalize(job: number, targetDir?: string): Promise<string> // copies the ship job's staged final into targetDir or the schematics folder
     results(build: string, title: string, rows: [string, string][]): Promise<void> // a table in the DESIGN.md log
-    commit(build: string, message: string, dry: boolean): Promise<string> // git, builds/<name> only; dry: git status
+    commit(build: string, message: string): Promise<ShipCommitResult> // git, builds/<name> only; succeeds cleanly if nothing changed
+    reveal(path: string): Promise<void> // reveals an exported file in the OS file manager
+  }
+  render: {
+    copyImage(data: Uint8Array): Promise<void>
+    saveImage(
+      defaultName: string,
+      format: RenderImageFormat,
+      data: Uint8Array
+    ): Promise<string | null>
+    saveBatch(
+      files: { name: string; data: Uint8Array }[]
+    ): Promise<{ dir: string; count: number } | null>
+    saveBuildPreview(
+      build: string,
+      versionPath: string,
+      kind: 'thumbnail' | 'sheet',
+      data: Uint8Array
+    ): Promise<string>
+    reveal(path: string): Promise<void> // reveals a saved render file or batch folder in the OS file manager
   }
   app: {
     report(s: AppState): void // what the user has open, for the MCP status() tool
@@ -926,7 +1095,7 @@ export interface StudioApi {
     cancelLogin(): Promise<void>
     hasApiKey(): Promise<boolean> // whether an Anthropic API key is saved; the key is never sent back
     setApiKey(key: string): Promise<void> // '' removes it
-    send(thread: string, a: AgentSend): Promise<void>
+    send(thread: string, a: AgentSend): Promise<string | undefined>
     interrupt(thread: string): Promise<void>
     close(thread: string): Promise<void> // ends the thread's live session; it stays resumable
     configure(thread: string, model: string | null, effort: Effort | null): Promise<void> // its live session too
@@ -936,7 +1105,7 @@ export interface StudioApi {
     permit(thread: string, p: Permit): Promise<void>
     sessions(build: string): Promise<AgentSession[]> // tagged with the build, newest first
     history(ref: SessionRef): Promise<AgentMsg[]>
-    fork(ref: SessionRef, build: string): Promise<SessionRef>
+    fork(ref: SessionRef, build: string, point?: string): Promise<SessionRef>
     rewindPoints(ref: SessionRef): Promise<AgentRewindPoint[]>
     rewindPreview(ref: SessionRef, build: string, point: string): Promise<AgentRewindPreview>
     rewind(
@@ -972,6 +1141,7 @@ export interface StudioApi {
     list(build: string): Promise<Ref[]>
     add(build: string, ref: RefAdd): Promise<Ref>
     note(build: string, id: string, note: string): Promise<void>
+    update(build: string, id: string, patch: RefUpdate): Promise<Ref>
     remove(build: string, id: string): Promise<void> // its image to the Recycle Bin
   }
   blocks: {
@@ -985,6 +1155,13 @@ export interface StudioApi {
   site: {
     worlds(): Promise<{ name: string; path: string }[]> // saves folders with a level.dat
     pick(): Promise<string | null> // a folder dialog
+    inspect(world: string): Promise<WorldInfo>
+    readMeta(build: string): Promise<SitePlacement | null>
+    saveMeta(
+      build: string,
+      placement: SitePlacement,
+      updateBuildOrigin?: boolean
+    ): Promise<{ originUpdated: boolean }>
   }
   bridge: {
     call<M extends BridgeMethod>(
@@ -1044,9 +1221,16 @@ export const CHANNELS = [
   'review:pending',
   'design:read',
   'design:write',
+  'design:reveal',
   'ship:finalize',
   'ship:results',
   'ship:commit',
+  'ship:reveal',
+  'render:copyImage',
+  'render:saveImage',
+  'render:saveBatch',
+  'render:saveBuildPreview',
+  'render:reveal',
   'app:report',
   'updater:get',
   'updater:check',
@@ -1055,12 +1239,16 @@ export const CHANNELS = [
   'refs:list',
   'refs:add',
   'refs:note',
+  'refs:update',
   'refs:remove',
   'blocks:list',
   'edits:read',
   'edits:save',
   'site:worlds',
   'site:pick',
+  'site:inspect',
+  'site:readMeta',
+  'site:saveMeta',
   'bridge:call',
   'bridge:log',
   'agent:send',

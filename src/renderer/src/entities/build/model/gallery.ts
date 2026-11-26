@@ -79,10 +79,14 @@ export function shownBuilds(
   }
 ): BuildSummary[] {
   const q = query.trim().toLowerCase()
+  const label = (b: BuildSummary): string => b.displayName || b.name
   const list = builds.filter(
-    (b) => b.name.toLowerCase().includes(q) && (state === 'all' || stateOf(b) === state)
+    (b) =>
+      (label(b).toLowerCase().includes(q) || b.name.toLowerCase().includes(q)) &&
+      (state === 'all' || stateOf(b) === state)
   )
-  const byName = (a: BuildSummary, b: BuildSummary): number => a.name.localeCompare(b.name)
+  const byName = (a: BuildSummary, b: BuildSummary): number =>
+    label(a).localeCompare(label(b)) || a.name.localeCompare(b.name)
   return list.sort(
     sort === 'name'
       ? byName

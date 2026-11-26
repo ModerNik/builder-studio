@@ -1,12 +1,17 @@
-import { NewBuildNameSchema } from '@shared/api'
+import { NewBuildNameSchema, PROJECT_NAME_MAX_LENGTH } from '@shared/api'
+import { normalizeProjectName } from '@shared/project-name'
 
-/** A free build name from a schematic file name ("My House (2).litematic" → "my_house_2"), or ''. */
+/** A free project name from a schematic file name ("My House (2).litematic" → "My House (2)"), or ''. */
 export function nameFromFile(file: string, taken: string[]): string {
-  const stem = file
+  const clean = file
     .replace(/\.[^.]*$/, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-  const name = /^[a-z]/.test(stem) ? stem : stem && `build_${stem}`
-  return NewBuildNameSchema.safeParse(name).success && !taken.includes(name) ? name : ''
+    .replace(/\p{Cc}+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, PROJECT_NAME_MAX_LENGTH)
+    .trim()
+  const takenSet = new Set(taken.map(normalizeProjectName))
+  return NewBuildNameSchema.safeParse(clean).success && !takenSet.has(normalizeProjectName(clean))
+    ? clean
+    : ''
 }

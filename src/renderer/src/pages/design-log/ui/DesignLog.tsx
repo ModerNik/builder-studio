@@ -1,47 +1,78 @@
-// Design log (G6.5, reader with the round rail): DESIGN.md as a readable column with its Status block pinned
-// on top, the review rounds in a rail beside it, and Edit in place. Main refuses a save that changes the
-// Status block or follows a change on disk; the refusal stays above the editor with its fix.
-// Logic: lib/designLog.ts.
-import { useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
+// Design log (Structured Build Journal + Status-safe Markdown editor): parses DESIGN.md and saved
+// review/round_N.json files into a readable journal (Status summary, Brief & Decisions, newest-first
+// collapsible Review & Export cards with zoomable sheets, slim PageOutline) while keeping Status
+// untouched automatically during raw Markdown editing.
+import { useEffect, useMemo, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
-import type { Components } from 'react-markdown'
+import { DropdownMenu } from 'radix-ui'
 import { toast } from 'sonner'
-import { ChevronDown, FileText, History, Lock, Pencil } from 'lucide-react'
+import {
+  ArrowDownUp,
+  Copy,
+  FileText,
+  FolderOpen,
+  ListTree,
+  MoreHorizontal,
+  Pencil,
+  ScanEye,
+  Search
+} from 'lucide-react'
 import { Button } from '@/shared/ui/primitives/button'
-import { Skeleton } from '@/shared/ui/primitives/skeleton'
-import { Textarea } from '@/shared/ui/primitives/textarea'
+import { Input } from '@/shared/ui/primitives/input'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/primitives/sheet'
+import { Textarea } from '@/shared/ui/primitives/textarea'
 import { Prose } from '@/shared/ui/code/Prose'
+import { Lightbox } from '@/shared/ui/data/Lightbox'
 import { Alert } from '@/shared/ui/feedback/Alert'
 import { ConfirmDestructive } from '@/shared/ui/feedback/ConfirmDestructive'
 import { EmptyState } from '@/shared/ui/feedback/EmptyState'
 import { ErrorState } from '@/shared/ui/feedback/ErrorState'
 import { LoadingState } from '@/shared/ui/feedback/LoadingState'
 import { PageHeader } from '@/shared/ui/layout/PageHeader'
-import { Timeline, type Round } from '@/shared/ui/data/progress'
-import { KeyValueList } from '@/shared/ui/data/values'
-import { jumpToHeading, useHeadingInView } from '@/shared/ui/layout/outline'
-import { useWorkbench } from '@/widgets/workbench-shell/model/context'
-import { IconButton } from '@/shared/ui/common/parts'
+import { PageOutline } from '@/shared/ui/layout/PageOutline'
+import { jumpToHeading, useHeadingInView, type OutlineItem } from '@/shared/ui/layout/outline'
+import { IconAction } from '@/shared/ui/common/Tip'
+import { menuItem } from '@/shared/ui/common/styles'
 import { buildUrl } from '@/shared/lib/urls'
-import { useBuild } from '@/entities/build/model/builds'
 import { useShortcuts } from '@/shared/lib/shortcuts'
+import { useBuild } from '@/entities/build/model/builds'
 import { errorText } from '@/entities/build/model/workspace'
 import {
+  edited,
+  filterDesignDocument,
+  mergeFromEdit,
+  parseDesignDocument,
   refusal,
   restoreStatus,
-  roundId,
-  roundLine,
-  roundOf,
-  sameEol,
-  edited,
-  statusItems,
+  splitForEdit,
+  starterDesign,
   type Refusal
-} from '@/pages/design-log/model/designLog'
-import { designSaved, useDesignLog, writeDesign } from '../model/design'
-import { text } from '@/shared/lib/format'
+} from '../model/designLog'
+import {
+  copySheetImage,
+  designSaved,
+  revealDesign,
+  useDesignLog,
+  writeDesign
+} from '../model/design'
+import {
+  BriefPromptCard,
+  ExportCard,
+  JournalNoteCard,
+  RoundCard,
+  SectionCard,
+  StatusSummaryCard
+} from './JournalCards'
 
-type Draft = { base: string; md: string; refused: Refusal | null }
+type Draft = {
+  base: string
+  initialBody: string
+  body: string
+  hasStatus: boolean
+  refused: Refusal | null
+}
+
+const todayIso = (): string => new Date().toISOString().slice(0, 10)
 
 export function DesignLog(): ReactElement {
   const { name } = useParams({ from: '/build/$name/log' })
@@ -49,20 +80,24 @@ export function DesignLog(): ReactElement {
 }
 
 function Log({ name }: { name: string }): ReactElement {
-  const { tier } = useWorkbench()
-  const narrow = tier === 'phone' || tier === 'tablet'
   const navigate = useNavigate()
   const { data: build } = useBuild(name)
-  const { md, rounds } = useDesignLog(name, build)
+  const displayName = build?.displayName || name
+  const { md, rounds } = useDesignLog(name)
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [ask, setAsk] = useState<null | 'cancel' | 'reload'>(null)
-  const [railOpen, setRailOpen] = useState(false)
-  const [statusOpen, setStatusOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const [newestFirst, setNewestFirst] = useState(true)
+  const [outlineOpen, setOutlineOpen] = useState(false)
+  const [activeSheet, setActiveSheet] = useState<string | null>(null)
+  const [toggledRounds, setToggledRounds] = useState<Record<string, boolean>>({})
+
   const pane = useRef<HTMLDivElement>(null)
   const editor = useRef<HTMLTextAreaElement>(null)
   const editButton = useRef<HTMLButtonElement>(null)
-  // entering edit mode puts focus in the editor, leaving it puts focus back on Edit
+  const postCloseFocus = useRef<'edit' | 'editor' | null>(null)
+
   const editing = !!draft
   const wasEditing = useRef(editing)
   useEffect(() => {
@@ -71,47 +106,87 @@ function Log({ name }: { name: string }): ReactElement {
     ;(editing ? editor : editButton).current?.focus()
   }, [editing])
 
-  const list = [...(build?.rounds ?? [])].reverse()
-  const inView = useHeadingInView(pane, draft ? [] : list.map((r) => roundId(r.n)))
-  const timeline: Round[] = list.map((r) => {
-    const saved = rounds.data?.find((x) => x.round === r.n)
-    const file =
-      saved?.files.find((f) => f.name === saved.pick)?.sheet ??
-      saved?.files.find((f) => f.sheet)?.sheet
-    const pins = saved?.pins.length ?? 0
-    const of = saved?.files.length ?? 0
-    return {
-      n: r.n,
-      title: r.title,
-      date: saved?.date.slice(5, 10),
-      sheet: file ? buildUrl(file) : undefined,
-      gist: saved
-        ? `${saved.pick ? `Picked ${saved.pick} of ${of}` : `No pick of ${of}`} · ${pins} ${pins === 1 ? 'pin' : 'pins'}`
-        : undefined
+  const parsed = useMemo(
+    () => parseDesignDocument(md.data ?? '', rounds.data ?? []),
+    [md.data, rounds.data]
+  )
+  const filtered = useMemo(() => filterDesignDocument(parsed, query), [parsed, query])
+  const orderedEntries = useMemo(
+    () => (newestFirst ? [...filtered.entries].reverse() : filtered.entries),
+    [filtered.entries, newestFirst]
+  )
+
+  const sheetItems = useMemo(
+    () =>
+      orderedEntries
+        .filter((e): e is Extract<typeof e, { kind: 'round' }> => e.kind === 'round' && !!e.sheet)
+        .map((e) => ({
+          id: e.sheet!,
+          src: buildUrl(e.sheet!),
+          name: `Round ${e.round} · ${e.title}`,
+          meta: e.date
+        })),
+    [orderedEntries]
+  )
+  const activeSheetIndex = activeSheet ? sheetItems.findIndex((s) => s.id === activeSheet) : -1
+
+  const outlineItems: OutlineItem[] = useMemo(() => {
+    if (editing) return []
+    const items: OutlineItem[] = []
+    if (filtered.status.length > 0) {
+      items.push({ id: 'section-status', title: 'Status', level: 2 })
     }
-  })
-  const jump = (n: number): void => {
-    setRailOpen(false)
-    if (!draft) return jumpToHeading(roundId(n))
-    // editing: move the editor to that round's heading line
-    const el = editor.current
-    const at = roundLine(draft.md, n)
-    if (!el || at < 0) return
-    el.focus()
-    el.setSelectionRange(at, at)
-    const line = draft.md.slice(0, at).split('\n').length - 1
-    el.scrollTop = line * (parseFloat(getComputedStyle(el).lineHeight) || 20)
+    if (filtered.brief && !filtered.brief.empty) {
+      items.push({ id: filtered.brief.id, title: filtered.brief.title, level: 2 })
+    }
+    for (const s of filtered.sections) {
+      items.push({ id: s.id, title: s.title, level: 2 })
+    }
+    for (const e of orderedEntries) {
+      items.push({
+        id: e.id,
+        title: e.kind === 'round' ? `R${e.round}: ${e.title}` : e.title,
+        level: 3
+      })
+    }
+    return items
+  }, [editing, filtered, orderedEntries])
+
+  const outlineIds = useMemo(() => outlineItems.map((i) => i.id), [outlineItems])
+  const inView = useHeadingInView(pane, outlineIds)
+
+  const jump = (id: string): void => {
+    setOutlineOpen(false)
+    if (id.startsWith('round-')) {
+      setToggledRounds((prev) => ({ ...prev, [id]: true }))
+      requestAnimationFrame(() => jumpToHeading(id))
+      return
+    }
+    jumpToHeading(id)
   }
 
-  const dirty = !!draft && edited(draft.md, draft.base)
+  const startEdit = (): void => {
+    const raw = md.data ?? ''
+    if (!raw) {
+      const starter = starterDesign(displayName, todayIso())
+      setDraft({ base: '', initialBody: '', body: starter, hasStatus: false, refused: null })
+      return
+    }
+    const { body, hasStatus } = splitForEdit(raw)
+    setDraft({ base: raw, initialBody: body, body, hasStatus, refused: null })
+  }
+
+  const dirty = !!draft && edited(draft.body, draft.initialBody)
+
   async function save(): Promise<void> {
     if (!draft || !dirty || saving) return
     setSaving(true)
     try {
-      await writeDesign(name, draft.base, sameEol(draft.md, draft.base))
+      const out = mergeFromEdit(draft.body, draft.base)
+      await writeDesign(name, draft.base, out)
       setDraft(null)
       designSaved(name)
-      toast.success('DESIGN.md saved')
+      toast.success('Design log saved')
     } catch (e) {
       const why = refusal(e)
       if (why) setDraft({ ...draft, refused: why })
@@ -120,17 +195,28 @@ function Log({ name }: { name: string }): ReactElement {
       setSaving(false)
     }
   }
+
   async function reload(): Promise<void> {
     const fresh = await md.refetch()
-    setDraft(fresh.data == null ? null : { base: fresh.data, md: fresh.data, refused: null })
+    if (fresh.data == null) {
+      setDraft(null)
+      return
+    }
+    const { body, hasStatus } = splitForEdit(fresh.data)
+    setDraft({ base: fresh.data, initialBody: body, body, hasStatus, refused: null })
   }
-  const cancel = (): void => (dirty ? setAsk('cancel') : setDraft(null))
+
+  const cancel = (): void => {
+    if (dirty) setAsk('cancel')
+    else setDraft(null)
+  }
 
   useShortcuts([
     draft && {
       keys: 'Ctrl+S',
-      label: 'Save DESIGN.md',
+      label: 'Save design log',
       group: 'Design log',
+      inFields: true,
       run: () => void save()
     },
     draft && {
@@ -142,113 +228,51 @@ function Log({ name }: { name: string }): ReactElement {
     }
   ])
 
-  const components: Components = {
-    h3: ({ children }) => {
-      const n = roundOf(text(children))
-      return (
-        <h3 id={n ? roundId(n) : undefined} className="scroll-mt-28">
-          {children}
-        </h3>
-      )
-    }
-  }
-
-  const count = build?.rounds.length ?? 0
-  const current = inView ? Number(inView.replace('round-', '')) : undefined
-  const rail = (
-    <section aria-labelledby="rounds-heading" className="flex flex-col gap-3">
-      <h2 id="rounds-heading" className="flex items-baseline gap-2">
-        <span className="font-medium">Reviews</span>
-        <span className="font-mono text-sm text-fg-muted tabular-nums">{count}</span>
-        <span className="ml-auto text-sm text-fg-muted">Newest first</span>
-      </h2>
-      {timeline.length ? (
-        <Timeline rounds={timeline} current={current} onSelect={jump} />
-      ) : (
-        <EmptyState
-          icon={History}
-          size="panel"
-          title="No reviews yet"
-          action={
-            <Button
-              variant="outline"
-              onClick={() => void navigate({ to: '/build/$name/review', params: { name } })}
-            >
-              Open Review
-            </Button>
-          }
-        >
-          Save a review and it appears here with its sheet. Click a review to jump to it in the log.
-        </EmptyState>
-      )}
-    </section>
+  const reviewCount = parsed.entries.filter((e) => e.kind === 'round').length
+  const exportCount = parsed.entries.filter((e) => e.kind === 'export').length
+  const hasContent = Boolean(md.data?.trim() || (rounds.data && rounds.data.length > 0))
+  const hasVisibleJournal = Boolean(
+    filtered.status.length ||
+    filtered.intro ||
+    (filtered.brief && !filtered.brief.empty) ||
+    filtered.sections.length ||
+    orderedEntries.length
   )
 
-  const items = statusItems(build?.status ?? [])
-  const folded = tier === 'phone' && !statusOpen
-  const status = (
-    <section
-      aria-label="Status, kept by the agent"
-      className="sticky top-0 z-sticky mt-4 rounded-lg border border-accent-subtle-border bg-surface-raised px-4 py-3 shadow-sm"
-    >
-      <div className="flex items-center gap-2">
-        <h2 className="font-medium">Status</h2>
-        <span className="flex items-center gap-1 text-sm text-fg-muted">
-          <Lock aria-hidden className="size-3.5" /> Kept by the agent
-        </span>
-        {tier === 'phone' && items.length > 0 && (
-          <IconButton
-            icon={ChevronDown}
-            label={statusOpen ? 'Hide the Status block' : 'Show the Status block'}
-            aria-expanded={statusOpen}
-            onClick={() => setStatusOpen(!statusOpen)}
-            className="ml-auto"
-          />
-        )}
-      </div>
-      {md.isPending ? (
-        <div className="mt-2 flex flex-col gap-2">
-          <Skeleton className="h-3 w-3/4" />
-          <Skeleton className="h-3 w-1/2" />
-        </div>
-      ) : !items.length ? (
-        <p className="mt-1 text-sm text-fg-secondary">
-          No Status block in DESIGN.md. The agent adds one; Edit can’t.
-        </p>
-      ) : folded ? (
-        <p className="mt-1 truncate text-sm text-fg-secondary">
-          {items
-            .map((i) => i.value)
-            .filter(Boolean)
-            .join(' · ')}
-        </p>
-      ) : (
-        <KeyValueList items={items} className="mt-1" />
-      )}
-    </section>
-  )
+  const summaryParts = [
+    reviewCount > 0 ? `${reviewCount} ${reviewCount === 1 ? 'review' : 'reviews'}` : null,
+    exportCount > 0 ? `${exportCount} ${exportCount === 1 ? 'export' : 'exports'}` : null
+  ].filter(Boolean)
+  const metaText = draft
+    ? dirty
+      ? 'Editing · unsaved changes'
+      : 'Editing'
+    : summaryParts.length
+      ? summaryParts.join(' · ')
+      : null
+
+  const relPath = `builds/${name}/DESIGN.md`
 
   let body: ReactNode
-  if (md.isPending) body = <LoadingState label="Reading DESIGN.md" layout="detail" />
-  else if (md.error)
+  if (md.isPending) {
+    body = <LoadingState label="Reading design log" layout="detail" />
+  } else if (md.error) {
     body = (
       <ErrorState
-        title="Can’t read DESIGN.md"
+        title="Can’t read design log"
         error={md.error}
         onRetry={() => void md.refetch()}
         retryLabel="Try again"
       />
     )
-  else if (!md.data)
+  } else if (draft) {
     body = (
-      <EmptyState icon={FileText} size="page" title={`No DESIGN.md for ${name} yet`}>
-        The agent starts the log with the brief, and each review you save adds to it. It lives at
-        builds/{name}/DESIGN.md.
-      </EmptyState>
-    )
-  else if (draft)
-    body = (
-      <div className="flex min-h-[60vh] flex-1 flex-col gap-3">
+      <div className="flex min-h-[65vh] flex-1 flex-col gap-3">
+        {draft.hasStatus && (
+          <p className="text-xs text-fg-muted">
+            The assistant’s Status summary is preserved automatically when you save.
+          </p>
+        )}
         {draft.refused === 'status' && (
           <Alert
             tone="danger"
@@ -256,16 +280,17 @@ function Log({ name }: { name: string }): ReactElement {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() =>
-                  setDraft({ ...draft, md: restoreStatus(draft.md, draft.base), refused: null })
-                }
+                onClick={() => {
+                  const fixed = restoreStatus(mergeFromEdit(draft.body, draft.base), draft.base)
+                  const { body: nextBody, hasStatus } = splitForEdit(fixed)
+                  setDraft({ ...draft, body: nextBody, hasStatus, refused: null })
+                }}
               >
-                Restore the Status block
+                Restore Status block
               </Button>
             }
           >
-            Not saved. The Status block is the agent’s: put it back as it was. Your other changes
-            are kept.
+            Not saved. The Status block changed unexpectedly. Restore it to keep your edits.
           </Alert>
         )}
         {draft.refused === 'disk' && (
@@ -278,144 +303,320 @@ function Log({ name }: { name: string }): ReactElement {
                   variant="outline"
                   onClick={() =>
                     void navigator.clipboard
-                      .writeText(draft.md)
+                      .writeText(mergeFromEdit(draft.body, draft.base))
                       .then(() => toast.success('Your edit is on the clipboard'))
                   }
                 >
                   Copy my edit
                 </Button>
                 <Button size="sm" variant="outline" onClick={() => setAsk('reload')}>
-                  Reload the file…
+                  Reload file…
                 </Button>
               </>
             }
           >
-            Not saved. DESIGN.md changed on disk since you started editing. Your edit is kept here.
+            Not saved. DESIGN.md changed on disk while you were editing. Your changes are kept here.
           </Alert>
         )}
         <Textarea
           ref={editor}
           variant="code"
-          aria-label="DESIGN.md, raw"
-          value={draft.md}
-          onChange={(e) => setDraft({ ...draft, md: e.target.value })}
+          aria-label="Design log Markdown"
+          value={draft.body}
+          onChange={(e) => setDraft({ ...draft, body: e.target.value })}
           className="min-h-0 flex-1"
         />
       </div>
     )
-  else
+  } else if (!hasContent) {
     body = (
-      <Prose variant="docs" components={components}>
-        {md.data}
-      </Prose>
+      <EmptyState
+        icon={FileText}
+        size="page"
+        title={`No design log for ${displayName} yet`}
+        action={<Button onClick={startEdit}>Start design log</Button>}
+      >
+        Your build’s brief, decisions, saved reviews, and export history will appear here as you
+        work.
+      </EmptyState>
     )
+  } else if (query.trim() && !hasVisibleJournal) {
+    body = (
+      <EmptyState
+        icon={Search}
+        size="panel"
+        title="No matching entries"
+        action={
+          <Button variant="outline" onClick={() => setQuery('')}>
+            Clear search
+          </Button>
+        }
+      >
+        Nothing in the design log matched “{query.trim()}”.
+      </EmptyState>
+    )
+  } else {
+    const showBriefPrompt = !query.trim() && (!parsed.brief || parsed.brief.empty)
+    body = (
+      <div className="flex flex-col gap-5">
+        <StatusSummaryCard rows={filtered.status} />
 
-  const path = `builds/${name}/DESIGN.md`
-  const meta = md.isPending
-    ? 'Reading DESIGN.md…'
-    : !md.data && !md.error
-      ? `${path} · not created yet`
-      : draft
-        ? `${path} · editing${dirty ? ', unsaved changes' : ''}`
-        : `${path} · ${count} ${count === 1 ? 'review' : 'reviews'}`
+        {filtered.intro && !query.trim() && (
+          <Prose variant="docs" className="max-w-none text-fg-secondary">
+            {filtered.intro}
+          </Prose>
+        )}
+
+        {filtered.brief && !filtered.brief.empty ? (
+          <SectionCard section={filtered.brief} />
+        ) : showBriefPrompt ? (
+          <BriefPromptCard onWrite={startEdit} />
+        ) : null}
+
+        {filtered.sections.map((section) => (
+          <SectionCard key={section.id} section={section} />
+        ))}
+
+        {orderedEntries.length > 0 && (
+          <section aria-labelledby="history-heading" className="flex flex-col gap-3">
+            <div className="flex items-center justify-between gap-2">
+              <h2
+                id="history-heading"
+                className="flex items-baseline gap-2 text-xs font-medium tracking-wide text-fg-muted uppercase"
+              >
+                History
+                <span className="font-mono tabular-nums">{orderedEntries.length}</span>
+              </h2>
+              {orderedEntries.length > 1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setNewestFirst((v) => !v)}
+                  className="h-(--density-control-sm) text-xs text-fg-secondary"
+                >
+                  <ArrowDownUp aria-hidden className="size-3.5" />
+                  {newestFirst ? 'Newest first' : 'Oldest first'}
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-col gap-3">
+              {orderedEntries.map((entry, idx) => {
+                if (entry.kind === 'round') {
+                  const isOpen = toggledRounds[entry.id] ?? (Boolean(query.trim()) || idx < 3)
+                  return (
+                    <RoundCard
+                      key={entry.id}
+                      entry={entry}
+                      open={isOpen}
+                      onOpenChange={(next) =>
+                        setToggledRounds((prev) => ({ ...prev, [entry.id]: next }))
+                      }
+                      onOpenSheet={(sheet) => setActiveSheet(sheet)}
+                    />
+                  )
+                }
+                if (entry.kind === 'export') {
+                  return <ExportCard key={entry.id} entry={entry} />
+                }
+                return <JournalNoteCard key={entry.id} entry={entry} />
+              })}
+            </div>
+          </section>
+        )}
+
+        {!hasVisibleJournal && !showBriefPrompt && (
+          <EmptyState
+            icon={FileText}
+            size="panel"
+            title="Design log is empty"
+            action={
+              <Button variant="outline" onClick={startEdit}>
+                <Pencil aria-hidden />
+                Edit Markdown
+              </Button>
+            }
+          >
+            Add a brief, design notes, or save a review to populate this log.
+          </EmptyState>
+        )}
+      </div>
+    )
+  }
+
+  const showOutlineRail = !editing && outlineItems.length >= 2
 
   return (
     <div className="flex h-full min-w-0 flex-col">
       <PageHeader
         title="Design log"
-        meta={<span className="font-mono text-sm">{meta}</span>}
-        className="border-b border-border-subtle px-4 py-2"
+        meta={metaText ? <span>{metaText}</span> : undefined}
+        className="border-b border-border-subtle px-4 py-2.5 sm:px-6"
         actions={
-          <>
-            {narrow && (
-              <Button variant="outline" onClick={() => setRailOpen(true)}>
-                <History /> Reviews
+          draft ? (
+            <>
+              <Button variant="ghost" onClick={cancel}>
+                Cancel
               </Button>
-            )}
-            {draft ? (
-              <>
-                <span className="flex items-center gap-1 text-sm text-fg-secondary max-sm:hidden">
-                  <Lock aria-hidden className="size-3.5" /> Save refuses a change to the Status
-                  block.
-                </span>
-                <Button variant="ghost" onClick={cancel}>
-                  Cancel
-                </Button>
-                <Button onClick={() => void save()} disabled={saving || !dirty}>
-                  {saving ? 'Saving…' : 'Save'}
-                </Button>
-              </>
-            ) : (
-              <Button
-                ref={editButton}
-                variant="outline"
-                disabled={!md.data}
-                onClick={() => md.data && setDraft({ base: md.data, md: md.data, refused: null })}
-              >
-                <Pencil /> {tier === 'phone' ? 'Edit DESIGN.md' : 'Edit'}
+              <Button onClick={() => void save()} disabled={saving || !dirty}>
+                {saving ? 'Saving…' : 'Save'}
               </Button>
-            )}
-          </>
+            </>
+          ) : (
+            <>
+              {hasContent && (
+                <Input
+                  aria-label="Search design log"
+                  placeholder="Search log…"
+                  leading={<Search aria-hidden />}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onClear={() => setQuery('')}
+                  className="w-52 max-sm:w-40"
+                />
+              )}
+              {showOutlineRail && (
+                <Button
+                  variant="outline"
+                  className="xl:hidden"
+                  onClick={() => setOutlineOpen(true)}
+                >
+                  <ListTree aria-hidden />
+                  <span className="max-sm:hidden">Outline</span>
+                </Button>
+              )}
+              <Button ref={editButton} variant="outline" onClick={startEdit}>
+                <Pencil aria-hidden />
+                {md.data ? 'Edit' : 'Start log'}
+              </Button>
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <IconAction icon={MoreHorizontal} label="More log actions" />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content
+                    align="end"
+                    sideOffset={6}
+                    className="z-dropdown min-w-48 rounded-lg border border-border-default bg-surface-overlay p-1 shadow-md"
+                  >
+                    <DropdownMenu.Item
+                      className={menuItem}
+                      onSelect={() =>
+                        void navigate({ to: '/build/$name/review', params: { name } })
+                      }
+                    >
+                      <ScanEye aria-hidden className="size-4 text-fg-muted" />
+                      Open Review
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className={menuItem}
+                      onSelect={() =>
+                        void navigator.clipboard
+                          .writeText(relPath)
+                          .then(() => toast.success('Path copied'))
+                      }
+                    >
+                      <Copy aria-hidden className="size-4 text-fg-muted" />
+                      Copy file path
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className={menuItem}
+                      onSelect={() => void revealDesign(name)}
+                    >
+                      <FolderOpen aria-hidden className="size-4 text-fg-muted" />
+                      Show in folder
+                    </DropdownMenu.Item>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            </>
+          )
         }
       />
+
       <div className="flex min-h-0 flex-1">
         <div
           ref={pane}
           tabIndex={0}
           role="region"
-          aria-label="DESIGN.md"
-          className="flex min-w-0 flex-1 flex-col overflow-auto px-4 pb-8 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:px-6"
+          aria-label="Design log"
+          className="flex min-w-0 flex-1 flex-col overflow-auto px-4 py-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:px-6"
         >
-          <div className="mx-auto flex min-h-full w-full max-w-prose flex-col gap-4">
-            {status}
-            {body}
-          </div>
+          <div className="mx-auto flex min-h-full w-full max-w-prose flex-col gap-5">{body}</div>
         </div>
-        {!narrow && (
+
+        {showOutlineRail && (
           <aside
-            aria-label="Reviews"
-            className="w-90 shrink-0 overflow-auto border-l border-border-subtle p-4"
+            aria-label="Log outline"
+            className="hidden w-56 shrink-0 overflow-auto border-l border-border-subtle px-3 py-5 xl:block"
           >
-            {rail}
+            <PageOutline items={outlineItems} current={inView} onJump={jump} label="Contents" />
           </aside>
         )}
       </div>
-      <Sheet open={railOpen} onOpenChange={setRailOpen}>
-        <SheetContent side="bottom" className="overflow-auto">
+
+      <Sheet open={outlineOpen} onOpenChange={setOutlineOpen}>
+        <SheetContent side="bottom" className="max-h-[70dvh] overflow-auto">
           <SheetHeader>
-            <SheetTitle>Reviews</SheetTitle>
+            <SheetTitle>Contents</SheetTitle>
           </SheetHeader>
-          <div className="px-4 pb-4">{rail}</div>
+          <div className="px-4 pb-4">
+            <PageOutline items={outlineItems} current={inView} onJump={jump} label="" />
+          </div>
         </SheetContent>
       </Sheet>
+
+      <Lightbox
+        items={sheetItems}
+        index={activeSheetIndex >= 0 ? activeSheetIndex : 0}
+        onIndexChange={(next) => setActiveSheet(sheetItems[next]?.id ?? null)}
+        open={activeSheetIndex >= 0}
+        onOpenChange={(o) => !o && setActiveSheet(null)}
+        actions={(it) => (
+          <Button size="sm" variant="outline" onClick={() => void copySheetImage(it.src)}>
+            <Copy aria-hidden />
+            Copy image
+          </Button>
+        )}
+      />
+
       <ConfirmDestructive
         open={ask === 'cancel'}
         onOpenChange={(o) => !o && setAsk(null)}
         title="Discard your edit?"
         action="Discard edit"
-        onConfirm={() => setDraft(null)}
+        onConfirm={() => {
+          postCloseFocus.current = 'edit'
+          setDraft(null)
+        }}
         onCloseAutoFocus={(e) => {
-          if (draft) return
+          if (postCloseFocus.current !== 'edit') return
+          postCloseFocus.current = null
           e.preventDefault()
           editButton.current?.focus()
         }}
       >
-        <p>Your changes to DESIGN.md aren’t saved and will be lost.</p>
+        <p>Your changes to the design log aren’t saved and will be lost.</p>
       </ConfirmDestructive>
+
       <ConfirmDestructive
         open={ask === 'reload'}
         onOpenChange={(o) => !o && setAsk(null)}
-        title="Reload DESIGN.md?"
+        title="Reload design log?"
         action="Reload and drop my edit"
-        onConfirm={() => void reload()}
+        onConfirm={() => {
+          postCloseFocus.current = 'editor'
+          void reload()
+        }}
         onCloseAutoFocus={(e) => {
-          if (draft?.refused) return
+          if (postCloseFocus.current !== 'editor') return
+          postCloseFocus.current = null
           e.preventDefault()
           editor.current?.focus()
         }}
       >
         <p>
-          The file is read again from disk and your edit is dropped. Copy it first if you need it.
+          The file will be reloaded from disk and your unsaved edit will be dropped. Copy it first
+          if you want to keep it.
         </p>
       </ConfirmDestructive>
     </div>

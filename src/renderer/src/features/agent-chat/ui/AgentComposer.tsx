@@ -25,7 +25,7 @@ import {
   useThread
 } from '@/features/agent-chat/model/agent'
 import { partsContext, useAskParts } from '@/entities/parts/model/parts'
-import { refPath, refsText, useRefs } from '@/entities/ref/model/refs'
+import { EMPTY_REF_IDS, refPath, refsText, useChatRefs, useRefs } from '@/entities/ref/model/refs'
 import {
   attachFile,
   configureModel,
@@ -57,11 +57,11 @@ export function AgentComposer({
   onCommand(name: ChatCommand, args: string): ChatCommandResult
 }): ReactElement {
   const availability = useAvailability().data
-  const [refIds, setRefIds] = useState<string[]>([]) // board refs for the next message
   const [files, setFiles] = useState<string[]>([])
   const [uploading, setUploading] = useState<string[]>([])
   const id = useThread((t) => t.id)
   const build = useThread((t) => t.build)
+  const refIds = useChatRefs((s) => (build ? (s.byBuild[build] ?? EMPTY_REF_IDS) : EMPTY_REF_IDS))
   const asked = useAskParts((s) => s.ask)
   const ask = asked && asked.build === build ? asked : null
   const mode = useThread((t) => t.mode)
@@ -103,7 +103,7 @@ export function AgentComposer({
     void send([text, ...context].filter(Boolean).join('\n\n'), {
       attachments: files.length ? files : undefined
     })
-    setRefIds([])
+    if (build) useChatRefs.getState().clear(build)
     setFiles([])
     if (ask) useAskParts.setState({ ask: null })
   }
@@ -176,8 +176,7 @@ export function AgentComposer({
             image: r.kind === 'image' ? buildUrl(refPath(build, r)) : undefined,
             checked: refIds.includes(r.id)
           })),
-          onToggle: (rid) =>
-            setRefIds((ids) => (ids.includes(rid) ? ids.filter((i) => i !== rid) : [...ids, rid]))
+          onToggle: (rid) => build && useChatRefs.getState().toggle(build, rid)
         }
       }
       context={
@@ -203,7 +202,7 @@ export function AgentComposer({
                 icon={Images}
                 title={refs.map((r) => r.note || r.url || r.title).join('\n')}
                 removeLabel="Remove the references"
-                onRemove={() => setRefIds([])}
+                onRemove={() => build && useChatRefs.getState().clear(build)}
               >
                 {refs.length === 1 ? '1 reference' : `${refs.length} references`}
               </ContextChip>

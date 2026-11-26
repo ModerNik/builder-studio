@@ -13,6 +13,7 @@ import {
 } from '@/shared/ui/primitives/dialog'
 import { Field } from '@/shared/ui/primitives/field'
 import { Textarea } from '@/shared/ui/primitives/textarea'
+import { useBuild } from '@/entities/build/model/builds'
 import { today, useBrief } from '@/features/agent-chat/model/useBrief'
 import { RefsPicker } from './AgentComposer'
 
@@ -21,12 +22,13 @@ export function useBriefDialog(build: string): {
   openBrief: () => Promise<void>
 } {
   const { brief, setBriefOpen, refs, setRefs, openBrief, saveBrief } = useBrief(build)
+  const displayName = useBuild(build).data?.displayName || build
 
   const dialog = (
     <Dialog open={!!brief} onOpenChange={(o) => !o && setBriefOpen(null)}>
       <DialogContent size="lg" phone="sheet">
         <DialogHeader>
-          <DialogTitle>Brief for {build}</DialogTitle>
+          <DialogTitle>Brief for {displayName}</DialogTitle>
           <DialogDescription>
             Saved as DESIGN.md §1 ({today()}), then sent as the first message of a new thread.
           </DialogDescription>

@@ -10,13 +10,12 @@ export const meta = { group: 'Shell', title: 'Shortcuts and focus order' }
 
 const ORDER = [
   ['Skip link', 'First Tab on the page jumps straight to the screen.'],
-  ['Title bar', 'App mark, breadcrumb and build switcher, search, job, setup, actions.'],
+  ['Title bar', 'App mark, breadcrumb and build switcher, search, setup, actions.'],
   ['Screen tabs', 'One stop; arrow keys move between screens.'],
   ['Dock toggles', 'Editor, Chat, Activity (Ctrl I, Ctrl J, Ctrl `).'],
   ['Screen', 'The canvas and its overlays.'],
   ['Right dock', 'One column at a time, tabs first.'],
-  ['Bottom dock', 'Activity.'],
-  ['Status bar', 'Job and Stop, problems, engine, assistant.']
+  ['Bottom dock', 'Activity.']
 ]
 
 export default function ShortcutsDemo(): ReactElement {

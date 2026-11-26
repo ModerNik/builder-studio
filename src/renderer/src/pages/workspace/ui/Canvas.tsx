@@ -1,9 +1,8 @@
-// Workspace canvas (G6.1 A): the 3D stage with its parts toolbar and vertical clip control, the states
-// that stand in for it, and the Preview sheet.
-import { useState, type ReactElement, type ReactNode } from 'react'
+// Workspace canvas (G6.1 A): the 3D stage with its parts toolbar and vertical clip control, and the states
+// that stand in for it.
+import { type ReactElement, type ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Box, FolderX, Image, Play } from 'lucide-react'
-import { TransformComponent, TransformWrapper } from 'react-zoom-pan-pinch'
+import { Box, FolderX, Play } from 'lucide-react'
 import { Button } from '@/shared/ui/primitives/button'
 import { Shortcut } from '@/shared/ui/primitives/kbd'
 import { EmptyState } from '@/shared/ui/feedback/EmptyState'
@@ -220,34 +219,4 @@ function PartsStatus({ a }: { a: VersionAnalysis }): ReactElement | null {
   )
   if (progress) return <PartsProgress progress={progress} />
   return a.partsBusy ? <PartsProgress progress={{ stage: 'waiting', fraction: null }} /> : null
-}
-
-/** The preview sheet: every camera angle in one image, panned and zoomed. */
-export function SheetView({ src }: { src: string | null }): ReactElement {
-  const [failed, setFailed] = useState<string | null>(null)
-  if (!src || failed === src)
-    return (
-      <EmptyState icon={Image} title="No preview images for this version">
-        Turn on Create preview images in Draft settings, then generate a draft.
-      </EmptyState>
-    )
-  return (
-    <TransformWrapper
-      minScale={0.1}
-      maxScale={16}
-      limitToBounds={false}
-      centerOnInit
-      wheel={{ step: 0.0015 }}
-    >
-      <TransformComponent wrapperClass="!h-full !w-full bg-surface-viewer" contentClass="">
-        <img
-          src={src}
-          alt="Build preview from several camera angles"
-          onError={() => setFailed(src)}
-          style={{ imageRendering: 'pixelated' }}
-          draggable={false}
-        />
-      </TransformComponent>
-    </TransformWrapper>
-  )
 }

@@ -85,12 +85,23 @@ const studio: StudioApi = {
   },
   design: {
     read: (build) => invoke('design:read', build),
-    write: (build, base, md) => invoke('design:write', { build, base, md })
+    write: (build, base, md) => invoke('design:write', { build, base, md }),
+    reveal: (build) => invoke('design:reveal', build)
   },
   ship: {
-    finalize: (job, dry) => invoke('ship:finalize', { job, dry }),
+    finalize: (job, targetDir) => invoke('ship:finalize', { job, targetDir }),
     results: (build, title, rows) => invoke('ship:results', { build, title, rows }),
-    commit: (build, message, dry) => invoke('ship:commit', { build, message, dry })
+    commit: (build, message) => invoke('ship:commit', { build, message }),
+    reveal: (path) => invoke('ship:reveal', path)
+  },
+  render: {
+    copyImage: (data) => invoke('render:copyImage', { data }),
+    saveImage: (defaultName, format, data) =>
+      invoke('render:saveImage', { defaultName, format, data }),
+    saveBatch: (files) => invoke('render:saveBatch', { files }),
+    saveBuildPreview: (build, versionPath, kind, data) =>
+      invoke('render:saveBuildPreview', { build, versionPath, kind, data }),
+    reveal: (path) => invoke('render:reveal', path)
   },
   app: {
     report: (s) => void invoke('app:report', s),
@@ -120,7 +131,7 @@ const studio: StudioApi = {
     permit: (thread, permit) => invoke('agent:permit', { thread, permit }),
     sessions: (build) => invoke('agent:sessions', build),
     history: (id) => invoke('agent:history', id),
-    fork: (ref, build) => invoke('agent:fork', { ref, build }),
+    fork: (ref, build, point) => invoke('agent:fork', { ref, build, point }),
     rewindPoints: (ref) => invoke('agent:rewindPoints', ref),
     rewindPreview: (ref, build, point) => invoke('agent:rewindPreview', { ref, build, point }),
     rewind: (ref, build, point, files) => invoke('agent:rewind', { ref, build, point, files }),
@@ -151,6 +162,7 @@ const studio: StudioApi = {
     list: (build) => invoke('refs:list', build),
     add: (build, ref) => invoke('refs:add', { build, ref }),
     note: (build, id, note) => invoke('refs:note', { build, id, note }),
+    update: (build, id, patch) => invoke('refs:update', { build, id, patch }),
     remove: (build, id) => invoke('refs:remove', { build, id })
   },
   blocks: {
@@ -162,7 +174,11 @@ const studio: StudioApi = {
   },
   site: {
     worlds: () => invoke('site:worlds'),
-    pick: () => invoke('site:pick')
+    pick: () => invoke('site:pick'),
+    inspect: (world) => invoke('site:inspect', world),
+    readMeta: (build) => invoke('site:readMeta', build),
+    saveMeta: (build, placement, updateBuildOrigin) =>
+      invoke('site:saveMeta', { build, placement, updateBuildOrigin })
   },
   bridge: {
     call: async (method, params, onProgress, minecraftVersion) => {

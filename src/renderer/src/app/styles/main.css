@@ -128,10 +128,9 @@
   --root-size-min: 1rem;
   --root-size-max: var(--root-size-min);
   --root-size-fluid: calc(0.625rem + 0.4167vw);
-  /* Workbench shell (S3): title bar, document tabs, status bar, dock sizes and limits */
-  --shell-titlebar: 36px;
-  --shell-tabbar: 2.5rem;
-  --shell-statusbar: 1.75rem;
+  /* Workbench shell (S3): title bar, document tabs, dock sizes and limits */
+  --shell-titlebar: 44px;
+  --shell-tabbar: 2.875rem;
   --dock-rail: 2.5rem;
   --dock-editor: var(--container-editor);
   --dock-assistant: var(--container-agent);

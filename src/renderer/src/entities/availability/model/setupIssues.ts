@@ -3,7 +3,15 @@ import { create } from 'zustand'
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware'
 import type { Availability, Repair, Requirement, RuntimeAction } from '@shared/api'
 
-export const SECTIONS = ['general', 'minecraft', 'ai', 'agents', 'tools', 'advanced'] as const
+export const SECTIONS = [
+  'general',
+  'minecraft',
+  'linter',
+  'ai',
+  'agents',
+  'tools',
+  'advanced'
+] as const
 export type Section = (typeof SECTIONS)[number]
 export const REPAIR_SECTION: Record<Repair, Section> = {
   workspace: 'general',

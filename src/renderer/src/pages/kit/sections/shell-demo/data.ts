@@ -1,27 +1,39 @@
 import { Euler, MathUtils, Quaternion } from 'three'
+import { Box, GitBranch, Images, Map as MapIcon, Rocket, ScanEye, ScrollText } from 'lucide-react'
 import { viewAngles, type ViewName } from '@/entities/viewer/model/look'
 import type { Orientation } from '@/entities/viewer/model/axis-gizmo'
 
 export const SCREENS = [
-  { id: 'workspace', label: 'Workspace' },
+  { id: 'workspace', label: 'Workspace', icon: Box, group: 'core' },
   {
     id: 'review',
     label: 'Review',
+    icon: ScanEye,
+    group: 'core',
     badge: 'dot' as const,
     badgeLabel: 'The agent asks for a review',
     badgeTone: 'attention' as const
   },
-  { id: 'log', label: 'Design log' },
-  { id: 'export', label: 'Export' },
-  { id: 'site', label: 'Build location' },
-  { id: 'refs', label: 'References', badge: 4, badgeLabel: '4 references' },
   {
     id: 'variants',
     label: 'Variants',
+    icon: GitBranch,
+    group: 'core',
     badge: 2,
     badgeLabel: '2 lanes need you',
     badgeTone: 'attention' as const
-  }
+  },
+  { id: 'site', label: 'Location', icon: MapIcon, group: 'support' },
+  {
+    id: 'refs',
+    label: 'Refs',
+    icon: Images,
+    group: 'support',
+    badge: 4,
+    badgeLabel: '4 references'
+  },
+  { id: 'log', label: 'Log', icon: ScrollText, group: 'support' },
+  { id: 'export', label: 'Export', icon: Rocket, group: 'export' }
 ]
 
 /** A stand-in camera for the kit's gizmos, in degrees. */

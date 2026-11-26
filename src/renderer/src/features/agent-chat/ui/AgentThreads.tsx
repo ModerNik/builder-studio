@@ -13,6 +13,7 @@ import { errorMessage } from '@/shared/ui/feedback/errors'
 import { ConfirmDestructive } from '@/shared/ui/feedback/ConfirmDestructive'
 import { IconAction } from '@/shared/ui/common/Tip'
 import { cn } from '@/shared/lib/utils'
+import { useBuilds } from '@/entities/build/model/builds'
 import {
   activate,
   busy,
@@ -56,13 +57,16 @@ export function AgentThreads({
   const [query, setQuery] = useState('')
   const [renaming, setRenaming] = useState<{ s: AgentSession; title: string } | null>(null)
   const [removing, setRemoving] = useState<AgentSession | null>(null)
+  const builds = useBuilds().data ?? []
+  const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName || id
   const build = active.build
+  const buildLabel = labelOf(build)
   const list = useAgentSessions(provider, build)
   const refresh = (): void => void list.refetch()
   const running = threads.filter((t) => busy(t.state)).length
   const q = query.trim().toLowerCase()
   const hit = (...s: string[]): boolean => !q || s.some((x) => x.toLowerCase().includes(q))
-  const shownThreads = threads.filter((t) => hit(label(t, list.data), t.build))
+  const shownThreads = threads.filter((t) => hit(label(t, list.data), labelOf(t.build), t.build))
   const shownSessions = (list.data ?? []).filter((s) => hit(s.title, s.id))
   const verb = provider === 'claude' ? 'Delete' : 'Archive'
 
@@ -122,7 +126,7 @@ export function AgentThreads({
           </div>
           {sibling && (
             <InlineNotice tone="warning" className="px-2 py-1">
-              Another thread is working on {build} too; their edits can collide.
+              Another thread is working on {buildLabel} too; their edits can collide.
             </InlineNotice>
           )}
           <div className="max-h-[min(24rem,60vh)] overflow-y-auto">
@@ -131,7 +135,7 @@ export function AgentThreads({
               <ThreadListItem
                 key={t.id}
                 title={label(t, list.data)}
-                build={t.build}
+                build={labelOf(t.build)}
                 state={busy(t.state) ? 'busy' : t.state.status === 'off' ? 'off' : 'live'}
                 awaiting={t.asks.length > 0}
                 active={t.id === active.id}
@@ -141,7 +145,7 @@ export function AgentThreads({
             ))}
             {build && (
               <>
-                <Heading>Sessions of {build}</Heading>
+                <Heading>Sessions of {buildLabel}</Heading>
                 {list.error && (
                   <InlineNotice tone="danger" className="px-2 py-1">
                     {String(list.error)}

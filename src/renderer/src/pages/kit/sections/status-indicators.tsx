@@ -62,7 +62,7 @@ export default function StatusIndicators(): ReactElement {
       </Sub>
       <Sub
         title="LiveStatusPill"
-        note="What is live now, for the status bar and dock headers. A polite live region: a new label is announced."
+        note="What is live now, for toolbars and dock headers. A polite live region: a new label is announced."
       >
         <Grid min="16rem">
           <Cell label="Running">

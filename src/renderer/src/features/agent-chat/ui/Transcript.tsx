@@ -19,7 +19,13 @@ import { cn } from '@/shared/lib/utils'
 import { Prose } from '@/shared/ui/code/Prose'
 import { LoadingState } from '@/shared/ui/feedback/LoadingState'
 import { CommandPreview, PermissionCard, PlanCard, QuestionCard, WorkingIndicator } from './Cards'
-import { AssistantMessage, MessageBubble, SystemNote, type Attachment } from './Messages'
+import {
+  AssistantMessage,
+  MessageBubble,
+  SystemNote,
+  type Attachment,
+  type MessageBubbleEditState
+} from './Messages'
 import { JobCard, SubagentCard, ToolCallRow, ToolResult, type ToolStatus } from './ToolCallRow'
 
 type Tool = Extract<Item, { kind: 'tool' }>
@@ -58,10 +64,18 @@ export interface TranscriptProps {
   onRevisePlan?: (feedback: string) => void
   /** Show / Sheet on a build.py job card: the path it wrote and whether it is the sheet. */
   onShowFile?: (path: string, sheet: boolean) => void
-  /** Lint problems in an @mcb lint event; every count by default. */
-  lintProblems?: (counts: Record<string, number>) => number
+  /** Lint problems in an @mcb lint event; every count by default, undefined hides the badge. */
+  lintProblems?: (counts: Record<string, number>) => number | undefined
   /** A thumbnail URL for an attached image. */
   fileUrl?: (path: string) => string
+  /** Quick actions on user messages that have a persisted turn point. */
+  onEditMessage?: (item: Extract<Item, { kind: 'user' }>) => void
+  onForkMessage?: (item: Extract<Item, { kind: 'user' }>) => void
+  onRewindMessage?: (item: Extract<Item, { kind: 'user' }>) => void
+  /** Currently edited user message and its inline edit state. */
+  editingMessage?: { id: string } & MessageBubbleEditState
+  /** Disables Edit / Fork / Rewind actions while a turn or session operation runs. */
+  messageActionsDisabled?: boolean
   /** Shown when there are no items or asks yet. */
   empty?: ReactNode
   /** Under the items: an error alert, say. */
@@ -143,6 +157,11 @@ function Items(
     fileUrl,
     onImplementPlan,
     onRevisePlan,
+    onEditMessage,
+    onForkMessage,
+    onRewindMessage,
+    editingMessage,
+    messageActionsDisabled,
     working,
     planById,
     activeCodexPlanId,
@@ -156,6 +175,11 @@ function Items(
           <MessageBubble
             key={i.id}
             attachments={i.attachments?.map((path): Attachment => ({ path, url: fileUrl?.(path) }))}
+            onEdit={i.point && onEditMessage ? () => onEditMessage(i) : undefined}
+            onFork={i.point && onForkMessage ? () => onForkMessage(i) : undefined}
+            onRewind={i.point && onRewindMessage ? () => onRewindMessage(i) : undefined}
+            actionsDisabled={messageActionsDisabled ?? working}
+            editing={editingMessage?.id === i.id ? editingMessage : undefined}
           >
             {i.text}
           </MessageBubble>

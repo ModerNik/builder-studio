@@ -1,12 +1,25 @@
-// The app frame (S3 Workbench): title bar, the build's screen tabs and Assistant dock, status bar. App pages
-// (Builds, Settings, Documentation, Labs) get the same title bar and status bar with no tabs; the Assistant
-// is their only dock.
+// The app frame (S3 Workbench): title bar, the build's screen tabs and docks (including the Assistant
+// dock on build tabs that enable it). App pages (Builds, Settings, Documentation, Labs) get the same
+// title bar with no tabs and no docks.
 // The app-wide listeners (review requests, show / show_sheet, the MCP status report, toasts) are in
 // ../model/subscriptions.
 import { useEffect, useState, type ReactElement } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { DropdownMenu } from 'radix-ui'
-import { MessageCircle, BookOpen, FlaskConical, Settings as SettingsIcon } from 'lucide-react'
+import {
+  BookOpen,
+  Box,
+  FlaskConical,
+  GitBranch,
+  Images,
+  Map as MapIcon,
+  MessageCircle,
+  Rocket,
+  ScanEye,
+  ScrollText,
+  Settings as SettingsIcon,
+  type LucideIcon
+} from 'lucide-react'
 import { Toaster } from '@/shared/ui/primitives/sonner'
 import {
   CommandDialog,
@@ -18,25 +31,16 @@ import {
   CommandShortcut
 } from '@/shared/ui/primitives/command'
 import { WorkbenchShell } from '@/widgets/workbench-shell/ui/WorkbenchShell'
-import { PanelToggle } from '@/widgets/workbench-shell/ui/PanelToggle'
 import { TitleBar, type Crumb } from '@/widgets/workbench-shell/ui/TitleBar'
-import {
-  StatusBar,
-  type AssistantState,
-  type StatusJob
-} from '@/widgets/workbench-shell/ui/StatusBar'
 import { IconButton } from '@/shared/ui/common/parts'
 import { menuItem } from '@/shared/ui/common/styles'
 import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
-import { formatElapsed, useElapsed } from '@/shared/ui/common/time'
-import { useAvailability } from '@/entities/availability/model/availability'
 import { useBuilds } from '@/entities/build/model/builds'
-import { PART_LABEL, cancelJob, useJobs } from '@/entities/job/model/jobs'
+import { cancelJob, useJobs } from '@/entities/job/model/jobs'
 import { useReview } from '@/entities/review/model/review'
 import { useVariants } from '@/features/agent-chat/model/variants'
 import { useAgent, useAgentPrefs } from '@/features/agent-chat/model/agent'
-import { PROVIDER_TEXT } from '@/features/agent-chat/model/providers'
 import { STATE_LABEL, buildState, useGalleryDialog } from '@/entities/build/model/gallery'
 import { useShortcuts } from '@/shared/lib/shortcuts'
 import { useScreenPanels } from '@/widgets/workbench-shell/model/screenPanels'
@@ -45,19 +49,20 @@ import { AgentPanel } from '@/features/agent-chat/ui/Agent'
 import { SetupChip, SetupMenuItem } from '@/entities/availability/ui/SetupChip'
 import { useSetupNotices } from '@/entities/availability/model/setupFix'
 import { useAppSubscriptions } from '../model/subscriptions'
-import { useEdits } from '@/entities/block-edit/model/store'
+import { BUILD_ROUTE, BUILD_SCREENS, hasChatDock, type ScreenId } from '../model/screens'
+import { RenderStudioPortal } from '@/features/render-studio/ui/RenderStudioPortal'
+import { SheetViewerHost } from '@/features/render-studio/ui/SheetViewerLightbox'
+import { openRenderStudio } from '@/features/render-studio/model/store'
 
-const SCREENS = [
-  { id: 'workspace', label: 'Workspace' },
-  { id: 'review', label: 'Review' },
-  { id: 'variants', label: 'Variants' },
-  { id: 'ship', label: 'Export' },
-  { id: 'site', label: 'Location' },
-  { id: 'refs', label: 'Refs' },
-  { id: 'log', label: 'Log' }
-] as const
-type ScreenId = (typeof SCREENS)[number]['id']
-const BUILD_ROUTE = /^\/build\/(.+?)(?:\/(review|log|ship|site|refs|variants))?$/
+const SCREEN_ICONS: Record<ScreenId, LucideIcon> = {
+  workspace: Box,
+  review: ScanEye,
+  variants: GitBranch,
+  ship: Rocket,
+  site: MapIcon,
+  refs: Images,
+  log: ScrollText
+}
 
 export function Shell(): ReactElement {
   const [palette, setPalette] = useState(false)
@@ -93,14 +98,14 @@ export function Shell(): ReactElement {
   useAppSubscriptions(pathname, current)
 
   const page = !current
+  const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName ?? id
   const crumbs: Crumb[] = current
     ? [
-        { label: 'Builds', onSelect: () => void navigate({ to: '/' }) },
         {
-          label: current,
+          label: labelOf(current),
           menu: {
             label: 'Switch build',
-            items: builds.map((b) => ({ id: b.name, label: b.name })),
+            items: builds.map((b) => ({ id: b.name, label: b.displayName || b.name })),
             value: current,
             onSelect: (name) => void navigate({ to: '/build/$name', params: { name } })
           }
@@ -140,7 +145,12 @@ export function Shell(): ReactElement {
     badgeTone: 'attention',
     content: <AgentPanel />
   }
-  const panels: WorkbenchPanel[] = page ? [assistant] : [...screenPanels, assistant]
+  const chatEnabled = hasChatDock(current, screen)
+  const panels: WorkbenchPanel[] = page
+    ? []
+    : chatEnabled
+      ? [...screenPanels, assistant]
+      : screenPanels
 
   return (
     <>
@@ -149,13 +159,13 @@ export function Shell(): ReactElement {
         titleBar={
           <TitleBar
             crumbs={crumbs}
-            panelAction={page && <PanelToggle panel={assistant} />}
             onHome={() => void navigate({ to: '/' })}
             onSearch={() => setPalette(true)}
             setup={<SetupChip notices={notices} />}
             actions={links.map((l) => (
               <IconButton
                 key={l.to}
+                size="sm"
                 icon={l.icon}
                 label={l.label}
                 keys={'keys' in l ? l.keys : undefined}
@@ -182,22 +192,28 @@ export function Shell(): ReactElement {
         screens={
           page
             ? []
-            : SCREENS.map((s) =>
+            : BUILD_SCREENS.map((s) =>
                 s.id === 'review' && reviewAsked
                   ? {
-                      ...s,
+                      id: s.id,
+                      label: s.label,
+                      icon: SCREEN_ICONS[s.id],
+                      group: s.group,
                       badge: 'dot' as const,
                       badgeLabel: 'The agent is waiting',
                       badgeTone: 'attention' as const
                     }
                   : s.id === 'variants' && lanesAsking
                     ? {
-                        ...s,
+                        id: s.id,
+                        label: s.label,
+                        icon: SCREEN_ICONS[s.id],
+                        group: s.group,
                         badge: lanesAsking,
                         badgeLabel: `${lanesAsking} ${lanesAsking === 1 ? 'lane needs' : 'lanes need'} you`,
                         badgeTone: 'attention' as const
                       }
-                    : s
+                    : { id: s.id, label: s.label, icon: SCREEN_ICONS[s.id], group: s.group }
               )
         }
         screen={page ? '' : screen}
@@ -211,99 +227,29 @@ export function Shell(): ReactElement {
               }))
         }
         panels={panels}
-        status={<Status current={current} activity={!!current && screen === 'workspace'} />}
         skipLabel="Skip to the page"
       >
-        <AssistantBridge />
+        <AssistantBridge enabled={chatEnabled} />
         <Outlet />
       </WorkbenchShell>
       <Palette open={palette} setOpen={setPalette} current={current} />
+      <RenderStudioPortal />
+      <SheetViewerHost />
       <Toaster position="bottom-right" />
     </>
   )
 }
 
-/** A screen that asks for the assistant (useAgentPrefs.open) brings its dock to the front. */
-function AssistantBridge(): null {
+/** A screen that asks for the assistant (useAgentPrefs.open) brings its dock to the front once Chat is available. */
+function AssistantBridge({ enabled }: { enabled: boolean }): null {
   const { dock } = useWorkbench()
   const asked = useAgentPrefs((s) => s.open)
   useEffect(() => {
-    if (!asked) return
+    if (!asked || !enabled) return
     dock({ type: 'open', id: 'assistant' })
     useAgentPrefs.setState({ open: false })
-  }, [asked, dock])
+  }, [asked, enabled, dock])
   return null
-}
-
-function Status({
-  current,
-  activity
-}: {
-  current: string | null
-  activity: boolean
-}): ReactElement {
-  const navigate = useNavigate()
-  const { dock } = useWorkbench()
-  const jobs = useJobs((s) => s.jobs)
-  const job = jobs.find((j) => j.state === 'running') ?? jobs[0]
-  const live = job?.state === 'running'
-  const elapsed = useElapsed(job?.started, live)
-  const availability = useAvailability()
-  const primary = useAgent((s) => s.primary)
-  const asks = useAgent((s) => Object.values(s.threads).reduce((n, t) => n + t.asks.length, 0))
-  const handCount = useEdits((s) => (s.build === current ? s.history.layer.size : 0))
-  const handSave = useEdits((s) => (s.build === current ? s.save : 'saved'))
-  const assistant: AssistantState =
-    primary.status === 'off'
-      ? 'off'
-      : asks
-        ? 'waiting'
-        : primary.status === 'idle'
-          ? 'idle'
-          : 'working'
-  const status: StatusJob | null = job
-    ? {
-        label: `${job.spec.build} · ${PART_LABEL[job.spec.part]}`,
-        stage: live ? job.stage : undefined,
-        elapsed: formatElapsed(
-          live ? elapsed : Math.round(((job.ended ?? job.started) - job.started) / 1000)
-        ),
-        state: job.state,
-        onStop: live ? () => cancelJob(job.id) : undefined
-      }
-    : null
-  // jobs are newest first; the build's Activity dock has the log, another build opens on its Workspace
-  const recent: StatusJob[] = jobs.slice(0, 4).map((j) => ({
-    label: `${j.spec.build} · ${PART_LABEL[j.spec.part]}`,
-    state: j.state,
-    // a running job's live clock is in the bar itself
-    elapsed: j.ended ? formatElapsed(Math.round((j.ended - j.started) / 1000)) : undefined,
-    onOpen: () =>
-      j.spec.build === current
-        ? dock({ type: 'open', id: 'activity' })
-        : void navigate({ to: '/build/$name', params: { name: j.spec.build } })
-  }))
-  return (
-    <StatusBar
-      activity={activity}
-      handEdits={
-        handCount || handSave !== 'saved' ? { count: handCount, save: handSave } : undefined
-      }
-      job={status}
-      recent={recent}
-      needsYou={asks}
-      onNeedsYou={() => useAgentPrefs.setState({ open: true })}
-      engine={
-        availability.data
-          ? availability.data.requirements.engine.ok
-            ? 'ready'
-            : 'offline'
-          : undefined
-      }
-      assistant={assistant}
-      assistantName={PROVIDER_TEXT[primary.provider].name}
-    />
-  )
 }
 
 function Palette({
@@ -331,6 +277,8 @@ function Palette({
       .filter(([, d]) => d.requestId)
       .map(([b]) => b)
   )
+  const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName ?? id
+  const currentLabel = current ? labelOf(current) : null
   const gallery = (open: 'new' | 'import'): void => {
     void navigate({ to: '/' })
     useGalleryDialog.setState({ open })
@@ -341,10 +289,10 @@ function Palette({
       <CommandList>
         <CommandEmpty>Nothing found.</CommandEmpty>
         {current && (
-          <CommandGroup heading={current}>
+          <CommandGroup heading={currentLabel ?? current}>
             {(['proto', 'check'] as const).map((part) => (
               <CommandItem key={part} onSelect={go(() => runJob(current, part, opts))}>
-                {{ proto: 'Generate draft', check: 'Check build' }[part]}: {current}
+                {{ proto: 'Generate draft', check: 'Check build' }[part]}: {currentLabel}
                 {part === 'proto' && <CommandShortcut>Ctrl Enter</CommandShortcut>}
               </CommandItem>
             ))}
@@ -353,7 +301,11 @@ function Palette({
                 () => void navigate({ to: '/build/$name/ship', params: { name: current } })
               )}
             >
-              Export: {current}
+              Export: {currentLabel}
+            </CommandItem>
+            <CommandItem onSelect={go(() => openRenderStudio({ build: current }))}>
+              Render images: {currentLabel}
+              <CommandShortcut>Ctrl Shift E</CommandShortcut>
             </CommandItem>
           </CommandGroup>
         )}
@@ -361,7 +313,7 @@ function Palette({
           <CommandGroup heading="Running">
             {running.map((j) => (
               <CommandItem key={j.id} onSelect={go(() => cancelJob(j.id))}>
-                Stop build activity: {j.spec.build}
+                Stop build activity: {labelOf(j.spec.build)}
               </CommandItem>
             ))}
           </CommandGroup>
@@ -369,14 +321,15 @@ function Palette({
         <CommandGroup heading="Builds">
           {builds.map((b) => {
             const state = STATE_LABEL[buildState(b, busy, reviews)]
+            const display = b.displayName || b.name
             return (
               <CommandItem
                 key={b.name}
-                value={`${b.name} ${state} ${b.status[0] ?? ''}`}
+                value={`${display} ${b.name} ${state} ${b.status[0] ?? ''}`}
                 onSelect={go(() => void navigate({ to: '/build/$name', params: { name: b.name } }))}
               >
-                <span className="font-mono">{b.name}</span>
-                <span className="text-fg-muted">· {state}</span>
+                <span className="truncate font-medium">{display}</span>
+                <span className="shrink-0 text-fg-muted">· {state}</span>
               </CommandItem>
             )
           })}

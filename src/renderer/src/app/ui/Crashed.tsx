@@ -30,7 +30,6 @@ export function CrashedWindow(props: ErrorComponentProps): ReactElement {
       screen=""
       onScreenChange={() => {}}
       panels={[]}
-      status={null}
       skipLabel="Skip to the error"
     >
       <Crashed {...props} />

@@ -275,8 +275,13 @@ export class SchematicImports {
           meta.position = [0, 0, 0]
           meta.replace = []
           await writeFile(join(stage.stage, 'part.json'), JSON.stringify(meta))
-          await createBuild(stage.settings, name, this.options.env(stage.settings), stage.stage)
-          return { build: name }
+          const created = await createBuild(
+            stage.settings,
+            name,
+            this.options.env(stage.settings),
+            stage.stage
+          )
+          return { build: created }
         }
         if (!input.position || !stage.preview || input.revision !== stage.preview.revision)
           throw new Error('The placement preview is stale. Inspect the position again.')

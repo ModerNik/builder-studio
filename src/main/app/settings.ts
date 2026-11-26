@@ -2,7 +2,7 @@
 import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { SettingsSchema, type PathCheck, type Settings } from '@shared/api'
+import { DEFAULT_LINTER_SETTINGS, SettingsSchema, type PathCheck, type Settings } from '@shared/api'
 import { resolveLocations, runtimeEnv } from './locations'
 import { projectMinecraftVersion } from '../workspace/projects'
 import { findClaude, findJar } from '../runtime/detect'
@@ -35,7 +35,8 @@ const EMPTY: Settings = {
   pack: '',
   agentAllow: {},
   variantCap: 3,
-  appearance: { theme: 'dark', scale: 1 }
+  appearance: { theme: 'dark', scale: 1 },
+  linter: DEFAULT_LINTER_SETTINGS
 }
 let current: Settings | undefined
 

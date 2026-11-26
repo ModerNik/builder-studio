@@ -3,9 +3,9 @@ import type { ReactElement, Ref } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   Box,
+  Camera,
   Columns2,
   Diff as ChangesIcon,
-  Image,
   MoreHorizontal,
   Pyramid,
   Rocket
@@ -36,16 +36,15 @@ import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import { useProjection } from '@/entities/viewer/model/projection'
 import type { ComparisonMode } from '@/widgets/version-compare/ui/Compare'
 
-export type WorkspaceView = '3d' | 'sheet' | 'compare'
+export type WorkspaceView = '3d' | 'compare'
 
 const VIEW_ITEMS = [
   { id: '3d', label: '3D', icon: Box, keys: '1' },
-  { id: 'sheet', label: 'Preview', icon: Image, keys: '2' },
-  { id: 'compare', label: 'Compare', icon: Columns2, keys: '3' }
+  { id: 'compare', label: 'Compare', icon: Columns2, keys: '2' }
 ] as const
 const MODE_ITEMS = [
-  { id: 'side-by-side', label: 'Side by side', icon: Columns2, keys: '3' },
-  { id: 'changes', label: 'Highlight changes', icon: ChangesIcon, keys: '4' }
+  { id: 'side-by-side', label: 'Side by side', icon: Columns2, keys: '2' },
+  { id: 'changes', label: 'Highlight changes', icon: ChangesIcon, keys: '3' }
 ] as const
 // folds below 1100px of toolbar width
 const fold = '@max-[68.75rem]:sr-only'
@@ -113,6 +112,7 @@ function VersionSelect({
 }
 
 export function WorkspaceToolbar({
+  buildId,
   name,
   onUpgradeTarget,
   canUpgradeTarget,
@@ -125,6 +125,8 @@ export function WorkspaceToolbar({
   onMode,
   base,
   onBase,
+  canRender,
+  onRender,
   canDraft,
   onDraft,
   onDraftSettings,
@@ -135,6 +137,7 @@ export function WorkspaceToolbar({
   moreRef,
   onMenuCloseFocus
 }: {
+  buildId: string
   name: string
   onUpgradeTarget: () => void
   canUpgradeTarget: boolean
@@ -147,6 +150,8 @@ export function WorkspaceToolbar({
   onMode: (mode: ComparisonMode) => void
   base: { path: string } | null
   onBase: (path: string) => void
+  canRender: boolean
+  onRender: () => void
   canDraft: boolean
   onDraft: () => void
   onDraftSettings: () => void
@@ -222,8 +227,22 @@ export function WorkspaceToolbar({
           </>
         )}
         <span className="flex-1" />
+        <Tip
+          side="bottom"
+          label={
+            <>
+              Render &amp; export images
+              <Shortcut keys="Ctrl+Shift+E" />
+            </>
+          }
+        >
+          <Button size="sm" variant="outline" disabled={!canRender} onClick={onRender}>
+            <Camera aria-hidden="true" />
+            <span className={fold}>Render</span>
+          </Button>
+        </Tip>
         <Button size="sm" variant="primary" asChild>
-          <Link to="/build/$name/ship" params={{ name }}>
+          <Link to="/build/$name/ship" params={{ name: buildId }}>
             <Rocket aria-hidden="true" /> Export
           </Link>
         </Button>

@@ -31,18 +31,31 @@ describe('workspace helpers', () => {
     ])
   })
 
-  it('locates only checks the saved file agrees with', () => {
-    const where = { dark: [], gravity: [], palette: [] }
-    expect(locatableChecks(where, { dark: 2, gravity: 1 }).map(([k]) => k)).toEqual([
+  it('locates only checks the saved file agrees with and respects rule toggles', () => {
+    const where = { floating: [], dark: [], gravity: [], palette: [] }
+    expect(locatableChecks(where, { floating: 1, dark: 2, gravity: 1 }).map(([k]) => k)).toEqual([
       'dark',
       'gravity'
     ])
+    expect(
+      locatableChecks(where, { floating: 1, dark: 2, gravity: 1 }, undefined, {
+        floating: true,
+        dark: false
+      }).map(([k]) => k)
+    ).toEqual(['floating', 'gravity'])
     expect(
       locatableChecks(where, { dark: 2, gravity: 1 }, { dark: 2, gravity: 3 }).map(([k]) => k)
     ).toEqual(['dark'])
     expect(shiftedChecks({ dark: 2, gravity: 1 }, { dark: 2, gravity: 3, palette: 9 })).toEqual([
       'gravity'
     ])
+    expect(
+      shiftedChecks(
+        { dark: 2, gravity: 1 },
+        { dark: 2, gravity: 3, palette: 9 },
+        { gravity: false }
+      )
+    ).toEqual([])
   })
 
   it('names versions and centres parts', () => {

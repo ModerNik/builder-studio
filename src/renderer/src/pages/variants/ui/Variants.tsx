@@ -6,7 +6,7 @@
 import { useState, type ReactElement } from 'react'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { Columns3, Paperclip, Send, Square } from 'lucide-react'
-import type { Ref } from '@shared/api'
+import { DEFAULT_LINTER_SETTINGS, type Ref } from '@shared/api'
 import { Button } from '@/shared/ui/primitives/button'
 import { Checkbox } from '@/shared/ui/primitives/checkbox'
 import { Field } from '@/shared/ui/primitives/field'
@@ -33,6 +33,7 @@ import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import { buildUrl } from '@/shared/lib/urls'
 import { useAvailability } from '@/entities/availability/model/availability'
 import { useBuild, useShow } from '@/entities/build/model/builds'
+import { openSheetViewer } from '@/features/render-studio/model/store'
 import { useSettings } from '@/entities/settings/model/settings'
 import {
   busy,
@@ -47,7 +48,7 @@ import { useAgentModels } from '@/features/agent-chat/model/composer'
 import { useVariants, type Lane } from '@/features/agent-chat/model/variants'
 import { blank, useReview } from '@/entities/review/model/review'
 import { refPath, useRefs } from '@/entities/ref/model/refs'
-import { lintProblems } from '@/shared/lib/format'
+import { hasEnabledLintRule, lintProblems } from '@/shared/lib/format'
 
 export function Variants(): ReactElement {
   const { name } = useParams({ from: '/build/$name/variants' })
@@ -365,6 +366,7 @@ function LaneColumn({
 }): ReactElement {
   const navigate = useNavigate()
   const available = useAvailability().data?.features.variants.ok
+  const linter = useSettings().data?.linter ?? DEFAULT_LINTER_SETTINGS
   const s = data.state
   const running = !!s && busy(s)
   const state = laneState(data)
@@ -409,14 +411,18 @@ function LaneColumn({
         onShowFile={(path, sheet) => {
           const build = /^builds\/(.+?)\/out\//.exec(path)?.[1]
           if (!build) return
-          useShow.setState(
-            sheet
-              ? { path: null, sheet: path, t: Date.now() }
-              : { path, sheet: null, t: Date.now() }
-          )
+          if (sheet) {
+            openSheetViewer({ build, path, mtime: Date.now() })
+            return
+          }
+          useShow.setState({ path, sheet: null, t: Date.now() })
           void navigate({ to: '/build/$name', params: { name: build } })
         }}
-        lintProblems={lintProblems}
+        lintProblems={(counts) =>
+          linter.enabled && hasEnabledLintRule(linter.rules)
+            ? lintProblems(counts, linter.rules)
+            : undefined
+        }
         fileUrl={buildUrl}
         empty={
           <div className="flex flex-col gap-2 p-3">

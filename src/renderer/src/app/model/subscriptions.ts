@@ -2,11 +2,16 @@
 import { useEffect } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { toast } from 'sonner'
-import type { ReviewRequest } from '@shared/api'
-import { studio } from '@/shared/api/studio'
+import type { BuildSummary, ReviewRequest } from '@shared/api'
+import { queryClient, studio } from '@/shared/api/studio'
 import { useShow } from '@/entities/build/model/builds'
 import { PART_LABEL, useJobs } from '@/entities/job/model/jobs'
 import { useReview } from '@/entities/review/model/review'
+import { openSheetViewer } from '@/features/render-studio/model/store'
+
+const buildLabel = (id: string): string =>
+  queryClient.getQueryData<BuildSummary[]>(['builds'])?.find((b) => b.name === id)?.displayName ||
+  id
 
 /** Mounted once by the Shell: `pathname` is the current route, `current` the open build's name. */
 export function useAppSubscriptions(pathname: string, current: string | null): void {
@@ -17,7 +22,7 @@ export function useAppSubscriptions(pathname: string, current: string | null): v
     const show = (r: ReviewRequest): void => {
       useReview.getState().open(r)
       void navigate({ to: '/build/$name/review', params: { name: r.build } })
-      toast(`The agent asks for a review of ${r.build}`, { description: r.question })
+      toast(`The agent asks for a review of ${buildLabel(r.build)}`, { description: r.question })
     }
     void studio.review.pending().then((rs) => rs.forEach(show))
     const stopRequest = studio.review.onRequest(show)
@@ -38,8 +43,7 @@ export function useAppSubscriptions(pathname: string, current: string | null): v
       void navigate({ to: '/build/$name', params: { name: build } })
     })
     const offSheet = studio.app.onSheet(({ path, build }) => {
-      useShow.setState({ path: null, sheet: path, t: Date.now() })
-      void navigate({ to: '/build/$name', params: { name: build } })
+      openSheetViewer({ build, path, mtime: Date.now() })
     })
     return () => {
       offShow()
@@ -80,7 +84,9 @@ export function useAppSubscriptions(pathname: string, current: string | null): v
       studio.jobs.onUpdate((u) => {
         if (u.kind !== 'end') return
         const job = useJobs.getState().jobs.find((j) => j.id === u.id)
-        const what = job ? `${PART_LABEL[job.spec.part]}: ${job.spec.build}` : 'Build activity'
+        const what = job
+          ? `${PART_LABEL[job.spec.part]}: ${buildLabel(job.spec.build)}`
+          : 'Build activity'
         if (u.state === 'done') toast.success(`${what} complete`)
         else if (u.state === 'failed')
           toast.error(`${what} failed`, {

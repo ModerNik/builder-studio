@@ -14,7 +14,7 @@ export type DockSide = 'right' | 'bottom'
 export interface DockPanelSpec {
   id: string
   side: DockSide
-  /** Open on first use at wide; at desktop only right panels open by default (Activity folds into the status bar). */
+  /** Open on first use at wide; at desktop only right panels open by default (Activity starts closed). */
   defaultOpen?: boolean
 }
 export type SheetSize = 'half' | 'full'
@@ -145,6 +145,26 @@ export function fitCount(
   return widths.length
 }
 
+/**
+ * When a kept item (e.g. the active tab) would overflow, returns how many leading items fit beside
+ * that kept item (`keepWidth`) and the More button without clipping either.
+ */
+export function fitLeadingWithKept(
+  widths: number[],
+  available: number,
+  gap: number,
+  moreWidth: number,
+  keepWidth: number
+): number {
+  let used = moreWidth + keepWidth + gap
+  if (used > available) return 0
+  for (let i = 0; i < widths.length; i++) {
+    used += widths[i] + gap
+    if (used > available) return i
+  }
+  return widths.length
+}
+
 /** A value kept per viewer in localStorage; private windows and blocked storage fall back to `fallback`. */
 /** A remembered layout with a panel id renamed (the Editor dock was `inspector`), so it stays open. */
 export function renamePanel<T extends DockState & { sizes?: Record<string, number> }>(
@@ -200,7 +220,12 @@ export function useContainerWidth(ref: RefObject<HTMLElement | null>): number {
 export function useFit(
   container: RefObject<HTMLElement | null>,
   measure: RefObject<HTMLElement | null>,
-  { moreWidth, pinned = 0 }: { moreWidth: number; pinned?: number }
+  {
+    moreWidth,
+    pinned = 0,
+    keepIndex,
+    keepExtra = 0
+  }: { moreWidth: number; pinned?: number; keepIndex?: number; keepExtra?: number }
 ): number | null {
   const [count, setCount] = useState<number | null>(null)
   useEffect(() => {
@@ -209,22 +234,35 @@ export function useFit(
     if (!box || !row) return
     const update = (): void => {
       const items = [...row.children] as HTMLElement[]
+      const widths = items.map((el) => el.offsetWidth)
       const gap = parseFloat(getComputedStyle(row).columnGap) || 0
-      setCount(
-        fitCount(
-          items.map((el) => el.offsetWidth),
-          box.clientWidth,
+      const base = fitCount(widths, box.clientWidth, gap, moreWidth, pinned)
+      if (
+        keepIndex !== undefined &&
+        keepIndex >= 0 &&
+        keepIndex < widths.length &&
+        base < widths.length &&
+        keepIndex >= base
+      ) {
+        const kept = widths[keepIndex] + keepExtra
+        const leading = fitLeadingWithKept(
+          widths.slice(0, keepIndex),
+          box.clientWidth - pinned,
           gap,
           moreWidth,
-          pinned
+          kept
         )
-      )
+        // return leading + 1 so the caller's `[...screens.slice(0, fit - 1), current]` keeps `leading` items
+        setCount(leading + 1)
+        return
+      }
+      setCount(base)
     }
     const observer = new ResizeObserver(update)
     observer.observe(box)
     observer.observe(row)
     return () => observer.disconnect()
-  }, [container, measure, moreWidth, pinned])
+  }, [container, measure, moreWidth, pinned, keepIndex, keepExtra])
   return count
 }
 

@@ -41,7 +41,7 @@ You can write and edit the script yourself, collaborate with an AI assistant dir
 
 ### 🧱 Live 3D view and hand editor
 
-Inspect every version in a live Three.js 3D viewport rendered with your own Minecraft textures, complete with an interactive axis gizmo, a vertical Y-level clip slider to see inside, and preview render sheets. Switch to the **Editor** panel to modify blocks directly by hand — place, erase, pick, brush, paint, fill, stamp shapes, sculpt terrain, transform selections, measure with the ruler, and undo or redo every edit. Compare any two versions side by side or highlight added, removed, and changed blocks in 3D.
+Inspect every version in a live Three.js 3D viewport rendered with your own Minecraft textures, complete with an interactive axis gizmo, a vertical Y-level clip slider to see inside, and preview render sheets. Switch to the **Editor** panel to modify blocks directly by hand — place, erase, pick, brush, paint, fill, stamp shapes, sculpt terrain, transform selections, measure with the ruler, and undo or redo every edit. Compare any two versions side by side or highlight added, removed, and changed blocks in 3D. Open **Render Studio** (`Ctrl+Shift+E`) to craft showcase renders with lighting presets, aspect framing, multi-angle sheets and up to 4K export.
 
 ### 🤖 Built-in AI assistant (optional)
 
@@ -57,19 +57,19 @@ Explore 2 to 6 directions simultaneously from a single brief or review. Each lan
 
 ### 🗺️ Fit builds to your world
 
-Pick a Minecraft save in **Build location**, render a top-down map of the area, drag out a footprint with margins, copy `ORIGIN = (x, y, z)`, and export terrain data (`terrain.npz`). World saves are always read through copies — Builder Studio never writes to your Minecraft world.
+Pick a Minecraft save in **Build location** to explore the Overworld, Nether, or End in an interactive 3D world map (**3D**, **Iso**, or **2D**). Scout a terrain footprint before drafting or preview your live 3D `.litematic` build directly on the terrain with position handles, ground snap, and 90° rotation, then save `terrain.npz`, `site.json`, and `ORIGIN = (x, y, z)` in `build.py` with one click. World saves are always read through copies — Builder Studio never writes to your Minecraft world.
 
 ### 🧩 Parts, checks, and materials
 
-Browse builds by named parts, colour-code or isolate parts in 3D, send selected parts to the assistant with their exact coordinates and code lines, run structural lint checks (floating blocks, missing support, gravity blocks, dark areas, fire risk, invalid states, and more), and inspect full material counts.
+Browse builds by named parts, colour-code or isolate parts in 3D, send selected parts to the assistant with their exact coordinates and code lines, run optional structural lint checks with per-rule and 3D highlight toggles (floating blocks, missing support, gravity blocks, dark areas, fire risk, invalid states, and more), and inspect full material counts.
 
 ### 🎨 Reference board and Labs
 
-Keep a per-build reference board (paste screenshots, drop images, save links and notes, and attach them to prompts) and use **Labs** to explore block palettes, colour gradients with shade checks, kit catalogs, and prefab libraries.
+Keep a per-build reference board (paste screenshots, drop images, save links and notes, filter by type, zoom images in a lightbox, and attach them to chat prompts) and read each build's **Design Log** as a scannable journal of its status, brief, decisions, reviews and exports. Use **Labs** to explore block palettes, colour gradients with shade checks, kit catalogs, and prefab libraries.
 
-### 🚀 Confidence-checked export
+### 🚀 One-click automatic export
 
-The 10-step **Export** checklist verifies tool availability, requires zero lint issues, runs a full build, checks interior hollowing, lists materials with rare blocks flagged, reloads the schematic to confirm integrity, writes a results table to `DESIGN.md`, commits the build folder locally, and only then copies the output (`.litematic`, `.schem`, or `.schematic` depending on your project's Minecraft version) into your schematics folder. **Dry run** is enabled by default.
+**Export** (`Ctrl+7`, at the end of the build tabs) runs the full release flow from one button: verifies your setup and destination folder, runs enabled lint rules as non-blocking suggestions, builds and verifies the schematic in your chosen version-aware format (`.litematic`, `.schem`, `.nbt`, or `.schematic`), saves it to your schematics folder (or a per-session override), updates `DESIGN.md`, and commits `builds/<name>` locally.
 
 ### 📜 Plain files, Git history, and external agents (MCP)
 
@@ -108,7 +108,7 @@ Full documentation lives in [`src/renderer/src/pages/docs/content/`](src/rendere
 | [Getting started](src/renderer/src/pages/docs/content/getting-started.md)                 | Installation, first-run setup, build tools, updates                              |
 | [Workspace and files](src/renderer/src/pages/docs/content/workspace.md)                   | Workspace layout, build files, `DESIGN.md`, Git history, importing builds        |
 | [Building and viewing](src/renderer/src/pages/docs/content/building.md)                   | Gallery, 3D viewer, hand editor, Compare/Diff, Parts, Checks, keyboard shortcuts |
-| [Review, design log and export](src/renderer/src/pages/docs/content/review-and-export.md) | Visual reviews, block pins, Design log, 10-step Export checklist                 |
+| [Review, design log and export](src/renderer/src/pages/docs/content/review-and-export.md) | Visual reviews, block pins, Design log, automatic 1-button Export                |
 | [Planning tools](src/renderer/src/pages/docs/content/planning-tools.md)                   | Build location (site picker), References board, parallel Variants, Labs          |
 | [AI assistant](src/renderer/src/pages/docs/content/ai-assistant.md)                       | Claude, Codex, Ollama, permissions, sessions, slash commands, studio tools       |
 | [External agents (MCP)](src/renderer/src/pages/docs/content/external-agents.md)           | Loopback MCP server setup for Claude Code, Codex CLI, and Claude Desktop         |

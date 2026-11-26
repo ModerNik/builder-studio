@@ -1,585 +1,549 @@
-// Export (G6-5-EX, checklist with a detail pane): the ten steps stay one checklist, run top to bottom, with the
-// action at the end of each row. Clicking a row shows what that step produced beside it (below on tablet, in a
-// Sheet on phone): the job log, the bill as a table, the results rows, the git output. The full build finalizes
-// into a staging folder; Finalize and Git commit each ask first, and the dry run sends both to a temp folder
-// and `git status`. State and steps: ../model/useExport.ts.
-import { useRef, useState, type KeyboardEvent, type ReactElement, type ReactNode } from 'react'
+// Export (Variant A — Focused Card): a single primary button runs the full export pipeline
+// automatically (setup -> advisory lint -> build -> verify -> save -> DESIGN.md & Git commit).
+// Hollow count, Bill of materials, Dry run, and Rejected variants are omitted; format and
+// destination folder are configurable right inside the card. State and flow: ../model/useExport.ts.
+import type { KeyboardEvent, ReactElement, ReactNode } from 'react'
 import { Link, useParams } from '@tanstack/react-router'
+import {
+  Camera,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Circle,
+  CircleMinus,
+  FolderOpen,
+  LoaderCircle,
+  Rocket,
+  RotateCcw,
+  TriangleAlert,
+  X,
+  type LucideIcon
+} from 'lucide-react'
+import { EXPORT_FORMAT_INFO, type ExportFormat } from '@shared/minecraft'
+import { cn } from '@/shared/lib/utils'
+import { INFO, isLintRuleEnabled } from '@/shared/lib/format'
+import { checkLabel } from '@/entities/build/model/workspace'
 import { Button } from '@/shared/ui/primitives/button'
 import { Badge } from '@/shared/ui/primitives/badge'
-import { Field } from '@/shared/ui/primitives/field'
-import { Switch } from '@/shared/ui/primitives/switch'
-import { Skeleton } from '@/shared/ui/primitives/skeleton'
-import { DataTable, type Column } from '@/shared/ui/primitives/data-table'
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/shared/ui/primitives/sheet'
+import { Card } from '@/shared/ui/primitives/card'
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from '@/shared/ui/primitives/alert-dialog'
-import { ConfirmDestructive } from '@/shared/ui/feedback/ConfirmDestructive'
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger
+} from '@/shared/ui/primitives/collapsible'
+import { Skeleton } from '@/shared/ui/primitives/skeleton'
+import { Alert } from '@/shared/ui/feedback/Alert'
 import { PageHeader } from '@/shared/ui/layout/PageHeader'
-import { Checklist, ChecklistRow, type CheckStatus } from '@/shared/ui/data/progress'
 import { KeyValueList } from '@/shared/ui/data/values'
 import { LogViewer } from '@/shared/ui/code/LogViewer'
 import { CodeBlock } from '@/shared/ui/code/CodeBlock'
-import { useWorkbench } from '@/widgets/workbench-shell/model/context'
-import { endedText, isRare, jobStatus, lintText, percent, stacks } from '../model/ship'
-import { useExport } from '../model/useExport'
+import type { CheckStatus } from '@/shared/ui/data/progress'
+import { endedText, exceedsVanillaStructureLimit } from '../model/ship'
+import { useExport, type ExportStepId } from '../model/useExport'
+import { openRenderStudio } from '@/features/render-studio/model/store'
 
-const TITLES = [
-  'Connect and check setup',
-  'Lint zero',
-  'Full build',
-  'Hollow count',
-  'Bill of materials',
-  'Reload check',
-  'Finalize',
-  'Results table',
-  'Git commit',
-  'Rejected variants'
-]
+const STATUS_ICON: Record<CheckStatus, { icon: LucideIcon; cls: string; spoken: string }> = {
+  idle: { icon: Circle, cls: 'text-fg-muted', spoken: 'Not run' },
+  running: {
+    icon: LoaderCircle,
+    cls: 'text-state-running motion-safe:animate-spin',
+    spoken: 'Running'
+  },
+  done: { icon: Check, cls: 'text-success-text', spoken: 'Passed' },
+  failed: { icon: X, cls: 'text-danger-text', spoken: 'Failed' },
+  skipped: { icon: CircleMinus, cls: 'text-fg-muted', spoken: 'Skipped' },
+  warning: { icon: TriangleAlert, cls: 'text-warning-text', spoken: 'Suggestion' }
+}
 
 export function Ship(): ReactElement {
   const { name } = useParams({ from: '/build/$name/ship' })
   return <Export key={name} name={name} />
 }
 
+function StepIcon({ status }: { status: CheckStatus }): ReactElement {
+  const look = STATUS_ICON[status]
+  const Icon = look.icon
+  return (
+    <>
+      <Icon aria-hidden className={cn('size-4 shrink-0', look.cls)} strokeWidth={2.25} />
+      <span className="sr-only">{look.spoken}</span>
+    </>
+  )
+}
+
+function FormatSelector({
+  formats,
+  value,
+  disabled,
+  onChange
+}: {
+  formats: readonly ExportFormat[]
+  value: ExportFormat
+  disabled: boolean
+  onChange: (format: ExportFormat) => void
+}): ReactElement {
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number): void => {
+    if (disabled || formats.length <= 1) return
+    let next = -1
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') next = (index + 1) % formats.length
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp')
+      next = (index - 1 + formats.length) % formats.length
+    else if (e.key === 'Home') next = 0
+    else if (e.key === 'End') next = formats.length - 1
+    if (next < 0) return
+    e.preventDefault()
+    onChange(formats[next])
+    const buttons = e.currentTarget
+      .closest('[role="radiogroup"]')
+      ?.querySelectorAll<HTMLButtonElement>('[role="radio"]')
+    buttons?.[next]?.focus()
+  }
+
+  return (
+    <div role="radiogroup" aria-label="Export format" className="flex flex-wrap gap-2">
+      {formats.map((id, index) => {
+        const info = EXPORT_FORMAT_INFO[id]
+        const selected = id === value
+        return (
+          <button
+            key={id}
+            type="button"
+            role="radio"
+            aria-checked={selected}
+            tabIndex={selected ? 0 : -1}
+            disabled={disabled}
+            onClick={() => onChange(id)}
+            onKeyDown={(e) => onKeyDown(e, index)}
+            className={cn(
+              'focus-ring flex min-w-36 flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors duration-fast ease-standard disabled:cursor-not-allowed disabled:opacity-50',
+              selected
+                ? 'border-accent-solid bg-accent-subtle text-fg'
+                : 'border-border-default bg-surface-sunken text-fg-secondary can-hover:border-border-strong can-hover:text-fg'
+            )}
+          >
+            <span className="flex items-baseline gap-1.5 text-sm font-medium">
+              <span className="font-mono">{info.extension}</span>
+              <span>{info.label}</span>
+            </span>
+            <span className="text-xs text-fg-muted">{info.description}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
 function Export({ name }: { name: string }): ReactElement {
-  const { tier } = useWorkbench()
-  const [sheetOpen, setSheetOpen] = useState(false)
-  const pane = useRef<HTMLElement>(null)
   const {
-    availability,
     build,
-    settings,
-    targetPack,
-    dry,
-    setDry,
-    selected,
-    setSelected,
-    setup,
-    reload,
-    copied,
-    results,
-    commit,
-    deleted,
-    confirm,
-    setConfirm,
-    pending,
-    check,
-    full,
-    lint,
-    problems,
-    f,
-    built,
+    minecraftVersion,
+    supportedFormats,
+    format,
+    setFormat,
+    exportDir,
+    isCustomDir,
+    pickExportDir,
+    resetExportDir,
+    linter,
+    lintActive,
     busy,
-    bill,
-    rare,
-    engine,
-    gitOk,
-    noFolder,
-    rejected,
-    variant,
+    running,
+    hasRun,
+    expandedStep,
+    setExpandedStep,
+    setup,
+    lintStep,
+    buildStep,
+    verify,
+    save,
+    record,
+    outcome,
+    checkJob,
+    fullJob,
     logOf,
-    connect,
-    reloadCheck,
-    runSteps,
-    finalize,
-    writeResults,
-    message,
-    runCommit,
-    deleteRejected,
-    run
+    exportBuild,
+    cancelExport,
+    revealExported
   } = useExport(name)
 
-  const act = (label: string, onClick: () => void, disabled = false): ReactNode => (
-    <Button size="sm" variant="outline" disabled={disabled} onClick={onClick}>
-      {label}
-    </Button>
-  )
+  if (!build) {
+    return (
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-4 p-6" aria-busy="true">
+        <Skeleton className="h-7 w-32" />
+        <Skeleton className="h-48 w-full rounded-lg" />
+      </div>
+    )
+  }
 
-  // ── the ten rows ──
-  const lintFailed = check?.state === 'failed' || (problems !== null && problems > 0)
-  const buildOff = busy || problems !== 0 || !engine
-  const rows: { status: CheckStatus; label: string; detail?: ReactNode; action?: ReactNode }[] = [
+  const displayName = build.displayName || name
+
+  const steps: {
+    id: ExportStepId
+    title: string
+    status: CheckStatus
+    summary: string
+    badge?: ReactNode
+    content: ReactNode
+  }[] = [
     {
-      label: 'Connect and check setup',
+      id: 'setup',
+      title: 'Check setup',
       status: setup.status,
-      detail: setup.text,
-      action: act('Check', () => void connect(), busy)
-    },
-    {
-      label: 'Lint zero',
-      status: jobStatus(check, problems === 0),
-      detail: (
-        <span className={lintFailed ? 'text-danger-text' : undefined}>
-          {lint && (problems === 0 ? 'no problems' : lintText(lint.counts))}
-          {check?.state === 'failed' && ` job failed (exit ${check.code})`}
-        </span>
-      ),
-      action: act('Run check', () => run({ part: 'check', build: name }), busy || !engine)
-    },
-    {
-      label: 'Full build (finalizes into a staging folder)',
-      status: jobStatus(full),
-      detail:
-        full?.state === 'running'
-          ? `${full.stage ?? 'starting'}…`
-          : built
-            ? `${built.path} ${built.shape.join('×')}, paste at ${built.paste.join(', ')}${tier === 'phone' ? '' : `; ${f.done?.seconds ?? '?'}s`}`
-            : full?.state === 'failed'
-              ? `job failed (exit ${full.code}): ${logOf(full).at(-1) ?? ''}`
-              : problems !== 0
-                ? 'Lint must be zero first'
-                : undefined,
-      action: act(
-        'Build',
-        () => run({ part: 'full', build: name, ship: true, noRender: !targetPack.data }),
-        buildOff
+      summary: setup.summary || `Minecraft ${minecraftVersion}, engine, and destination folder`,
+      content: (
+        <p className="font-mono text-sm break-words text-fg-secondary">
+          {setup.summary || 'Verifies the engine runtime and export destination.'}
+        </p>
       )
     },
     {
-      label: 'Hollow count',
-      status: built ? (f.blocks ? 'done' : 'failed') : 'idle',
-      detail:
-        built && f.blocks
-          ? `${f.blocks.total.toLocaleString()} blocks, ${(f.blocks.hidden_removed ?? 0).toLocaleString()} hidden removed (${percent(f.blocks.hidden_removed ?? 0, f.blocks.total)}%)`
-          : undefined
-    },
-    {
-      label: 'Bill of materials, rare blocks flagged',
-      status: built && bill ? (rare.length ? 'warning' : 'done') : 'idle',
-      detail:
-        built && bill ? (
-          <>
-            {bill.total.toLocaleString()} blocks
-            {rare.length ? (
-              <span className="text-warning-text">
-                {tier === 'phone'
-                  ? ` · ${rare.length} rare`
-                  : ` · rare: ${rare.map(([s, c]) => `${s.replace('minecraft:', '')} ${c.toLocaleString()}`).join(', ')}`}
-              </span>
-            ) : (
-              ' · no rare blocks'
-            )}
-          </>
-        ) : undefined
-    },
-    {
-      label: 'Reload check (bridge reads the file back)',
-      status: reload.status,
-      detail: reload.text,
-      action: act(
-        'Reload',
-        () => void reloadCheck(),
-        busy || !built || !engine || reload.status === 'running'
-      )
-    },
-    {
-      label: dry ? 'Finalize (dry run: a temp folder)' : 'Finalize into the schematics folder',
-      status: noFolder ? 'warning' : copied.status,
-      detail: noFolder ? (
-        <>
-          Set the Exported schematics folder before a real Finalize. A dry run still works.{' '}
+      id: 'lint',
+      title: 'Lint check (advisory)',
+      status: lintStep.status,
+      summary:
+        lintStep.summary ||
+        (lintActive ? 'Suggestions only — never blocks export' : 'Linter is off in Settings'),
+      badge:
+        lintStep.status === 'warning' ? <Badge variant="warning">Suggestion</Badge> : undefined,
+      content: !lintActive ? (
+        <p className="text-sm text-fg-muted">
+          {!linter.enabled
+            ? 'Linter is turned off in Settings, so build suggestions are skipped.'
+            : 'All lint rules are turned off in Settings.'}{' '}
           <Link
             to="/settings"
-            search={{ section: 'minecraft' }}
-            className="font-sans text-accent-text underline-offset-4 can-hover:hover:underline"
+            search={{ section: 'linter' }}
+            className="text-accent-text underline-offset-4 can-hover:hover:underline"
           >
-            Open Settings › Minecraft
+            Open Settings › Linter
           </Link>
-        </>
-      ) : (
-        `${copied.text}${copied.status === 'done' && copied.dry ? ' (dry run)' : ''}`
-      ),
-      action: noFolder
-        ? undefined
-        : act(
-            'Finalize…',
-            () => setConfirm('finalize'),
-            busy || !built || (!dry && !availability?.features.export.ok)
-          )
-    },
-    {
-      label: 'Results table in the DESIGN.md log',
-      status: results.status,
-      detail: results.text,
-      action: act('Write', () => void writeResults(), !built || results.status === 'running')
-    },
-    {
-      label: dry
-        ? `Git commit (dry run: git status of builds/${name})`
-        : `Git commit builds/${name}`,
-      status: gitOk ? commit.status : 'skipped',
-      detail: gitOk
-        ? commit.text
-        : 'Git isn’t available, so nothing is committed. Settings › Build tools sets it up.',
-      action: gitOk ? act(dry ? 'Status' : 'Commit…', () => void runCommit(false), busy) : undefined
-    },
-    {
-      label: 'Rejected variants to delete',
-      status: !rejected.round ? 'skipped' : deleted !== null ? 'done' : 'idle',
-      detail: !rejected.round
-        ? 'No review with a pick yet, so nothing to delete.'
-        : deleted !== null
-          ? `review ${rejected.round.round} picked ${rejected.round.pick}: ${deleted} rejected ${deleted === 1 ? 'variant' : 'variants'} moved to the Recycle Bin`
-          : rejected.paths.length
-            ? `review ${rejected.round.round} picked ${rejected.round.pick}: ${rejected.paths.join(', ')}`
-            : `review ${rejected.round.round} picked ${rejected.round.pick}; nothing left to delete`,
-      action: rejected.round
-        ? act('Delete…', () => setConfirm('reject'), !rejected.paths.length || busy)
-        : undefined
-    }
-  ]
-
-  const select = (n: number): void => {
-    setSelected(n)
-    if (tier === 'phone') setSheetOpen(true)
-    else if (tier === 'tablet')
-      requestAnimationFrame(() => pane.current?.scrollIntoView({ block: 'nearest' }))
-  }
-  // ↑ ↓ move between the rows' select buttons
-  const onKey = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return
-    const buttons = [...e.currentTarget.querySelectorAll<HTMLButtonElement>('ol > li > button')]
-    const at = buttons.indexOf(document.activeElement as HTMLButtonElement)
-    if (at < 0) return
-    e.preventDefault()
-    const next =
-      buttons[Math.min(Math.max(at + (e.key === 'ArrowDown' ? 1 : -1), 0), buttons.length - 1)]
-    next.focus()
-  }
-
-  // ── the detail pane ──
-  const billRows = [...(bill?.top ?? [])]
-    .sort((a, b) => (tier === 'phone' ? Number(isRare(b[0])) - Number(isRare(a[0])) : 0))
-    .map(([block, count]) => ({ block, count }))
-  const billColumns: Column<{ block: string; count: number }>[] = [
-    {
-      key: 'block',
-      header: 'Block',
-      cell: (r) => <span className="font-mono">{r.block.replace('minecraft:', '')}</span>,
-      sortValue: (r) => r.block
-    },
-    {
-      key: 'count',
-      header: 'Count',
-      align: 'end',
-      cell: (r) => r.count.toLocaleString(),
-      sortValue: (r) => r.count
-    },
-    ...(tier === 'phone'
-      ? []
-      : [
-          {
-            key: 'stacks',
-            header: 'Stacks',
-            align: 'end' as const,
-            cell: (r: { count: number }) => stacks(r.count)
-          }
-        ]),
-    {
-      key: 'rare',
-      header: 'Rare',
-      cell: (r) => (isRare(r.block) ? <Badge variant="warning">Rare</Badge> : null)
-    }
-  ]
-  const shown = (bill?.top ?? []).reduce((s, [, c]) => s + c, 0)
-
-  function detail(n: number): ReactNode {
-    const nothing = <p className="text-sm text-fg-muted">Not run yet.</p>
-    switch (n) {
-      case 1:
-        return setup.text ? (
-          <p className="font-mono text-sm break-words">{setup.text}</p>
-        ) : (
-          <p className="text-sm text-fg-muted">
-            Check asks again for the engine, rendering and the export destination.
-          </p>
-        )
-      case 2:
-        return check ? (
-          <div className="flex flex-col gap-3">
-            {lint && (
-              <KeyValueList
-                items={Object.entries(lint.counts).map(([k, c]) => ({
-                  label: k,
-                  value: String(c),
-                  mono: true
-                }))}
-              />
-            )}
-            <LogViewer
-              lines={logOf(check)}
-              streaming={check.state === 'running'}
-              label="Lint check log"
+        </p>
+      ) : checkJob ? (
+        <div className="flex flex-col gap-3">
+          {lintStep.counts && (
+            <KeyValueList
+              items={Object.entries(lintStep.counts).map(([k, c]) => ({
+                label: checkLabel(k),
+                value:
+                  !INFO.has(k) && !isLintRuleEnabled(k, linter.rules) ? `${c} (off)` : String(c),
+                mono: true
+              }))}
             />
-          </div>
-        ) : (
-          nothing
-        )
-      case 3:
-        return full ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-fg-secondary">
-              {full.state === 'running'
-                ? `${full.stage ?? 'Starting'}. Streaming: scroll up to pause.`
-                : full.state === 'failed'
-                  ? `Failed at ${endedText(full)}.`
-                  : `Finished at ${endedText(full)}.`}
-            </p>
-            <LogViewer
-              lines={logOf(full)}
-              streaming={full.state === 'running'}
-              label="Full build log"
-              height="h-96"
-            />
-          </div>
-        ) : problems !== 0 ? (
-          <p className="text-sm text-fg-muted">Lint must be zero first.</p>
-        ) : (
-          nothing
-        )
-      case 4:
-        return built && f.blocks ? (
-          <KeyValueList
-            items={[
-              { label: 'Blocks', value: f.blocks.total.toLocaleString() },
-              { label: 'Hidden removed', value: (f.blocks.hidden_removed ?? 0).toLocaleString() },
-              {
-                label: 'Share removed',
-                value: `${percent(f.blocks.hidden_removed ?? 0, f.blocks.total)}%`
-              }
-            ]}
+          )}
+          <LogViewer
+            lines={logOf(checkJob)}
+            streaming={checkJob.state === 'running'}
+            label="Advisory lint log"
+            height="h-48"
           />
-        ) : (
-          nothing
-        )
-      case 5:
-        return built && bill ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-fg-secondary">
-              {bill.total.toLocaleString()} blocks after hollowing, from the full build. Rare blocks
-              are slow or costly to gather in survival.
+        </div>
+      ) : (
+        <p className="text-sm text-fg-muted">
+          Runs enabled lint rules as suggestions without blocking export.
+        </p>
+      )
+    },
+    {
+      id: 'build',
+      title: 'Build schematic',
+      status: buildStep.status,
+      summary:
+        fullJob?.state === 'running'
+          ? `${fullJob.stage ?? 'starting'}…`
+          : buildStep.summary || `Builds full schematic (${EXPORT_FORMAT_INFO[format].extension})`,
+      content: fullJob ? (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-fg-secondary">
+            {fullJob.state === 'running'
+              ? `${fullJob.stage ?? 'Starting'}. Streaming: scroll up to pause.`
+              : fullJob.state === 'failed'
+                ? `Failed at ${endedText(fullJob)}.`
+                : `Finished at ${endedText(fullJob)}.`}
+          </p>
+          <LogViewer
+            lines={logOf(fullJob)}
+            streaming={fullJob.state === 'running'}
+            label="Full build log"
+            height="h-72"
+          />
+        </div>
+      ) : (
+        <p className="text-sm text-fg-muted">
+          Generates the full build and packages the schematic.
+        </p>
+      )
+    },
+    {
+      id: 'verify',
+      title: 'Verify export',
+      status: verify.status,
+      summary: verify.summary || 'Reads the packaged schematic back to confirm shape and blocks',
+      content: (
+        <p className="font-mono text-sm break-words text-fg-secondary">
+          {verify.summary || 'Waiting for the build step to finish.'}
+        </p>
+      )
+    },
+    {
+      id: 'save',
+      title: 'Save to folder',
+      status: save.status,
+      summary: save.summary || exportDir || 'No destination folder selected',
+      content: (
+        <div className="flex flex-col gap-2">
+          <p className="font-mono text-sm break-all text-fg-secondary">
+            {save.summary || exportDir || 'Choose an export folder above.'}
+          </p>
+          {outcome?.path && (
+            <div>
+              <Button size="sm" variant="outline" onClick={() => void revealExported()}>
+                <FolderOpen aria-hidden="true" /> Show in folder
+              </Button>
+            </div>
+          )}
+        </div>
+      )
+    },
+    {
+      id: 'record',
+      title: 'Update DESIGN.md & commit',
+      status: record.status,
+      summary: record.summary || `Logs export in DESIGN.md and commits builds/${name}`,
+      content: (
+        <div className="flex flex-col gap-3">
+          {record.designRows ? (
+            <>
+              <p className="text-sm text-fg-secondary">
+                Added to DESIGN.md as “{record.designTitle}”.{' '}
+                <Link
+                  to="/build/$name/log"
+                  params={{ name }}
+                  className="text-accent-text underline-offset-4 can-hover:hover:underline"
+                >
+                  Open Design log
+                </Link>
+              </p>
+              <KeyValueList items={record.designRows.map(([label, value]) => ({ label, value }))} />
+            </>
+          ) : (
+            <p className="text-sm text-fg-muted">
+              {record.summary || 'Updates DESIGN.md and commits locally after saving the file.'}
             </p>
-            <DataTable
-              label="Bill of materials"
-              columns={billColumns}
-              rows={billRows}
-              getRowId={(r) => r.block}
-              dense
-              className="max-h-[60vh]"
+          )}
+          {record.gitOutput && (
+            <CodeBlock code={record.gitOutput.trim()} title="git" lineNumbers={false} />
+          )}
+        </div>
+      )
+    }
+  ]
+
+  const nbtOversize = outcome && exceedsVanillaStructureLimit(outcome.format, outcome.shape)
+
+  return (
+    <div className="flex h-full min-w-0 flex-col overflow-auto">
+      <div className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-6 sm:px-6">
+        <PageHeader
+          title="Export"
+          description={`Builds ${displayName}, saves the schematic to your folder, logs the export in DESIGN.md, and commits automatically.`}
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!build.versions.length}
+                onClick={() => openRenderStudio({ build: name })}
+              >
+                <Camera aria-hidden="true" /> Render images…
+              </Button>
+              <Badge variant="outline" className="font-mono">
+                Minecraft {minecraftVersion}
+              </Badge>
+            </div>
+          }
+        />
+
+        <Card className="gap-4 p-5">
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-medium text-fg-secondary">Export format</span>
+            <FormatSelector
+              formats={supportedFormats}
+              value={format}
+              disabled={busy}
+              onChange={setFormat}
             />
-            {bill.total > shown && (
+            {format === 'nbt' && (
               <p className="text-sm text-fg-muted">
-                {(bill.total - shown).toLocaleString()} more blocks.
-                {!reload.bill && ' Top 30 only until the reload check reads the whole file.'}
+                Vanilla Structure Blocks cap loading at 48 × 48 × 48 in-game; WorldEdit, Axiom, and
+                datapacks load any size.
               </p>
             )}
           </div>
-        ) : (
-          nothing
-        )
-      case 6:
-        return reload.text ? (
-          <p className="font-mono text-sm break-words">{reload.text}</p>
-        ) : (
-          nothing
-        )
-      case 7:
-        return copied.text ? <p className="font-mono text-sm break-all">{copied.text}</p> : nothing
-      case 8:
-        return results.rows ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-sm text-fg-secondary">
-              Added at the end of DESIGN.md as “{results.title}”. The Status block is untouched.{' '}
-              <Link
-                to="/build/$name/log"
-                params={{ name }}
-                className="text-accent-text underline-offset-4 can-hover:hover:underline"
+
+          <div className="flex flex-col gap-2 border-t border-border-subtle pt-4">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-medium text-fg-secondary">Destination folder</span>
+              {isCustomDir && (
+                <Button size="xs" variant="ghost" disabled={busy} onClick={resetExportDir}>
+                  <RotateCcw aria-hidden="true" /> Reset to default
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div
+                title={exportDir || undefined}
+                className="min-w-0 flex-1 truncate rounded-md border border-border-default bg-surface-sunken px-3 py-1.5 font-mono text-sm text-fg select-text"
               >
-                Open in Design log
-              </Link>
+                {exportDir || 'No destination folder configured'}
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => void pickExportDir()}
+              >
+                Change…
+              </Button>
+            </div>
+            {!exportDir && (
+              <p className="text-sm text-warning-text">
+                Choose a destination folder above, or set a default in{' '}
+                <Link
+                  to="/settings"
+                  search={{ section: 'minecraft' }}
+                  className="text-accent-text underline-offset-4 can-hover:hover:underline"
+                >
+                  Settings › Minecraft
+                </Link>
+                .
+              </p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border-subtle pt-4">
+            <p className="text-sm text-fg-muted">
+              {lintActive
+                ? 'Linter runs as a non-blocking suggestion · DESIGN.md & Git commit automatic.'
+                : 'Linter is off · DESIGN.md & Git commit automatic.'}
             </p>
-            <KeyValueList items={results.rows.map(([label, value]) => ({ label, value }))} />
+            {running ? (
+              <Button variant="outline" onClick={() => void cancelExport()}>
+                Cancel export
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                disabled={busy || !exportDir}
+                onClick={() => void exportBuild()}
+              >
+                <Rocket aria-hidden="true" />
+                {outcome ? 'Export again' : 'Export build'}
+              </Button>
+            )}
           </div>
-        ) : results.text ? (
-          <p className="font-mono text-sm">{results.text}</p>
-        ) : (
-          nothing
-        )
-      case 9:
-        return commit.output ? (
-          <CodeBlock code={commit.output} title="git" lineNumbers={false} />
-        ) : commit.text ? (
-          <p className="font-mono text-sm">{commit.text}</p>
-        ) : (
-          nothing
-        )
-      default:
-        return rejected.paths.length ? (
-          <ul className="font-mono text-sm">
-            {rejected.paths.map((p) => (
-              <li key={p}>{p}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm text-fg-muted">{rows[9].detail}</p>
-        )
-    }
-  }
-  const heading = `${selected} · ${TITLES[selected - 1]}`
-  const badge =
-    selected === 5 && rare.length ? <Badge variant="warning">{rare.length} rare</Badge> : null
+        </Card>
 
-  if (!build)
-    return (
-      <div className="flex flex-col gap-3 p-6" aria-busy="true" aria-label={`Loading ${name}…`}>
-        {TITLES.map((t) => (
-          <div key={t} className="flex items-center gap-3">
-            <Skeleton className="size-4.5 rounded-full" />
-            <Skeleton className="h-3 w-64" />
-          </div>
-        ))}
-      </div>
-    )
-
-  const side = tier === 'wide' || tier === 'desktop'
-  return (
-    <div className="flex h-full min-w-0 flex-col overflow-auto">
-      <PageHeader
-        title="Export"
-        description={
-          tier === 'phone'
-            ? `Takes ${variant} to your schematics folder, top to bottom.`
-            : `Takes ${variant} from builds/${name}/out/ to your schematics folder, one step at a time, top to bottom.`
-        }
-        className="px-4 pt-4 sm:px-6"
-        actions={
-          <div className="flex max-w-95 flex-col items-stretch gap-3 max-sm:w-full">
-            <Field
-              label="Dry run"
-              orientation="horizontal"
-              hint={
-                dry
-                  ? 'Finalize copies to a temp folder and Git only shows git status.'
-                  : 'Finalize writes into your schematics folder and Commit makes a real commit.'
-              }
-            >
-              <Switch checked={dry} onCheckedChange={setDry} />
-            </Field>
-            <Button disabled={busy} onClick={() => void runSteps()}>
-              Run steps 1 to 6
-            </Button>
-          </div>
-        }
-      />
-      <div
-        className={
-          side ? 'flex min-h-0 flex-1 gap-6 px-6 pt-4 pb-6' : 'flex flex-col gap-4 px-4 pt-4 pb-6'
-        }
-      >
-        <div onKeyDown={onKey} className={side ? 'w-150 shrink-0' : undefined}>
-          <Checklist label="Export steps, top to bottom">
-            {rows.map((r, i) => (
-              <ChecklistRow
-                key={i}
-                n={i + 1}
-                label={r.label}
-                status={r.status}
-                detail={r.detail || undefined}
-                action={r.action}
-                selected={tier !== 'phone' && selected === i + 1}
-                onSelect={() => select(i + 1)}
-              />
-            ))}
-          </Checklist>
-        </div>
-        {tier !== 'phone' && (
-          <section
-            ref={pane}
-            aria-label={heading}
-            className="flex min-w-0 flex-1 flex-col gap-3 rounded-lg border border-border-subtle bg-surface-raised p-4"
+        {outcome && (
+          <Alert
+            tone={outcome.recordWarning ? 'warning' : 'success'}
+            title={`Exported ${outcome.fileName}`}
+            action={
+              <>
+                <Button size="sm" variant="outline" onClick={() => void revealExported()}>
+                  <FolderOpen aria-hidden="true" /> Show in folder
+                </Button>
+                <Button size="sm" variant="outline" asChild>
+                  <Link to="/build/$name/log" params={{ name }}>
+                    Open Design log
+                  </Link>
+                </Button>
+              </>
+            }
           >
-            <h2 className="flex items-center gap-2 font-medium">
-              {heading} {badge}
-            </h2>
-            {detail(selected)}
-          </section>
+            <p className="font-mono text-sm tabular-nums">
+              {outcome.shape.join(' × ')} · paste at {outcome.paste.join(', ')}
+              {outcome.lintCount > 0 && (
+                <span className="text-warning-text">
+                  {' '}
+                  · {outcome.lintCount} lint{' '}
+                  {outcome.lintCount === 1 ? 'suggestion' : 'suggestions'}
+                </span>
+              )}
+            </p>
+            {nbtOversize && (
+              <p className="mt-1 text-sm text-warning-text">
+                Dimensions exceed vanilla Structure Block’s 48 × 48 × 48 in-game limit (WorldEdit,
+                Axiom, and datapacks can still load it).
+              </p>
+            )}
+            {outcome.recordWarning && (
+              <p className="mt-1 text-sm text-warning-text">
+                Schematic saved, but DESIGN.md / Git step reported: {outcome.recordWarning}
+              </p>
+            )}
+          </Alert>
+        )}
+
+        {hasRun ? (
+          <Card className="gap-0 divide-y divide-border-subtle overflow-hidden p-0">
+            {steps.map((step) => {
+              const open = expandedStep === step.id
+              return (
+                <Collapsible
+                  key={step.id}
+                  open={open}
+                  onOpenChange={(next) => setExpandedStep(next ? step.id : null)}
+                >
+                  <CollapsibleTrigger asChild>
+                    <button
+                      type="button"
+                      aria-busy={step.status === 'running' || undefined}
+                      className="focus-ring flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors duration-fast ease-standard can-hover:bg-surface-hover"
+                    >
+                      <StepIcon status={step.status} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={cn(
+                              'text-base font-medium',
+                              step.status === 'skipped' && 'text-fg-muted'
+                            )}
+                          >
+                            {step.title}
+                          </span>
+                          {step.badge}
+                        </div>
+                        <p
+                          className={cn(
+                            'truncate font-mono text-sm text-fg-secondary',
+                            step.status === 'failed' && 'text-danger-text',
+                            step.status === 'warning' && 'text-warning-text'
+                          )}
+                        >
+                          {step.summary}
+                        </p>
+                      </div>
+                      {open ? (
+                        <ChevronDown aria-hidden className="size-4 shrink-0 text-fg-muted" />
+                      ) : (
+                        <ChevronRight aria-hidden className="size-4 shrink-0 text-fg-muted" />
+                      )}
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent className="border-t border-border-subtle bg-surface-panel px-4 py-3 pl-11">
+                    {step.content}
+                  </CollapsibleContent>
+                </Collapsible>
+              )
+            })}
+          </Card>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border-default px-4 py-3 text-sm text-fg-muted">
+            Automatic flow: Check setup → Lint (advisory) → Build schematic → Verify export → Save
+            to folder → DESIGN.md &amp; Git commit
+          </div>
         )}
       </div>
-
-      <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-        <SheetContent side="bottom" className="overflow-auto">
-          <SheetHeader>
-            <SheetTitle className="flex items-center gap-2">
-              {heading} {badge}
-            </SheetTitle>
-          </SheetHeader>
-          <div className="px-4 pb-4">{detail(selected)}</div>
-        </SheetContent>
-      </Sheet>
-
-      <AlertDialog open={confirm === 'finalize'} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Finalize?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Copies <span className="font-mono">{built?.path.split('/').pop()}</span> to{' '}
-              {dry ? (
-                'a temp folder (dry run)'
-              ) : (
-                <span className="font-mono">{settings?.schematics}</span>
-              )}
-              , replacing a file of the same name there.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void finalize()}>Finalize</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={confirm === 'commit'} onOpenChange={(o) => !o && setConfirm(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Commit builds/{name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Stages and commits this build’s folder only, as “{message}”. Nothing else in the repo,
-              and nothing is pushed:
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <CodeBlock
-            code={pending.trim() || '(nothing to commit)'}
-            lineNumbers={false}
-            maxHeight="max-h-48"
-          />
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => void runCommit(true)}>Commit</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-      <ConfirmDestructive
-        open={confirm === 'reject'}
-        onOpenChange={(o) => !o && setConfirm(null)}
-        title={`Delete ${rejected.paths.length} rejected ${rejected.paths.length === 1 ? 'variant' : 'variants'}?`}
-        action="Move to Recycle Bin"
-        onConfirm={() => void deleteRejected()}
-      >
-        <p>Each .litematic with its _3d/ and _ctx/ renders goes to the Recycle Bin:</p>
-        <ul className="font-mono text-sm">
-          {rejected.paths.map((p) => (
-            <li key={p}>{p}</li>
-          ))}
-        </ul>
-      </ConfirmDestructive>
     </div>
   )
 }

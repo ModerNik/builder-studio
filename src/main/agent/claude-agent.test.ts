@@ -168,6 +168,41 @@ it('rewinds to the message immediately before a Claude prompt', async () => {
   expect(sdk.tag).toHaveBeenCalledWith('fork', 'tower', { dir: 'workspace' })
 })
 
+it('forks through a Claude prompt and its reply (including tool results), and tags history points', async () => {
+  sdk.history.mockResolvedValue([
+    { uuid: 'u1', type: 'user', message: { content: 'First prompt' } },
+    {
+      uuid: 'a1',
+      type: 'assistant',
+      message: { content: [{ type: 'tool_use', id: 't1', name: 'Read', input: {} }] }
+    },
+    {
+      uuid: 'tr1',
+      type: 'user',
+      message: { content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }] }
+    },
+    { uuid: 'a1-final', type: 'assistant', message: { content: [{ type: 'text', text: 'Done' }] } },
+    { uuid: 'u2', type: 'user', message: { content: 'Second prompt' } },
+    { uuid: 'a2', type: 'assistant', message: { content: [{ type: 'text', text: 'Sure' }] } }
+  ])
+  sdk.fork.mockReset()
+  sdk.fork.mockResolvedValue({ sessionId: 'forked' })
+  const agent = planner()
+  const history = await agent.history('source')
+  expect(history.filter((m) => m.type === 'user')).toEqual([
+    { type: 'user', id: 'u1:0', text: 'First prompt', point: 'u1' },
+    { type: 'user', id: 'u2:0', text: 'Second prompt', point: 'u2' }
+  ])
+  await expect(agent.fork('source', 'tower', 'u1')).resolves.toBe('forked')
+  expect(sdk.fork).toHaveBeenLastCalledWith('source', {
+    dir: 'workspace',
+    upToMessageId: 'a1-final'
+  })
+  await expect(agent.fork('source', 'tower', 'u2')).resolves.toBe('forked')
+  expect(sdk.fork).toHaveBeenLastCalledWith('source', { dir: 'workspace' })
+  await expect(agent.fork('source', 'tower', 'missing')).rejects.toThrow(/no longer/)
+})
+
 it('runs Claude only on the user API key and refuses a subscription login', async () => {
   await expect(planner(null).send(turn)).rejects.toThrow(/Anthropic API key/)
 

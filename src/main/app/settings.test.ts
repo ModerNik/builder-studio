@@ -84,6 +84,42 @@ describe('loading settings', () => {
     })
     expect(readFileSync(file, 'utf8')).toBe(raw)
   })
+
+  it('fills linter defaults on legacy and partial settings and saves rule toggles', async () => {
+    vi.resetModules()
+    state.dir = mkdtempSync(join(tmpdir(), 'studio settings linter '))
+    const file = join(state.dir, 'settings.json')
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 2,
+        workspace: 'workspace',
+        linter: { enabled: false, rules: { dark: false, floating: true } }
+      })
+    )
+    const { getSettings, setSettings } = await import('./settings')
+    const s = getSettings()
+    expect(s.linter).toEqual({
+      enabled: false,
+      rules: {
+        floating: true,
+        unattached: true,
+        gravity: true,
+        halves: true,
+        fire: true,
+        leaves: true,
+        invalid: true,
+        dark: false,
+        see_through: true,
+        groove: true
+      }
+    })
+    setSettings({
+      ...s,
+      linter: { enabled: true, rules: { ...s.linter.rules, gravity: false } }
+    })
+    expect(JSON.parse(readFileSync(file, 'utf8')).linter.rules.gravity).toBe(false)
+  })
 })
 
 it('looks for the Minecraft jar once per version in 5 seconds, not on every resolved() call', async () => {

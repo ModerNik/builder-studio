@@ -19,6 +19,7 @@ const OPERATION_FEATURES: Partial<Record<Channel, Feature>> = {
   'schematic:commit': 'engine',
   'ship:commit': 'commit',
   'ship:finalize': 'export',
+  'ship:reveal': 'browse',
   'builds:list': 'browse',
   'builds:deleteVersion': 'browse',
   'builds:rename': 'browse',
@@ -35,7 +36,8 @@ const OPERATION_FEATURES: Partial<Record<Channel, Feature>> = {
   'refs:remove': 'browse',
   'blocks:list': 'browse',
   'edits:read': 'browse',
-  'edits:save': 'browse'
+  'edits:save': 'browse',
+  'render:saveBuildPreview': 'browse'
 }
 const RUNTIME_EXCLUSIVE_CHANNELS = new Set<Channel>([
   'settings:set',
@@ -109,7 +111,8 @@ export function createHandle(ctx: IpcContext): Handle {
       const bridgeSpec = channel === 'bridge:call' ? BridgeCallSchema.parse(parsed) : null
       if (bridgeSpec)
         feature = ['render', 'compare'].includes(bridgeSpec.method) ? 'render' : 'engine'
-      if (channel === 'ship:finalize' && (parsed as { dry: boolean }).dry) feature = undefined
+      if (channel === 'ship:finalize' && (parsed as { targetDir?: string }).targetDir)
+        feature = 'browse'
       if (feature) {
         const scoped =
           jobSpec && feature === 'render'

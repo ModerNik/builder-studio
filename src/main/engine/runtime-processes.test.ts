@@ -75,6 +75,13 @@ it('runs jobs in the workspace with the shared environment and stages shipping i
   })
   jobs.clear()
   expect(jobs.list()).toEqual([])
+  jobs.run({ build: 'starter', part: 'full', ship: true, format: 'schem' })
+  expect(mock.spawn.mock.calls[1][1]).toEqual([
+    'builds/starter/build.py',
+    'full',
+    '--format',
+    'schem'
+  ])
 })
 
 it('batches job log lines, in order with events, and keeps the last MAX_JOB_LOG lines', () => {

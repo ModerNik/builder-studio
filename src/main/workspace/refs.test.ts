@@ -1,8 +1,16 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, readFileSync, unlinkSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { expect, it } from 'vitest'
-import { addAttachment, addRef, listRefs, removeRef, setRefNote, splitAttachments } from './refs'
+import {
+  addAttachment,
+  addRef,
+  listRefs,
+  removeRef,
+  setRefNote,
+  splitAttachments,
+  updateRef
+} from './refs'
 
 it('keeps links, notes and images in refs/index.json, images beside it', async () => {
   const dir = join(mkdtempSync(join(tmpdir(), 'studio-refs-')), 'refs')
@@ -20,8 +28,8 @@ it('keeps links, notes and images in refs/index.json, images beside it', async (
     note: 'gate'
   })
   expect([...readFileSync(join(dir, img.file!))]).toEqual([1, 2, 3])
-  addRef(dir, { kind: 'link', url: 'https://example.com/a b', note: '' })
-  addRef(dir, { kind: 'note', note: 'darker roofs' })
+  const link = addRef(dir, { kind: 'link', url: 'https://example.com/a b', note: '' })
+  const note = addRef(dir, { kind: 'note', note: 'darker roofs' })
   expect(listRefs(dir).map((r) => r.url ?? r.note)).toEqual([
     'gate',
     'https://example.com/a%20b',
@@ -38,9 +46,28 @@ it('keeps links, notes and images in refs/index.json, images beside it', async (
 
   setRefNote(dir, img.id, 'north gate')
   expect(listRefs(dir)[0].note).toBe('north gate')
+
+  // updateRef updates link URL + note and refuses empty note-kind updates or bad URLs
+  const updatedLink = updateRef(dir, link.id, {
+    url: 'https://minecraft.wiki/w/Castle',
+    note: 'tower silhouette'
+  })
+  expect(updatedLink.url).toBe('https://minecraft.wiki/w/Castle')
+  expect(updatedLink.note).toBe('tower silhouette')
+  expect(() => updateRef(dir, link.id, { url: 'javascript:alert(1)' })).toThrow(/not a web link/)
+  expect(() => updateRef(dir, note.id, { note: '   ' })).toThrow(/cannot be empty/)
+
+  // removing the image file on disk flags it as missing without writing `missing` into index.json
+  unlinkSync(join(dir, img.file!))
+  expect(listRefs(dir).find((r) => r.id === img.id)?.missing).toBe(true)
+  setRefNote(dir, img.id, 'still annotated')
+  expect(JSON.parse(readFileSync(join(dir, 'index.json'), 'utf8')).refs[0]).not.toHaveProperty(
+    'missing'
+  )
+
   const trashed: string[] = []
   await removeRef(dir, img.id, async (p) => void trashed.push(p))
-  expect(trashed).toEqual([join(dir, img.file!)])
+  expect(trashed).toEqual([]) // already gone on disk
   expect(listRefs(dir)).toHaveLength(2)
 
   // an index edited to point outside refs/ is refused, not followed

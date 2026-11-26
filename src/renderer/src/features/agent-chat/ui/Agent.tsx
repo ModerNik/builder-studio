@@ -31,9 +31,10 @@ import {
 } from '@/shared/ui/primitives/dialog'
 import { Input } from '@/shared/ui/primitives/input'
 import { Transcript as KitTranscript } from '@/features/agent-chat/ui/Transcript'
-import { SystemNote } from '@/features/agent-chat/ui/Messages'
+import { SystemNote, type MessageBubbleEditState } from '@/features/agent-chat/ui/Messages'
 import { buildUrl } from '@/shared/lib/urls'
 import { useShow } from '@/entities/build/model/builds'
+import { openSheetViewer } from '@/features/render-studio/model/store'
 import {
   busy,
   follow,
@@ -47,15 +48,25 @@ import {
   useThread
 } from '@/features/agent-chat/model/agent'
 import {
+  editMessageTurn,
   forkThread,
   permitActive,
   renameThread,
-  useRewind
+  useRewind,
+  useRewindPreview
 } from '@/features/agent-chat/model/panel'
 import type { Item } from '@/features/agent-chat/model/transcript'
-import type { AgentMode, PermissionAsk, Permit, SessionRef } from '@shared/api'
-import { lintProblems } from '@/shared/lib/format'
+import {
+  DEFAULT_LINTER_SETTINGS,
+  type AgentMode,
+  type PermissionAsk,
+  type Permit,
+  type SessionRef
+} from '@shared/api'
+import { hasEnabledLintRule, lintProblems } from '@/shared/lib/format'
+import { useBuild } from '@/entities/build/model/builds'
 import { useCurrentBuild } from '@/entities/build/model/current-build'
+import { useSettings } from '@/entities/settings/model/settings'
 import { useBriefDialog } from './BriefDialog'
 import { AgentThreads } from './AgentThreads'
 import { AgentComposer } from './AgentComposer'
@@ -87,6 +98,7 @@ function BuildAgent({ build }: { build: string }): ReactElement {
   const [panel, setPanel] = useState<'threads' | 'mcp' | 'context' | 'rename' | 'rewind' | null>(
     null
   )
+  const [rewindPoint, setRewindPoint] = useState<string | undefined>(undefined)
   const [title, setTitle] = useState('')
   const [renaming, setRenaming] = useState(false)
   const id = useThread((t) => t.id)
@@ -94,7 +106,10 @@ function BuildAgent({ build }: { build: string }): ReactElement {
   const state = useThread((t) => t.state)
   const savedTitle = useThread((t) => t.title)
   const ref = session ? { provider: state.provider, id: session } : null
-  const close = (): void => setPanel(null)
+  const close = (): void => {
+    setPanel(null)
+    setRewindPoint(undefined)
+  }
   const rename = async (name: string): Promise<void> => {
     if (!name.trim() || renaming) return
     setRenaming(true)
@@ -144,8 +159,11 @@ function BuildAgent({ build }: { build: string }): ReactElement {
           return
         }
         if (name === 'compact') void send(args ? `/compact ${args}` : '/compact', { command: true })
-        if (name === 'rewind') setPanel('rewind')
-        if (name === 'fork') forkThread(ref, build)
+        if (name === 'rewind') {
+          setRewindPoint(undefined)
+          setPanel('rewind')
+        }
+        if (name === 'fork') void forkThread(ref, build)
         break
     }
   }
@@ -185,11 +203,25 @@ function BuildAgent({ build }: { build: string }): ReactElement {
         </DropdownMenu>
       </div>
       {brief.dialog}
-      <ActiveTranscript build={build} onBrief={() => void brief.openBrief()} />
+      <ActiveTranscript
+        key={id}
+        build={build}
+        onBrief={() => void brief.openBrief()}
+        onRewind={(point) => {
+          setRewindPoint(point)
+          setPanel('rewind')
+        }}
+      />
       <AgentComposer onCommand={command} />
       {panel === 'context' && <ContextDialog context={state.context} onClose={close} />}
       {panel === 'rewind' && ref && (
-        <ActiveRewind key={ref.id} refId={ref} build={build} onClose={close} />
+        <ActiveRewind
+          key={`${ref.id}:${rewindPoint ?? ''}`}
+          refId={ref}
+          build={build}
+          initialPoint={rewindPoint}
+          onClose={close}
+        />
       )}
       {panel === 'rename' && (
         <Dialog
@@ -235,16 +267,19 @@ function BuildAgent({ build }: { build: string }): ReactElement {
 function ActiveRewind({
   refId,
   build,
+  initialPoint,
   onClose
 }: {
   refId: SessionRef
   build: string
+  initialPoint?: string
   onClose(): void
 }): ReactElement {
   const { point, setPoint, running, error, setError, points, preview, rewind } = useRewind(
     refId,
     build,
-    onClose
+    onClose,
+    initialPoint
   )
   return (
     <RewindDialog
@@ -274,24 +309,129 @@ function ActiveRewind({
 const workMode = (): AgentMode => 'auto'
 
 /** The active thread's transcript, bound to the store. */
-function ActiveTranscript({ build, onBrief }: { build: string; onBrief(): void }): ReactElement {
+function ActiveTranscript({
+  build,
+  onBrief,
+  onRewind
+}: {
+  build: string
+  onBrief(): void
+  onRewind(point: string): void
+}): ReactElement {
+  const id = useThread((t) => t.id)
+  const displayName = useBuild(build).data?.displayName || build
+  const session = useThread((t) => t.session)
   const items = useThread((t) => t.items)
   const asks = useThread((t) => t.asks)
   const state = useThread((t) => t.state)
   const mode = useThread((t) => t.mode)
   const sibling = useSiblingBusy()
   const loading = useAgent((s) => s.loading)
+  const working = busy(state)
+  const ref = session ? { provider: state.provider, id: session } : null
+  const [editTarget, setEditTarget] = useState<{
+    threadId: string
+    itemCount: number
+    id: string
+    point: string
+    attachments?: string[]
+  } | null>(null)
+  const [editSubmitting, setEditSubmitting] = useState(false)
+  const [editError, setEditError] = useState<string>()
+  const [forking, setForking] = useState(false)
+
+  const activeEdit =
+    editTarget && editTarget.threadId === id && editTarget.itemCount === items.length && !working
+      ? editTarget
+      : null
+  const editPreview = useRewindPreview(activeEdit ? ref : null, build, activeEdit?.point ?? null)
+  const previewValue = editPreview.error
+    ? { files: [], unavailable: errorMessage(editPreview.error) }
+    : editPreview.isFetching
+      ? undefined
+      : editPreview.data
+
+  const submitEdit = async (text: string, undoFiles: boolean): Promise<void> => {
+    if (!activeEdit || !ref || editSubmitting) return
+    const files = undoFiles && previewValue && !previewValue.unavailable ? previewValue.files : null
+    setEditSubmitting(true)
+    setEditError(undefined)
+    try {
+      await editMessageTurn(ref, build, activeEdit.point, text, files, activeEdit.attachments)
+      setEditTarget(null)
+    } catch (e) {
+      setEditError(errorMessage(e))
+      void editPreview.refetch()
+    } finally {
+      setEditSubmitting(false)
+    }
+  }
+
+  const handleFork = async (item: Extract<Item, { kind: 'user' }>): Promise<void> => {
+    if (!ref || !item.point || forking || working || editSubmitting) return
+    setEditTarget(null)
+    setEditError(undefined)
+    setForking(true)
+    try {
+      await forkThread(ref, build, item.point)
+    } finally {
+      setForking(false)
+    }
+  }
+
   const last = items.findLast((i) => i.kind === 'user')
   return (
     <Transcript
       items={items}
       asks={asks}
-      working={busy(state)}
+      working={working}
       onSwitchToAuto={
         state.provider === 'claude' && mode !== 'auto' ? () => void setMode('auto') : undefined
       }
       onImplementPlan={(editedPlan) => void implementPlan(editedPlan)}
       onRevisePlan={(feedback) => void revisePlan(feedback)}
+      onEditMessage={
+        ref
+          ? (item) => {
+              if (!item.point) return
+              setEditError(undefined)
+              setEditTarget({
+                threadId: id,
+                itemCount: items.length,
+                id: item.id,
+                point: item.point,
+                attachments: item.attachments
+              })
+            }
+          : undefined
+      }
+      onForkMessage={ref && state.capabilities.fork ? (item) => void handleFork(item) : undefined}
+      onRewindMessage={
+        ref
+          ? (item) => {
+              if (!item.point) return
+              setEditTarget(null)
+              setEditError(undefined)
+              onRewind(item.point)
+            }
+          : undefined
+      }
+      editingMessage={
+        activeEdit
+          ? {
+              id: activeEdit.id,
+              preview: previewValue,
+              submitting: editSubmitting,
+              error: editError,
+              onSubmit: (text, undoFiles) => void submitEdit(text, undoFiles),
+              onCancel: () => {
+                setEditTarget(null)
+                setEditError(undefined)
+              }
+            }
+          : undefined
+      }
+      messageActionsDisabled={working || forking || editSubmitting}
       empty={
         loading ? (
           <LoadingState label="Loading the conversation" layout="transcript" rows={5} />
@@ -299,9 +439,9 @@ function ActiveTranscript({ build, onBrief }: { build: string; onBrief(): void }
           <EmptyState
             icon={Bot}
             size="panel"
-            title={`Talk to the agent about ${build}`}
+            title={`Talk to the agent about ${displayName}`}
             action={
-              <Button variant="outline" disabled={busy(state)} onClick={onBrief}>
+              <Button variant="outline" disabled={working} onClick={onBrief}>
                 <FileText aria-hidden /> Write a brief
               </Button>
             }
@@ -312,14 +452,16 @@ function ActiveTranscript({ build, onBrief }: { build: string; onBrief(): void }
       }
     >
       {sibling && (
-        <SystemNote>Another thread is working on {build} too; their edits can collide.</SystemNote>
+        <SystemNote>
+          Another thread is working on {displayName} too; their edits can collide.
+        </SystemNote>
       )}
       {state.error && (
         <Alert
           tone="danger"
           title="The agent stopped"
           action={
-            last?.kind === 'user' && !busy(state) ? (
+            last?.kind === 'user' && !working ? (
               <Button size="sm" variant="outline" onClick={() => void send(last.text)}>
                 Retry message
               </Button>
@@ -350,6 +492,11 @@ export function Transcript({
   onSwitchToAuto,
   onImplementPlan,
   onRevisePlan,
+  onEditMessage,
+  onForkMessage,
+  onRewindMessage,
+  editingMessage,
+  messageActionsDisabled,
   empty,
   children
 }: {
@@ -360,10 +507,20 @@ export function Transcript({
   onSwitchToAuto?: () => void
   onImplementPlan?: (editedPlan?: string) => void
   onRevisePlan?: (feedback: string) => void
+  onEditMessage?: (item: Extract<Item, { kind: 'user' }>) => void
+  onForkMessage?: (item: Extract<Item, { kind: 'user' }>) => void
+  onRewindMessage?: (item: Extract<Item, { kind: 'user' }>) => void
+  editingMessage?: { id: string } & MessageBubbleEditState
+  messageActionsDisabled?: boolean
   empty?: React.ReactNode
   children?: React.ReactNode
 }): ReactElement {
   const navigate = useNavigate()
+  const linter = useSettings().data?.linter ?? DEFAULT_LINTER_SETTINGS
+  const countLint = (counts: Record<string, number>): number | undefined =>
+    linter.enabled && hasEnabledLintRule(linter.rules)
+      ? lintProblems(counts, linter.rules)
+      : undefined
   return (
     <KitTranscript
       items={items}
@@ -374,13 +531,22 @@ export function Transcript({
       planMode={workMode()}
       onImplementPlan={onImplementPlan}
       onRevisePlan={onRevisePlan}
+      onEditMessage={onEditMessage}
+      onForkMessage={onForkMessage}
+      onRewindMessage={onRewindMessage}
+      editingMessage={editingMessage}
+      messageActionsDisabled={messageActionsDisabled}
       onShowFile={(path, sheet) => {
         const build = /^builds\/(.+?)\/out\//.exec(path)?.[1]
         if (!build) return
-        reveal(path, sheet)
+        if (sheet) {
+          openSheetViewer({ build, path, mtime: Date.now() })
+          return
+        }
+        reveal(path, false)
         void navigate({ to: '/build/$name', params: { name: build } })
       }}
-      lintProblems={lintProblems}
+      lintProblems={countLint}
       fileUrl={buildUrl}
       empty={empty}
     >

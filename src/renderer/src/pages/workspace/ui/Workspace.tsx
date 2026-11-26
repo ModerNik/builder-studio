@@ -1,6 +1,6 @@
 // The Workspace screen (G6.1 A, viewer-first): toolbar, canvas, Editor and Activity. Data and labels
 // live in lib/workspace.ts and lib/analysis.ts; the parts are in app/workspace/*.
-import { useEffect, useRef, useState, type ReactElement } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import { createPortal } from 'react-dom'
 import { useParams } from '@tanstack/react-router'
 import { toast } from 'sonner'
@@ -9,11 +9,13 @@ import { Activity, PencilRuler } from 'lucide-react'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
 import { deleteVersion, useReportWorkspace } from '../model/actions'
 import { cancelJob } from '@/entities/job/model/jobs'
-import { buildUrl } from '@/shared/lib/urls'
 import { lastOf, useJobs } from '@/entities/job/model/jobs'
 import { useAvailability } from '@/entities/availability/model/availability'
-import { useBuild, useShow } from '@/entities/build/model/builds'
+import { clearShow, matchShow, useBuild, useShow } from '@/entities/build/model/builds'
 import { useMinecraftPack, useSettings } from '@/entities/settings/model/settings'
+import { useSaveSettings } from '@/entities/settings/model/save'
+import { DEFAULT_LINTER_SETTINGS, type LintRule } from '@shared/api'
+import { hasEnabledLintRule } from '@/shared/lib/format'
 import { useAgentPrefs } from '@/features/agent-chat/model/agent'
 import { useAskParts } from '@/entities/parts/model/parts'
 import { comparisonBaseline } from '@/widgets/version-compare/model/comparison'
@@ -21,13 +23,16 @@ import { useShortcuts } from '@/shared/lib/shortcuts'
 import { clearScreenPanels, setScreenPanels } from '@/widgets/workbench-shell/model/screenPanels'
 import { useResolvedTheme } from '@/shared/lib/theme'
 import { useVersionAnalysis } from '@/pages/workspace/model/analysis'
-import { JOB_LABELS, sheetOf } from '@/entities/build/model/workspace'
+import { JOB_LABELS } from '@/entities/build/model/workspace'
 import type { Cell, ViewerStats } from '@/entities/viewer/ui/BuildViewer'
 import type { ViewName } from '@/entities/viewer/model/look'
+import { useProjection } from '@/entities/viewer/model/projection'
+import type { StudioCameraPreset } from '@/entities/viewer/lib/cinematic/presets'
+import { openRenderStudio, openSheetViewer } from '@/features/render-studio/model/store'
 import { runJob, useRunOptions } from '@/entities/job/model/run'
 import { WorkspaceCompare, type ComparisonMode } from '@/widgets/version-compare/ui/Compare'
 import { WorkspaceToolbar, type WorkspaceView } from './Toolbar'
-import { CanvasState, SheetView, Stage3D } from './Canvas'
+import { CanvasState, Stage3D } from './Canvas'
 import { Editor, type EditorTab } from './Editor'
 import { ActivityPane } from './Activity'
 import { DeleteVersion, DraftSettings, StopJob, UpgradeTarget } from './dialogs'
@@ -37,6 +42,18 @@ import { useBlockEditor } from '@/widgets/block-editor/model/editor'
 
 const EMPTY_STATS: ViewerStats = { dims: null, loadMs: 0 }
 type Ping = { cell: Cell; t: number } | null
+const STUDIO_PRESET_VIEWS = new Set<string>([
+  'iso_se',
+  'iso_ne',
+  'iso_nw',
+  'iso_sw',
+  'top',
+  'eye_s',
+  'elev_s',
+  'elev_e',
+  'elev_n',
+  'elev_w'
+])
 
 export function Workspace(): ReactElement {
   const { name } = useParams({ from: '/build/$name' })
@@ -74,7 +91,6 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   const [importDraft, setImportDraft] = useState<string>()
   const [doomed, setDoomed] = useState<string | null>(null)
   const [stopAsk, setStopAsk] = useState(false)
-  const [shownSheet, setShownSheet] = useState<string | null>(null)
   const importDraftFailed =
     !!importDraft &&
     job?.spec.part === 'proto' &&
@@ -88,31 +104,51 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   // the Editor and Activity are shell docks; this screen draws into them through portals
   const [editorHost, setEditorHost] = useState<HTMLElement | null>(null)
   const [activityHost, setActivityHost] = useState<HTMLElement | null>(null)
-  const [panels] = useState((): WorkbenchPanel[] => [
-    {
-      id: 'editor',
-      side: 'right',
-      title: 'Editor',
-      icon: PencilRuler,
-      keys: 'Ctrl+I',
-      size: '--dock-editor',
-      defaultOpen: true,
-      content: <div ref={setEditorHost} className="flex h-full min-h-0 flex-col" />
-    },
-    {
-      id: 'activity',
-      side: 'bottom',
-      title: 'Activity',
-      icon: Activity,
-      keys: 'Ctrl+`',
-      size: '--dock-activity',
-      content: <div ref={setActivityHost} className="h-full min-h-0" />
-    }
-  ])
+  const [editorContent] = useState(() => (
+    <div ref={setEditorHost} className="flex h-full min-h-0 flex-col" />
+  ))
+  const [activityContent] = useState(() => <div ref={setActivityHost} className="h-full min-h-0" />)
+  const activityBadgeTone =
+    job?.state === 'running' ? 'running' : job?.state === 'failed' ? 'danger' : undefined
+  const activityBadgeLabel =
+    job?.state === 'running'
+      ? job.stage
+        ? `${JOB_LABELS[job.spec.part]}: ${job.stage}`
+        : `${JOB_LABELS[job.spec.part]} running`
+      : job?.state === 'failed'
+        ? `${JOB_LABELS[job.spec.part]} failed`
+        : undefined
+  const panels = useMemo<WorkbenchPanel[]>(
+    () => [
+      {
+        id: 'editor',
+        side: 'right',
+        title: 'Editor',
+        icon: PencilRuler,
+        keys: 'Ctrl+I',
+        size: '--dock-editor',
+        defaultOpen: true,
+        content: editorContent
+      },
+      {
+        id: 'activity',
+        side: 'bottom',
+        title: 'Activity',
+        icon: Activity,
+        keys: 'Ctrl+`',
+        size: '--dock-activity',
+        badge: activityBadgeTone ? 'dot' : undefined,
+        badgeTone: activityBadgeTone,
+        badgeLabel: activityBadgeLabel,
+        content: activityContent
+      }
+    ],
+    [editorContent, activityContent, activityBadgeTone, activityBadgeLabel]
+  )
   useEffect(() => {
     setScreenPanels(panels)
-    return clearScreenPanels
   }, [panels])
+  useEffect(() => clearScreenPanels, [])
   const height = stats.dims?.[1] ?? 0
 
   // a version this session wrote opens at once
@@ -122,30 +158,39 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     setPreviousWrite(wrote)
     if (wrote) setPicked(wrote)
   }
-  // the agent showed a version or a preview sheet (MCP show)
+  // the agent showed a version or a preview sheet (MCP show / show_sheet): consume once so
+  // reopening the Workspace tab later returns to 3D mode instead of replaying a stale preview
   const shown = useShow()
   const [previousShow, setPreviousShow] = useState<typeof shown | null>(null)
   if (previousShow !== shown) {
     setPreviousShow(shown)
-    if (shown.path?.startsWith(`builds/${name}/out/`)) {
-      setPicked(shown.path)
+    const match = matchShow(shown, name)
+    if (match && 'path' in match) {
+      setPicked(match.path)
       setTab('3d')
     }
-    if (shown.sheet?.startsWith(`builds/${name}/out/`)) {
-      setShownSheet(shown.sheet)
-      setTab('sheet')
-    }
   }
+  useEffect(() => {
+    const match = matchShow(shown, name)
+    if (!match) return
+    if ('sheet' in match) {
+      openSheetViewer({ build: name, path: match.sheet, mtime: Math.round(build?.mtime ?? 0) })
+    }
+    clearShow(shown)
+  }, [name, shown, build?.mtime])
 
   const writer = jobs.find((j) => version && lastOf(j).wrote?.path === version.path)
   const jobCounts = writer && lastOf(writer).lint?.counts
   const theme = useResolvedTheme()
+  const linter = settings?.linter ?? DEFAULT_LINTER_SETTINGS
+  const saveSettings = useSaveSettings()
   const a = useVersionAnalysis({
     version,
     engine,
     jobCounts,
     anchor: writer?.spec.part !== 'dump' && writer?.spec.sx != null ? 'edges' : undefined,
-    theme
+    theme,
+    linter
   })
   // hand edits draw over the newest version and are made there; other versions show their files as they are
   const edit = useBlockEditor({
@@ -166,7 +211,6 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     setStats(EMPTY_STATS)
     setClipY(null)
     setFocus(null)
-    setShownSheet(null)
   }
 
   useReportWorkspace(
@@ -180,7 +224,11 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   const run = useRunOptions((s) => s.byBuild[name]) ?? {}
   const setRun = useRunOptions((s) => s.set)
   const canDraft = !running && engine
-  const canCheck = !running && engine
+  const canCheck = !running && engine && linter.enabled && hasEnabledLintRule(linter.rules)
+  const onLinterEnabled = (enabled: boolean): void =>
+    saveSettings.mutate({ linter: { ...linter, enabled } })
+  const onLintRule = (rule: LintRule, enabled: boolean): void =>
+    saveSettings.mutate({ linter: { ...linter, rules: { ...linter.rules, [rule]: enabled } } })
   const start = (part: 'proto' | 'check'): void =>
     void runJob(name, part, {
       ...run,
@@ -203,20 +251,36 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     useAgentPrefs.setState({ open: true })
   }
 
+  const openRender = (): void => {
+    if (!version) return
+    openRenderStudio({
+      build: name,
+      versionPath: version.path,
+      initialView: STUDIO_PRESET_VIEWS.has(view) ? (view as StudioCameraPreset) : 'iso_se',
+      initialProjection: useProjection.getState().projection,
+      initialClipY: clipY
+    })
+  }
+
   useShortcuts([
     { keys: '1', label: '3D view', group: 'Workspace', run: () => showView('3d') },
-    { keys: '2', label: 'Preview', group: 'Workspace', run: () => showView('sheet') },
     {
-      keys: '3',
+      keys: '2',
       label: 'Compare side by side',
       group: 'Workspace',
       run: () => showView('compare', 'side-by-side')
     },
     {
-      keys: '4',
+      keys: '3',
       label: 'Highlight changes',
       group: 'Workspace',
       run: () => showView('compare', 'changes')
+    },
+    {
+      keys: 'Ctrl+Shift+E',
+      label: 'Render & export images',
+      group: 'Workspace',
+      run: () => version && openRender()
     },
     {
       keys: 'Ctrl+Enter',
@@ -236,16 +300,20 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     }
   ])
 
+  const displayName = build?.displayName || name
   const editor = (
     <Editor
       tab={editorTab}
       onTab={setEditorTab}
       a={a}
-      build={name}
+      build={displayName}
       edit={edit}
       onShowNewest={() => setPicked(null)}
       version={version}
       engine={engine}
+      linter={linter}
+      onLinterEnabled={onLinterEnabled}
+      onLintRule={onLintRule}
       jobCounts={jobCounts}
       canDraft={canDraft}
       onDraft={() => start('proto')}
@@ -257,7 +325,7 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
   )
   const standIn = (
     <CanvasState
-      name={name}
+      name={displayName}
       error={buildError}
       loading={isLoading}
       missing={!build}
@@ -268,13 +336,13 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
       onDraftSettings={() => setDraftOpen(true)}
     />
   )
-  const sheet = shownSheet ?? (version ? sheetOf(version) : build?.sheet)
   const panel = 'flex min-h-0 flex-1 flex-col'
 
   return (
     <div className="flex h-full min-w-0 flex-col">
       <WorkspaceToolbar
-        name={name}
+        buildId={name}
+        name={displayName}
         onUpgradeTarget={() => setUpgradeOpen(true)}
         canUpgradeTarget={!!build && !running}
         versions={build?.versions ?? []}
@@ -286,6 +354,8 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
         onMode={setMode}
         base={base}
         onBase={setBaseline}
+        canRender={!!version}
+        onRender={openRender}
         canDraft={canDraft}
         onDraft={() => start('proto')}
         onDraftSettings={() => setDraftOpen(true)}
@@ -316,14 +386,6 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
                 />
               )}
             </section>
-            {tab === 'sheet' && (
-              <section aria-label="Preview" className={panel}>
-                <SheetView
-                  key={sheet}
-                  src={sheet ? buildUrl(sheet, Math.round(build?.mtime ?? 0)) : null}
-                />
-              </section>
-            )}
             {compareVisited && (
               <section aria-label="Compare" className={panel} hidden={tab !== 'compare'}>
                 <WorkspaceCompare

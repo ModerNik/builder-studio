@@ -219,7 +219,7 @@ export class AgentService {
     this.d.emit('agent:state', this.state)
   }
 
-  async send(a: AgentSend): Promise<void> {
+  async send(a: AgentSend): Promise<string> {
     if (a.provider !== 'claude' || (a.resume && a.resume.provider !== 'claude'))
       throw new Error('Claude requires a Claude session')
     const live =
@@ -244,14 +244,16 @@ export class AgentService {
     }
     this.reviewAbort.abort()
     this.reviewAbort = new AbortController()
-    this.checkpoint = this.d.checkpoint ? randomUUID() : undefined
+    const uuid = randomUUID()
+    this.checkpoint = this.d.checkpoint ? uuid : undefined
     this.box!.push({
       type: 'user',
-      uuid: this.checkpoint,
+      uuid,
       message: { role: 'user', content },
       parent_tool_use_id: null
     })
     this.set({ status: 'running', error: null })
+    return uuid
   }
 
   /** The turn's text, with attached images inline and other attached files named for the agent to Read. */
@@ -630,9 +632,19 @@ export class AgentService {
     return msgs.flatMap((m) => claudeEvents({ ...m }))
   }
 
-  async fork(id: string, tag: string): Promise<string> {
+  async fork(id: string, tag: string, point?: string): Promise<string> {
     const dir = this.d.settings().workspace
-    const { sessionId } = await forkSession(id, { dir })
+    let upToMessageId: string | undefined
+    if (point) {
+      const messages = await getSessionMessages(id, { dir })
+      const isUserTurn = (m: (typeof messages)[number]): boolean =>
+        claudeEvents({ ...m }).some((e) => e.type === 'user')
+      const at = messages.findIndex((m) => m.uuid === point && isUserTurn(m))
+      if (at < 0) throw new Error('That turn is no longer in the conversation.')
+      const nextUser = messages.findIndex((m, idx) => idx > at && isUserTurn(m))
+      if (nextUser >= 0) upToMessageId = messages[nextUser - 1].uuid
+    }
+    const { sessionId } = await forkSession(id, upToMessageId ? { dir, upToMessageId } : { dir })
     await tagSession(sessionId, tag, { dir })
     return sessionId
   }

@@ -4,7 +4,7 @@
 .workbench-titlebar[data-chrome='app'] {
   -webkit-app-region: drag;
   height: var(--shell-titlebar);
-  padding-left: max(var(--space-3), env(titlebar-area-x, 0px));
+  padding-left: max(var(--space-4), env(titlebar-area-x, 0px));
   padding-right: max(
     var(--space-3),
     calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
@@ -13,15 +13,18 @@
 .workbench-titlebar[data-chrome='app'] :is(a, button, input, select, [role='button'], [tabindex]) {
   -webkit-app-region: no-drag;
 }
-/* Web and tablet: a plain header, a control plus 12px tall (44px with a mouse, 56px on touch) */
+/* Web and tablet: a plain header, matching the 44px bar on mouse and growing cleanly on touch */
 .workbench-titlebar[data-chrome='web'] {
-  height: calc(var(--density-control) + var(--space-3));
+  height: max(var(--shell-titlebar), calc(var(--density-control) + var(--space-2)));
+  padding-inline: var(--space-4);
+}
+[data-tier='phone'] .workbench-titlebar[data-chrome='web'] {
   padding-inline: var(--space-3);
 }
 /* Kit preview of the app title bar: a fixed caption inset instead of the window's */
 .workbench-titlebar[data-chrome='preview'] {
   height: var(--shell-titlebar);
-  padding-inline: var(--space-3) calc(var(--caption-inset, 0px) + var(--space-2));
+  padding-inline: var(--space-4) calc(var(--caption-inset, 0px) + var(--space-3));
 }
 
 /* Skip link: off screen until focused */
@@ -59,23 +62,10 @@
   container-type: inline-size;
 }
 .workbench-title-content {
-  --title-caption: 0px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  margin-inline-end: calc(-1 * var(--title-caption));
-}
-[data-chrome='preview'] > .workbench-title-content {
-  --title-caption: max(0px, calc(var(--caption-inset, 0px) + var(--space-2) - var(--space-3)));
-}
-[data-chrome='app'] > .workbench-title-content {
-  --title-caption: max(
-    0px,
-    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) - var(--space-3))
-  );
-}
-.workbench-title-actions {
-  justify-content: flex-end;
-  margin-inline-end: var(--title-caption);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 [data-chrome='app'] .workbench-title-actions:not(:empty)::after,
 [data-chrome='preview'] .workbench-title-actions:not(:empty)::after {
@@ -83,17 +73,41 @@
   flex: none;
   width: 1px;
   height: 1rem;
+  margin-inline-start: var(--space-1);
   background: var(--color-border-subtle);
 }
+[data-tier='tablet'] .workbench-title-search-trigger,
+[data-tier='phone'] .workbench-title-search-trigger {
+  width: max(2rem, var(--density-control-sm));
+  justify-content: center;
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+}
+[data-tier='tablet'] .workbench-title-search-trigger:hover,
+[data-tier='phone'] .workbench-title-search-trigger:hover {
+  border-color: transparent;
+  background: var(--color-surface-hover);
+  color: var(--color-fg);
+}
+[data-tier='tablet'] .workbench-title-search-trigger .workbench-search-label,
+[data-tier='phone'] .workbench-title-search-trigger .workbench-search-label {
+  display: none;
+}
 @container (width < 50rem) {
-  .workbench-title-search button {
-    width: var(--density-control-sm);
+  .workbench-title-search-trigger {
+    width: max(2rem, var(--density-control-sm));
     justify-content: center;
-    padding: 0;
+    padding-inline: 0;
     border-color: transparent;
     background: transparent;
   }
-  .workbench-title-search .workbench-search-label {
+  .workbench-title-search-trigger:hover {
+    border-color: transparent;
+    background: var(--color-surface-hover);
+    color: var(--color-fg);
+  }
+  .workbench-title-search-trigger .workbench-search-label {
     display: none;
   }
 }

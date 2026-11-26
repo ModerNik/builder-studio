@@ -23,10 +23,15 @@ export function PageOutline({
 }): ReactElement | null {
   if (!items.length) return null
   return (
-    <nav aria-label={label} className={cn('flex min-w-0 flex-col gap-2', className)}>
-      <p aria-hidden="true" className="px-3 text-xs text-fg-muted">
-        {label}
-      </p>
+    <nav
+      aria-label={label || 'On this page'}
+      className={cn('flex min-w-0 flex-col gap-2', className)}
+    >
+      {label && (
+        <p aria-hidden="true" className="px-3 text-xs text-fg-muted">
+          {label}
+        </p>
+      )}
       <ul className="flex flex-col border-s border-border-default">
         {items.map((h) => (
           <li key={h.id}>

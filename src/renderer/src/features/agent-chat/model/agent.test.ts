@@ -20,7 +20,7 @@ const state = vi.hoisted(() => ({
   onState: (() => {}) as (e: ThreadEvent<AgentState>) => void,
   onMsg: (() => {}) as (e: ThreadEvent<AgentMsg>) => void,
   api: {
-    send: vi.fn(async () => {}),
+    send: vi.fn(async () => 'turn-point-1' as string | undefined),
     history: vi.fn(async () => [] as AgentMsg[]),
     close: vi.fn(async () => {}),
     setMode: vi.fn(async () => {})
@@ -121,7 +121,8 @@ it('clears threads on provider switch, restores provider model preferences and s
   useAgentPrefs.setState({ mode: 'auto' })
   expect(useAgent.getState().threads[thread].items.at(-1)).toMatchObject({
     kind: 'user',
-    attachments: ['builds/tower/attachments/a.png']
+    attachments: ['builds/tower/attachments/a.png'],
+    point: 'turn-point-1'
   })
   useAgentPrefs.setState({ model: 'fixture-codex' })
   state.onState({

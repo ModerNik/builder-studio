@@ -4,7 +4,7 @@ import { STATE, type JobState } from './state'
 import { StatusDot } from './StatusDot'
 
 /**
- * What is live right now (engine, assistant, a job) as a pill for the status bar or a dock header.
+ * What is live right now (engine, assistant, a job) as a pill for a toolbar or a dock header.
  * It is a polite live region, so a change of label is announced; with onClick it becomes a button.
  */
 export function LiveStatusPill({
