@@ -100,6 +100,25 @@ describe('TitleBar', () => {
     expect(classes).toContain('shrink')
     expect(classes).not.toContain('shrink-0')
   })
+
+  it('includes the Builder Studio title inside the home button when shown', () => {
+    const html = renderToStaticMarkup(
+      wrapWorkbench(
+        'desktop',
+        [],
+        React.createElement(TitleBar, {
+          crumbs: [{ label: 'Settings' }],
+          onHome: () => {}
+        })
+      )
+    )
+
+    const homeButtonMatch = html.match(
+      /<button\b[^>]*aria-label="Builder Studio: all builds"[^>]*>[\s\S]*?<\/button>/
+    )
+    expect(homeButtonMatch?.[0]).toBeTruthy()
+    expect(homeButtonMatch?.[0]).toContain('Builder Studio')
+  })
 })
 
 describe('WindowControls', () => {
