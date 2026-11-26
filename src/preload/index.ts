@@ -12,6 +12,14 @@ function on(channel: string, cb: (payload: any) => void): () => void {
 }
 
 const studio: StudioApi = {
+  window: {
+    controls: process.platform !== 'darwin',
+    state: () => invoke('window:state'),
+    minimize: () => invoke('window:minimize'),
+    toggleMaximize: () => invoke('window:toggleMaximize'),
+    close: () => invoke('window:close'),
+    onState: (cb) => on('window:state', cb)
+  },
   setup: {
     prepare: () => invoke('setup:prepare'),
     suggestion: () => invoke('setup:suggestion'),

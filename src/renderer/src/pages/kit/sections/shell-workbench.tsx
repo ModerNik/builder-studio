@@ -16,6 +16,7 @@ import { useContainerWidth } from '@/shared/lib/layout'
 import { useShortcuts } from '@/shared/lib/shortcuts'
 import { WorkbenchShell } from '@/widgets/workbench-shell/ui/WorkbenchShell'
 import { TitleBar } from '@/widgets/workbench-shell/ui/TitleBar'
+import { WindowControls } from '@/widgets/workbench-shell/ui/WindowControls'
 import { EditorTabs } from '@/widgets/workbench-shell/ui/EditorTabs'
 import { Tabs, TabsContent } from '@/shared/ui/primitives/tabs'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
@@ -347,6 +348,7 @@ export default function WorkbenchDemo(): ReactElement {
   const [touch, setTouch] = useState(false)
   const [review, setReview] = useState(false)
   const [page, setPage] = useState(false)
+  const [maximized, setMaximized] = useState(false)
   const s = SIZES.find((x) => x.id === size)!
   return (
     <div className="space-y-3">
@@ -420,6 +422,30 @@ export default function WorkbenchDemo(): ReactElement {
           preview={{ captionInset: s.app && (s.w === 0 || s.w >= 1100) ? 138 : 0 }}
         />
       </DeviceFrame>
+      <div className="space-y-2 pt-2">
+        <h3 className="text-sm font-medium text-fg-secondary">Window controls</h3>
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex h-(--shell-titlebar) items-center gap-3 overflow-hidden rounded-md border border-border-default bg-surface ps-3">
+            <span className="text-sm text-fg-secondary">
+              Interactive ({maximized ? 'Maximized' : 'Restored'})
+            </span>
+            <WindowControls
+              maximized={maximized}
+              onMinimize={() => {}}
+              onToggleMaximize={() => setMaximized((v) => !v)}
+              onClose={() => {}}
+            />
+          </div>
+          <div className="flex h-(--shell-titlebar) items-center gap-3 overflow-hidden rounded-md border border-border-default bg-surface ps-3">
+            <span className="text-sm text-fg-secondary">Restored</span>
+            <WindowControls maximized={false} />
+          </div>
+          <div className="flex h-(--shell-titlebar) items-center gap-3 overflow-hidden rounded-md border border-border-default bg-surface ps-3">
+            <span className="text-sm text-fg-secondary">Maximized</span>
+            <WindowControls maximized={true} />
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

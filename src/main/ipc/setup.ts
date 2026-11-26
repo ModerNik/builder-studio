@@ -34,6 +34,14 @@ export function registerSetup(ctx: IpcContext, handle: Handle): void {
     saveSettings
   } = ctx
   const none = z.undefined()
+  handle('window:state', none, () => ({ maximized: !!state.win?.isMaximized() }))
+  handle('window:minimize', none, () => void state.win?.minimize())
+  handle('window:toggleMaximize', none, () => {
+    if (!state.win) return
+    if (state.win.isMaximized()) state.win.unmaximize()
+    else state.win.maximize()
+  })
+  handle('window:close', none, () => void state.win?.close())
   handle('setup:suggestion', none, () => join(app.getPath('userData'), 'workspace'))
   handle('runtime:delivery', none, () => source.delivery())
   handle('setup:prepare', none, () => {

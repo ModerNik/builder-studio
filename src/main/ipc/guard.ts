@@ -81,6 +81,10 @@ export function createHandle(ctx: IpcContext): Handle {
       if (
         state.workspaceBusy &&
         ![
+          'window:state',
+          'window:minimize',
+          'window:toggleMaximize',
+          'window:close',
           'workspace:state',
           'workspace:cancel',
           'workspace:open',

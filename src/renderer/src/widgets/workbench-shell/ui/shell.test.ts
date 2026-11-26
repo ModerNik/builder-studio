@@ -5,6 +5,7 @@ import { Activity, MessageCircle } from 'lucide-react'
 import { WorkbenchContext } from '../model/context'
 import { PanelToggle } from './PanelToggle'
 import { TitleBar } from './TitleBar'
+import { WindowControls } from './WindowControls'
 
 const wrapWorkbench = (
   tier: 'wide' | 'desktop' | 'tablet' | 'phone',
@@ -98,5 +99,32 @@ describe('TitleBar', () => {
     const classes = (switcherMatch?.[0].match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/)
     expect(classes).toContain('shrink')
     expect(classes).not.toContain('shrink-0')
+  })
+})
+
+describe('WindowControls', () => {
+  it('renders Minimize, Maximize and Close buttons when restored', () => {
+    const html = renderToStaticMarkup(React.createElement(WindowControls, { maximized: false }))
+
+    expect(html).toContain('aria-label="Minimize"')
+    expect(html).toContain('aria-label="Maximize"')
+    expect(html).toContain('aria-label="Close"')
+    expect(html).not.toContain('aria-label="Restore"')
+  })
+
+  it('switches Maximize to Restore when maximized', () => {
+    const html = renderToStaticMarkup(React.createElement(WindowControls, { maximized: true }))
+
+    expect(html).toContain('aria-label="Restore"')
+    expect(html).not.toContain('aria-label="Maximize"')
+  })
+
+  it('renders decorative preview controls without interactive buttons', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(WindowControls, { maximized: false, decorative: true })
+    )
+
+    expect(html).toContain('aria-hidden="true"')
+    expect(html).not.toContain('<button')
   })
 })

@@ -975,8 +975,21 @@ export const RenderSaveBuildPreviewSchema = z.object({
   data: NonEmptyBytes
 })
 
+export interface WindowState {
+  maximized: boolean
+}
+
 /** window.studio: everything the renderer may ask of main. */
 export interface StudioApi {
+  window: {
+    /** True on Windows and Linux where the renderer draws caption buttons in the title bar; false on macOS. */
+    controls: boolean
+    state(): Promise<WindowState>
+    minimize(): Promise<void>
+    toggleMaximize(): Promise<void>
+    close(): Promise<void>
+    onState(cb: (s: WindowState) => void): () => void
+  }
   setup: {
     suggestion(): Promise<string>
     prepare(): Promise<void>
@@ -1176,6 +1189,10 @@ export interface StudioApi {
 
 /** Invoke channels: `${group}:${name}`. */
 export const CHANNELS = [
+  'window:state',
+  'window:minimize',
+  'window:toggleMaximize',
+  'window:close',
   'setup:suggestion',
   'setup:prepare',
   'runtime:delivery',

@@ -1,16 +1,22 @@
 /* Workbench shell rules that utilities cannot express: the window title bar and the sheet motion. */
 
-/* Desktop app: the header is the window title bar; the OS draws its caption buttons over the right end */
+/* Desktop app: the header is the window title bar */
 .workbench-titlebar[data-chrome='app'] {
   -webkit-app-region: drag;
   height: var(--shell-titlebar);
   padding-left: max(var(--space-4), env(titlebar-area-x, 0px));
   padding-right: max(
-    var(--space-3),
+    var(--space-4),
     calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
   );
 }
-.workbench-titlebar[data-chrome='app'] :is(a, button, input, select, [role='button'], [tabindex]) {
+/* Windows & Linux: DOM caption buttons sit flush at the trailing edge of the title bar */
+.workbench-titlebar[data-chrome='app'][data-window-controls='custom'] {
+  padding-left: var(--space-4);
+  padding-right: 0;
+}
+.workbench-titlebar[data-chrome='app'] :is(a, button, input, select, [role='button'], [tabindex]),
+.workbench-window-controls {
   -webkit-app-region: no-drag;
 }
 /* Web and tablet: a plain header, matching the 44px bar on mouse and growing cleanly on touch */
@@ -21,10 +27,13 @@
 [data-tier='phone'] .workbench-titlebar[data-chrome='web'] {
   padding-inline: var(--space-3);
 }
-/* Kit preview of the app title bar: a fixed caption inset instead of the window's */
+/* Kit preview of the app title bar */
 .workbench-titlebar[data-chrome='preview'] {
   height: var(--shell-titlebar);
-  padding-inline: var(--space-4) calc(var(--caption-inset, 0px) + var(--space-3));
+  padding-inline: var(--space-4);
+}
+.workbench-titlebar[data-chrome='preview'][data-window-controls='preview'] {
+  padding-inline-end: 0;
 }
 
 /* Skip link: off screen until focused */
@@ -67,8 +76,8 @@
   justify-content: space-between;
   gap: var(--space-3);
 }
-[data-chrome='app'] .workbench-title-actions:not(:empty)::after,
-[data-chrome='preview'] .workbench-title-actions:not(:empty)::after {
+[data-window-controls='custom'] .workbench-title-actions:not(:empty)::after,
+[data-window-controls='preview'] .workbench-title-actions:not(:empty)::after {
   content: '';
   flex: none;
   width: 1px;
