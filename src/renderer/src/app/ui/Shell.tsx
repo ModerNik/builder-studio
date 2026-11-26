@@ -9,14 +9,22 @@ import { DropdownMenu } from 'radix-ui'
 import {
   BookOpen,
   Box,
+  Boxes,
+  Camera,
+  Download,
+  FlaskConical,
   GitBranch,
   Images,
   Map as MapIcon,
   MessageCircle,
+  Play,
+  Plus,
   Rocket,
   ScanEye,
+  ScanSearch,
   ScrollText,
   Settings as SettingsIcon,
+  Square,
   type LucideIcon
 } from 'lucide-react'
 import { Toaster } from '@/shared/ui/primitives/sonner'
@@ -288,20 +296,26 @@ function Palette({
         <CommandEmpty>Nothing found.</CommandEmpty>
         {current && (
           <CommandGroup heading={currentLabel ?? current}>
-            {(['proto', 'check'] as const).map((part) => (
-              <CommandItem key={part} onSelect={go(() => runJob(current, part, opts))}>
-                {{ proto: 'Generate draft', check: 'Check build' }[part]}: {currentLabel}
-                {part === 'proto' && <CommandShortcut>Ctrl Enter</CommandShortcut>}
-              </CommandItem>
-            ))}
+            {(['proto', 'check'] as const).map((part) => {
+              const Icon = part === 'proto' ? Play : ScanSearch
+              return (
+                <CommandItem key={part} onSelect={go(() => runJob(current, part, opts))}>
+                  <Icon aria-hidden="true" />
+                  {{ proto: 'Generate draft', check: 'Check build' }[part]}: {currentLabel}
+                  {part === 'proto' && <CommandShortcut>Ctrl Enter</CommandShortcut>}
+                </CommandItem>
+              )
+            })}
             <CommandItem
               onSelect={go(
                 () => void navigate({ to: '/build/$name/ship', params: { name: current } })
               )}
             >
+              <Rocket aria-hidden="true" />
               Export: {currentLabel}
             </CommandItem>
             <CommandItem onSelect={go(() => openRenderStudio({ build: current }))}>
+              <Camera aria-hidden="true" />
               Render images: {currentLabel}
               <CommandShortcut>Ctrl Shift E</CommandShortcut>
             </CommandItem>
@@ -311,6 +325,7 @@ function Palette({
           <CommandGroup heading="Running">
             {running.map((j) => (
               <CommandItem key={j.id} onSelect={go(() => cancelJob(j.id))}>
+                <Square aria-hidden="true" />
                 Stop build activity: {labelOf(j.spec.build)}
               </CommandItem>
             ))}
@@ -333,17 +348,29 @@ function Palette({
           })}
         </CommandGroup>
         <CommandGroup heading="Commands">
-          <CommandItem onSelect={go(() => gallery('new'))}>New build…</CommandItem>
-          <CommandItem onSelect={go(() => gallery('import'))}>Import builds…</CommandItem>
+          <CommandItem onSelect={go(() => gallery('new'))}>
+            <Plus aria-hidden="true" />
+            New build…
+          </CommandItem>
+          <CommandItem onSelect={go(() => gallery('import'))}>
+            <Download aria-hidden="true" />
+            Import builds…
+          </CommandItem>
           <CommandItem onSelect={go(() => void navigate({ to: '/settings' }))}>
+            <SettingsIcon aria-hidden="true" />
             Open Settings
             <CommandShortcut>Ctrl ,</CommandShortcut>
           </CommandItem>
-          <CommandItem onSelect={go(() => void navigate({ to: '/' }))}>All builds</CommandItem>
+          <CommandItem onSelect={go(() => void navigate({ to: '/' }))}>
+            <Boxes aria-hidden="true" />
+            All builds
+          </CommandItem>
           <CommandItem onSelect={go(() => void navigate({ to: '/labs' }))}>
+            <FlaskConical aria-hidden="true" />
             Labs: palette, kit catalog, prefabs
           </CommandItem>
           <CommandItem onSelect={go(() => void navigate({ to: '/docs' }))}>
+            <BookOpen aria-hidden="true" />
             Documentation
           </CommandItem>
         </CommandGroup>
