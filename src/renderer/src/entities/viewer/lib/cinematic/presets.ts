@@ -36,32 +36,32 @@ export interface CameraPresetSpec {
 export const STUDIO_CAMERA_PRESETS: readonly CameraPresetSpec[] = [
   {
     id: 'iso_se',
-    label: 'Isometric SE',
-    short: 'Iso SE',
+    label: 'Southeast',
+    short: 'SE',
     mode: 'isometric',
     pitch: 35.264,
     yaw: 45
   },
   {
     id: 'iso_ne',
-    label: 'Isometric NE',
-    short: 'Iso NE',
+    label: 'Northeast',
+    short: 'NE',
     mode: 'isometric',
     pitch: 35.264,
     yaw: 135
   },
   {
     id: 'iso_nw',
-    label: 'Isometric NW',
-    short: 'Iso NW',
+    label: 'Northwest',
+    short: 'NW',
     mode: 'isometric',
     pitch: 35.264,
     yaw: 225
   },
   {
     id: 'iso_sw',
-    label: 'Isometric SW',
-    short: 'Iso SW',
+    label: 'Southwest',
+    short: 'SW',
     mode: 'isometric',
     pitch: 35.264,
     yaw: 315
