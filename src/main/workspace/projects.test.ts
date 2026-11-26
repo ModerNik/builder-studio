@@ -166,19 +166,23 @@ describe('build file operations', () => {
     put('builds/ring/out/v1_3d/elev_s.png', 4000)
     expect((await listBuilds(r.root)).find((b) => b.name === 'ring')!.preview).toBeUndefined()
 
-    // Fallback to newest version's isometric render when no final/shipped build exists yet
+    // Fallback to newest version's isometric render when no exported build exists yet
+    utimesSync(join(r.root, 'builds/ring/out/v1.litematic'), 1000, 1000)
     put('builds/ring/out/v1_3d/iso_sw.png', 1000)
     expect((await listBuilds(r.root)).find((b) => b.name === 'ring')!.preview).toBe(
       'builds/ring/out/v1_3d/iso_sw.png'
     )
 
-    // Full build stem (matching folder name "ring") beats draft version v1
-    put('builds/ring/out/ring_3d/iso_se.png', 2000)
+    // A newer draft beats an older version even if the older one shares the build folder name
+    put('builds/ring/out/ring.litematic', 1500)
+    put('builds/ring/out/ring_3d/iso_se.png', 1500)
+    put('builds/ring/out/v2.litematic', 2500)
+    put('builds/ring/out/v2_3d/iso_se.png', 2500)
     expect((await listBuilds(r.root)).find((b) => b.name === 'ring')!.preview).toBe(
-      'builds/ring/out/ring_3d/iso_se.png'
+      'builds/ring/out/v2_3d/iso_se.png'
     )
 
-    // Shipped build in DESIGN.md beats everything else (preferring iso_se over iso_nw)
+    // Shipped/exported build in DESIGN.md beats drafts (preferring iso_se over iso_nw)
     writeFileSync(
       join(r.root, 'builds/ring/DESIGN.md'),
       '## Status\n### Shipped final_v3 (2026-11-25)\n'
@@ -195,7 +199,6 @@ describe('build file operations', () => {
     expect(customThumb.preview).toBe('builds/ring/out/final_v3_3d/preview.png')
 
     // A newer custom Render Studio thumbnail on a draft overrides an older shipped thumbnail
-    put('builds/ring/out/v2.litematic', 5000)
     put('builds/ring/out/v2_3d/preview.png', 6000)
     const newerThumb = (await listBuilds(r.root)).find((b) => b.name === 'ring')!
     expect(newerThumb.preview).toBe('builds/ring/out/v2_3d/preview.png')
