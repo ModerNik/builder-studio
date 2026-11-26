@@ -147,6 +147,31 @@ export class SchematicObject {
   }
 }
 
+/** Compute dynamic near/far clip planes so depth precision and far visibility hold for any build size. */
+export function computeClipPlanes(
+  projection: Projection,
+  distToCentre: number,
+  distToTarget: number,
+  radius: number
+): { near: number; far: number } {
+  const safeR = Math.max(radius, 1) * 1.2 + 4
+  const reach = Math.max(distToCentre, distToTarget)
+  if (projection === 'isometric') {
+    // Keep near > 0 for N8AO's depth shader while ensuring panned/zoomed large builds never clip.
+    return {
+      near: 0.1,
+      far: Math.max(safeR * 6, reach + safeR * 2.5)
+    }
+  }
+  const clearance = distToCentre - safeR
+  const near =
+    clearance > 1
+      ? Math.max(0.05, Math.min(clearance * 0.4, distToCentre * 0.02))
+      : Math.max(0.05, Math.min(0.5, distToTarget * 0.005))
+  const far = Math.max(200, reach + safeR * 2.5, near * 20)
+  return { near, far }
+}
+
 /** Both cameras on one set of orbit controls; 'change' fires on every camera move. */
 export class CameraManager extends THREE.EventDispatcher<{ change: object }> {
   readonly perspective = new THREE.PerspectiveCamera(60, 1, 0.05, 5000)
@@ -154,12 +179,17 @@ export class CameraManager extends THREE.EventDispatcher<{ change: object }> {
   readonly controls: OrbitControls
   active: THREE.PerspectiveCamera | THREE.OrthographicCamera = this.perspective
   private aspect = 1
+  private bounds: { centre: THREE.Vector3; radius: number } | null = null
+  private autoClip = true
 
   constructor(dom: HTMLElement) {
     super()
     this.controls = new OrbitControls(this.perspective, dom)
     this.controls.mouseButtons.MIDDLE = THREE.MOUSE.ROTATE // the wheel zooms; the middle button orbits
-    this.controls.addEventListener('change', () => this.changed())
+    this.controls.addEventListener('change', () => {
+      this.updateClipPlanes()
+      this.changed()
+    })
     this.perspective.position.set(20, 20, 20)
     this.perspective.lookAt(0, 0, 0)
   }
@@ -168,6 +198,35 @@ export class CameraManager extends THREE.EventDispatcher<{ change: object }> {
   }
   get target(): THREE.Vector3 {
     return this.controls.target
+  }
+  /** Track the scene's bounding box so near/far clip planes adapt cleanly as the camera orbits or zooms. */
+  setBounds(box: THREE.Box3): void {
+    if (box.isEmpty()) {
+      this.bounds = null
+      return
+    }
+    this.bounds = {
+      centre: box.getCenter(new THREE.Vector3()),
+      radius: Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1)
+    }
+    this.updateClipPlanes()
+  }
+  private updateClipPlanes(): void {
+    if (!this.autoClip) return
+    const cam = this.active
+    const distToTarget = cam.position.distanceTo(this.controls.target)
+    const centre = this.bounds?.centre ?? this.controls.target
+    const radius = this.bounds?.radius ?? Math.max(distToTarget * 0.5, 10)
+    const distToCentre = cam.position.distanceTo(centre)
+    const { near, far } = computeClipPlanes(this.projection, distToCentre, distToTarget, radius)
+    if (
+      Math.abs(cam.near - near) > Math.max(1e-4, cam.near * 1e-3) ||
+      Math.abs(cam.far - far) > Math.max(1e-2, cam.far * 1e-3)
+    ) {
+      cam.near = near
+      cam.far = far
+      cam.updateProjectionMatrix()
+    }
   }
   changed(): void {
     this.dispatchEvent({ type: 'change' })
@@ -188,18 +247,21 @@ export class CameraManager extends THREE.EventDispatcher<{ change: object }> {
     next.quaternion.copy(this.active.quaternion)
     this.active = next
     this.controls.object = next
+    this.updateClipPlanes()
     this.controls.update()
     this.changed()
   }
   /** Look from `dir` (pointing from the box to the camera) and fit the box in view, in the given projection. */
   frame(box: THREE.Box3, dir: THREE.Vector3, projection: Projection = this.projection): void {
+    this.autoClip = true
     this.setProjection(projection)
     const d = dir.clone().normalize()
     const centre = box.getCenter(new THREE.Vector3())
     const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 1)
+    this.bounds = { centre: centre.clone(), radius }
     const cam = this.active
     cam.up.set(0, 1, 0)
-    cam.position.copy(centre).addScaledVector(d, radius * 2)
+    cam.position.copy(centre).addScaledVector(d, radius * 2.5)
     cam.lookAt(centre)
     cam.updateMatrixWorld(true)
     const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0)
@@ -217,8 +279,6 @@ export class CameraManager extends THREE.EventDispatcher<{ change: object }> {
       cam.top = Math.max(h, w / this.aspect) * 1.05
       cam.bottom = -cam.top
       cam.zoom = 1
-      cam.near = 0.1
-      cam.far = radius * 4 + 1
       this.controls.maxDistance = Infinity
     } else {
       const tv = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2))
@@ -230,19 +290,21 @@ export class CameraManager extends THREE.EventDispatcher<{ change: object }> {
         )
       )
       cam.position.copy(centre).addScaledVector(d, dist * 1.05)
-      cam.near = 0.05
-      cam.far = Math.max(1000, 20 * radius)
+      this.controls.maxDistance = Infinity
     }
-    this.setAspect(this.aspect)
     this.controls.target.copy(centre)
+    this.updateClipPlanes()
+    this.setAspect(this.aspect)
     this.controls.update()
     this.changed()
   }
   /** Put the active camera at `pos` looking at `target`. */
-  lookAt(pos: THREE.Vector3, target: THREE.Vector3): void {
+  lookAt(pos: THREE.Vector3, target: THREE.Vector3, opts?: { keepClip?: boolean }): void {
+    if (opts?.keepClip !== undefined) this.autoClip = !opts.keepClip
     this.active.position.copy(pos)
     this.controls.target.copy(target)
     this.active.lookAt(target)
+    this.updateClipPlanes()
     this.controls.update()
     this.changed()
   }
@@ -430,8 +492,14 @@ export class Renderer {
     this.removeSchematic(id)
     this.objects.set(id, obj)
     this.scene.add(obj.group)
+    this.syncCameraBounds()
     this.invalidate()
     return obj
+  }
+  private syncCameraBounds(): void {
+    const box = new THREE.Box3()
+    for (const o of this.objects.values()) box.expandByObject(o.group)
+    this.cameras.setBounds(box)
   }
   getSchematic(id: string): SchematicObject | undefined {
     return this.objects.get(id)
@@ -442,6 +510,7 @@ export class Renderer {
   removeSchematic(id: string): void {
     this.objects.get(id)?.dispose()
     this.objects.delete(id)
+    this.syncCameraBounds()
     this.invalidate()
   }
   removeAll(): void {

@@ -130,7 +130,7 @@ export async function buildEmissiveLayer(
       toneMapped: false,
       polygonOffset: true,
       polygonOffsetFactor: -1,
-      polygonOffsetUnits: -1
+      polygonOffsetUnits: -2
     })
   const materials = [makeMat(false), makeMat(true), makeMat(false), makeMat(false)]
 
@@ -208,7 +208,8 @@ export async function buildEmissiveLayer(
       palette: schematic.palette,
       data: filtered
     }
-    const mesher = new Mesher(subSchematic, resources, colors)
+    // Cull emissive faces against the full schematic so buried glow faces never bleed through solid walls.
+    const mesher = new Mesher(subSchematic, resources, colors, schematic.data)
     await mesher.build(group, materials)
     group.traverse((o) => {
       if (o instanceof THREE.Mesh) {

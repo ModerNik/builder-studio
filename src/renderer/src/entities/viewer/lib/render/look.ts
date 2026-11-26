@@ -40,6 +40,99 @@ export interface Scene {
   bg: THREE.Color
 }
 
+/** Fit a directional light's orthographic shadow frustum tightly around `box` (and optional ground shadow). */
+export function fitDirectionalShadow(
+  sun: THREE.DirectionalLight,
+  box: THREE.Box3,
+  lightDir: THREE.Vector3,
+  mapSize: number,
+  includeGroundShadow = false
+): void {
+  const dir = lightDir.clone().normalize()
+  const centre = box.getCenter(new THREE.Vector3())
+  const size = box.getSize(new THREE.Vector3())
+  const radius = Math.max(size.length() / 2, 1)
+
+  sun.position.copy(centre).addScaledVector(dir, radius * 2.5)
+  sun.target.position.copy(centre)
+  sun.updateMatrixWorld(true)
+  sun.target.updateMatrixWorld(true)
+
+  const cam = sun.shadow.camera
+  cam.up.set(0, Math.abs(dir.y) > 0.995 ? 0 : 1, Math.abs(dir.y) > 0.995 ? -1 : 0)
+  cam.position.copy(sun.position)
+  cam.lookAt(centre)
+  cam.updateMatrixWorld(true)
+
+  const inv = cam.matrixWorldInverse
+  const points: THREE.Vector3[] = []
+  for (let i = 0; i < 8; i++) {
+    points.push(
+      new THREE.Vector3(
+        i & 1 ? box.max.x : box.min.x,
+        i & 2 ? box.max.y : box.min.y,
+        i & 4 ? box.max.z : box.min.z
+      )
+    )
+  }
+  if (includeGroundShadow && dir.y > 0.08) {
+    const height = Math.max(0, box.max.y - box.min.y)
+    // Cap low-sun ground shadow reach so grazing angles don't collapse shadow map resolution.
+    const maxShift = radius * 2.2
+    const step = Math.min(height / dir.y, maxShift)
+    for (let i = 0; i < 4; i++) {
+      const topCorner = new THREE.Vector3(
+        i & 1 ? box.max.x : box.min.x,
+        box.max.y,
+        i & 2 ? box.max.z : box.min.z
+      )
+      points.push(
+        new THREE.Vector3(
+          topCorner.x - dir.x * step,
+          box.min.y,
+          topCorner.z - dir.z * step
+        )
+      )
+    }
+  }
+
+  let minX = Infinity
+  let maxX = -Infinity
+  let minY = Infinity
+  let maxY = -Infinity
+  let minDepth = Infinity
+  let maxDepth = -Infinity
+  for (const p of points) {
+    const local = p.clone().applyMatrix4(inv)
+    if (local.x < minX) minX = local.x
+    if (local.x > maxX) maxX = local.x
+    if (local.y < minY) minY = local.y
+    if (local.y > maxY) maxY = local.y
+    const depth = -local.z
+    if (depth < minDepth) minDepth = depth
+    if (depth > maxDepth) maxDepth = depth
+  }
+
+  const spanX = Math.max(1, maxX - minX)
+  const spanY = Math.max(1, maxY - minY)
+  const spanZ = Math.max(1, maxDepth - minDepth)
+  const padXY = Math.max(0.5, Math.max(spanX, spanY) * 0.03)
+  const padZ = Math.max(1, spanZ * 0.05)
+
+  sun.shadow.mapSize.set(mapSize, mapSize)
+  cam.left = minX - padXY
+  cam.right = maxX + padXY
+  cam.bottom = minY - padXY
+  cam.top = maxY + padXY
+  cam.near = Math.max(0.1, minDepth - padZ)
+  cam.far = Math.max(cam.near + 1, maxDepth + padZ)
+  cam.updateProjectionMatrix()
+
+  const texel = Math.max(cam.right - cam.left, cam.top - cam.bottom) / Math.max(1, mapSize)
+  sun.shadow.bias = -0.0002
+  sun.shadow.normalBias = Math.max(0.02, texel * 1.15)
+}
+
 export function applyLook(r: Renderer, LOOK: LookOptions): Scene {
   const scene = r.scene
   const gl = r.gl
@@ -80,20 +173,10 @@ export function applyLook(r: Renderer, LOOK: LookOptions): Scene {
       Math.sin(el),
       -Math.cos(az) * Math.cos(el)
     )
-    const sun = dirLight(0.6, d.multiplyScalar(2 * radius).toArray())
+    const sun = dirLight(0.6, d.clone().multiplyScalar(2 * radius).toArray())
     sun.castShadow = true
-    sun.shadow.mapSize.set(LOOK.shadow, LOOK.shadow)
-    Object.assign(sun.shadow.camera, {
-      left: -radius,
-      right: radius,
-      top: radius,
-      bottom: -radius,
-      near: 0,
-      far: 4 * radius
-    })
-    sun.shadow.camera.updateProjectionMatrix()
-    sun.shadow.bias = -0.0005
-    sun.shadow.normalBias = Math.max(0.02, (2 * radius) / LOOK.shadow) // about a shadow texel, against acne
+    const mapSize = Math.min(LOOK.shadow, gl.capabilities.maxTextureSize)
+    fitDirectionalShadow(sun, box, d, mapSize, false)
     gl.shadowMap.enabled = true
     gl.shadowMap.type = THREE.PCFSoftShadowMap
     r.lights.add(new THREE.HemisphereLight(0xdde8ff, 0x9a9488, 0.6 * K), sun)
