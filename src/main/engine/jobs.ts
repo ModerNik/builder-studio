@@ -15,6 +15,7 @@ export function jobArgs(spec: JobSpec): string[] {
   if (spec.part === 'dump') return ['-c', DUMP, spec.path, spec.axis, String(spec.index)]
   const args = [`builds/${spec.build}/build.py`, spec.part]
   if (spec.noRender) args.push('--no-render')
+  if (spec.part === 'full' && spec.format) args.push('--format', spec.format)
   const flags = {
     name: spec.name,
     x0: spec.x0,

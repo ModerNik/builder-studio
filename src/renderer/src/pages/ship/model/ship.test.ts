@@ -1,28 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ReviewRound } from '@shared/api'
-import { lintText, rareBlocks, rejectedVariants, stacks } from './ship'
+import { exceedsVanillaStructureLimit, exportResultsRows, lintText } from './ship'
 vi.mock('@/entities/job/model/jobs', () => ({ useJobs: {} }))
 
-const round = (n: number, pick: string | null, names: string[]): ReviewRound =>
-  ({
-    round: n,
-    pick,
-    files: names.map((name) => ({ name, path: `builds/b/out/${name}.litematic` }))
-  }) as unknown as ReviewRound
-
 describe('ship', () => {
-  it('lists the newest pick round’s other files still on disk', () => {
-    const rounds = [
-      round(1, 'a', ['a', 'b']),
-      round(2, 'c', ['c', 'd', 'e']),
-      round(3, null, ['f'])
-    ]
-    const r = rejectedVariants(rounds, ['builds/b/out/c.litematic', 'builds/b/out/d.litematic'])
-    expect(r.round?.round).toBe(2)
-    expect(r.paths).toEqual(['builds/b/out/d.litematic'])
-    expect(rejectedVariants([], []).round).toBeUndefined()
-  })
-
   it('says lint in words, leaving out info counts and disabled rules', () => {
     expect(lintText(undefined)).toBe('not run')
     expect(lintText({ palette: 4, floating: 1 })).toBe('clean')
@@ -32,18 +12,31 @@ describe('ship', () => {
     expect(lintText({ gravity: 3, dark: 2 }, { gravity: false, dark: false })).toBe('clean')
   })
 
-  it('flags rare blocks', () => {
-    expect(
-      rareBlocks([
-        ['minecraft:stone', 9],
-        ['minecraft:sea_lantern', 2]
-      ])
-    ).toEqual([['minecraft:sea_lantern', 2]])
+  it('flags vanilla Structure Block (.nbt) builds larger than 48 blocks on any axis', () => {
+    expect(exceedsVanillaStructureLimit('nbt', [48, 32, 48])).toBe(false)
+    expect(exceedsVanillaStructureLimit('nbt', [49, 20, 20])).toBe(true)
+    expect(exceedsVanillaStructureLimit('litematic', [120, 80, 120])).toBe(false)
+    expect(exceedsVanillaStructureLimit('schem', [120, 80, 120])).toBe(false)
   })
 
-  it('counts stacks of 64', () => {
-    expect(stacks(12)).toBe('12')
-    expect(stacks(1842)).toBe('28 × 64 + 50')
-    expect(stacks(128)).toBe('2 × 64')
+  it('builds DESIGN.md export summary rows without Hollow count or Bill of materials', () => {
+    const rows = exportResultsRows({
+      file: 'builds/tower/out/tower.litematic',
+      format: 'schem',
+      shape: [32, 48, 32],
+      paste: [-10, 64, 20],
+      lintSummary: 'clean',
+      verifySummary: 'bill and shape match',
+      exportedTo: 'C:/schematics/Tower/tower.schem'
+    })
+    expect(rows).toEqual([
+      ['File', 'builds/tower/out/tower.litematic'],
+      ['Format', '.schem (Sponge)'],
+      ['Shape', '32 × 48 × 32'],
+      ['Paste at', '-10, 64, 20'],
+      ['Lint', 'clean'],
+      ['Verify', 'bill and shape match'],
+      ['Exported to', 'C:/schematics/Tower/tower.schem']
+    ])
   })
 })

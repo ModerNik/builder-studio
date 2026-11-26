@@ -515,7 +515,7 @@ it('enforces engine, rendering, provider and export prerequisites through IPC', 
       }
     })
   ).rejects.toThrow('provider login needed')
-  await expect(invoke('ship:finalize', { job: 1, dry: false })).rejects.toThrow('export folder')
+  await expect(invoke('ship:finalize', { job: 1 })).rejects.toThrow('export folder')
   expect(state.jobRun).not.toHaveBeenCalled()
   expect(state.bridgeCall).not.toHaveBeenCalled()
   expect(state.send).not.toHaveBeenCalled()
@@ -545,9 +545,9 @@ it('enforces engine, rendering, provider and export prerequisites through IPC', 
   expect(state.variantStart).toHaveBeenCalled()
   state.gitRoot = 'D:/parent repository'
   await invoke('availability:get', true)
-  await expect(
-    invoke('ship:commit', { build: 'starter', message: 'save', dry: false })
-  ).rejects.toThrow('parent repository')
+  await expect(invoke('ship:commit', { build: 'starter', message: 'save' })).rejects.toThrow(
+    'parent repository'
+  )
 })
 
 it('gates companion and application viewer tools while keeping existing sheets available without Python', async () => {

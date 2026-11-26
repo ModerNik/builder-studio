@@ -1,3 +1,5 @@
+import { shell } from 'electron'
+import { existsSync } from 'fs'
 import { isAbsolute, join } from 'path'
 import { z } from 'zod'
 import { ReviewRoundSchema } from '@shared/api'
@@ -6,7 +8,7 @@ import { readFile } from 'fs/promises'
 import { listRounds, saveRound, writeDesign } from '../workspace/review'
 import { projectSettings, resolved } from '../app/settings'
 import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
-import { appendResults, commitBuild, finalizeStaged } from '../workspace/ship'
+import { appendResults, commitBuild, finalizeStaged, validateExportDir } from '../workspace/ship'
 import { installedGit } from '../runtime/runtime'
 import type { IpcContext } from '../index'
 import type { Handle } from './guard'
@@ -35,8 +37,8 @@ export function registerReview(ctx: IpcContext, handle: Handle): void {
   )
   handle(
     'ship:finalize',
-    z.object({ job: z.number().int(), dry: z.boolean() }),
-    async ({ job, dry }) => {
+    z.object({ job: z.number().int(), targetDir: z.string().min(1).optional() }),
+    async ({ job, targetDir }) => {
       const j = jobs.list().find((j) => j.id === job)
       const copied = j?.events.find((e) => e.event === 'copied')
       if (!j?.staging || j.state !== 'done' || copied?.event !== 'copied')
@@ -46,8 +48,7 @@ export function registerReview(ctx: IpcContext, handle: Handle): void {
         projectSettings(j.spec.build).minecraftVersion
       )
         throw new Error('Build again for the project’s current Minecraft version before exporting')
-      const target = dry ? join(resolved().cache, 'ship', 'dry-final') : resolved().schematics
-      if (!target) throw new Error('no schematics folder: set one in Settings')
+      const target = await validateExportDir(targetDir || resolved().schematics)
       const staged = isAbsolute(copied.path) ? copied.path : join(resolved().workspace, copied.path)
       return finalizeStaged(staged, j.staging, target)
     }
@@ -61,18 +62,17 @@ export function registerReview(ctx: IpcContext, handle: Handle): void {
     }),
     (a) => appendResults(resolved().workspace, a.build, a.title, a.rows)
   )
-  handle(
-    'ship:commit',
-    z.object({ build: z.string(), message: z.string().min(1), dry: z.boolean() }),
-    (a) => {
-      idle(a.build)
-      return commitBuild(
-        resolved().workspace,
-        a.build,
-        a.message,
-        a.dry,
-        installedGit(resolved().git) || 'git'
-      )
-    }
-  )
+  handle('ship:commit', z.object({ build: z.string(), message: z.string().min(1) }), (a) => {
+    idle(a.build)
+    return commitBuild(
+      resolved().workspace,
+      a.build,
+      a.message,
+      installedGit(resolved().git) || 'git'
+    )
+  })
+  handle('ship:reveal', z.string().min(1), (path) => {
+    if (!existsSync(path)) throw new Error(`File not found: ${path}`)
+    shell.showItemInFolder(path)
+  })
 }
