@@ -1,7 +1,7 @@
 # A pushed v* tag on main (npm version patch; git push --follow-tags) builds the Windows installer and leaves a draft
 # GitHub release with every file in it. Publishing is manual: installed copies update from releases/latest
 # (src/main/app/updater.ts), which skips drafts and pre-releases, so publish it as a full release marked latest.
-# This is the only pipeline: nothing runs on branches or pull requests.
+# Pull requests are checked by ci.yml (lint, typecheck, tests); this is the only release pipeline.
 name: release
 on:
   push:

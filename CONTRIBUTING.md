@@ -53,7 +53,7 @@ When adding or changing a component, variant, state, or token:
 
 ## Before you open a pull request
 
-Run all local verification checks (GitHub Actions only runs the release pipeline on `v*` tags):
+Run all local verification checks (GitHub Actions runs the same lint, typecheck and tests on pull requests, and the release pipeline on `v*` tags):
 
 ```bash
 npm run typecheck
