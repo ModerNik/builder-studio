@@ -15,9 +15,25 @@ export const useBuild = (
   return { ...q, data: q.data?.find((b) => b.name === name) }
 }
 
-/** The last version (MCP show) or sheet (show_sheet) the agent asked to show: the workspace opens it. */
-export const useShow = create<{ path: string | null; sheet: string | null; t: number }>(() => ({
-  path: null,
-  sheet: null,
-  t: 0
-}))
+export type ShowRequest = { path: string | null; sheet: string | null; t: number }
+
+const EMPTY_SHOW: ShowRequest = { path: null, sheet: null, t: 0 }
+
+/** A one-shot request to open a version (MCP show) or preview sheet (show_sheet) in the workspace. */
+export const useShow = create<ShowRequest>(() => EMPTY_SHOW)
+
+/** Returns what a pending show request asks `build` to open, or null if empty or for another build. */
+export function matchShow(
+  shown: ShowRequest,
+  build: string
+): { path: string } | { sheet: string } | null {
+  const prefix = `builds/${build}/out/`
+  if (shown.path?.startsWith(prefix)) return { path: shown.path }
+  if (shown.sheet?.startsWith(prefix)) return { sheet: shown.sheet }
+  return null
+}
+
+/** Clears `shown` once the workspace has consumed it, leaving newer requests untouched. */
+export function clearShow(shown: ShowRequest): void {
+  if (useShow.getState() === shown) useShow.setState(EMPTY_SHOW)
+}

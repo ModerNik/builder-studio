@@ -12,7 +12,7 @@ import { cancelJob } from '@/entities/job/model/jobs'
 import { buildUrl } from '@/shared/lib/urls'
 import { lastOf, useJobs } from '@/entities/job/model/jobs'
 import { useAvailability } from '@/entities/availability/model/availability'
-import { useBuild, useShow } from '@/entities/build/model/builds'
+import { clearShow, matchShow, useBuild, useShow } from '@/entities/build/model/builds'
 import { useMinecraftPack, useSettings } from '@/entities/settings/model/settings'
 import { useAgentPrefs } from '@/features/agent-chat/model/agent'
 import { useAskParts } from '@/entities/parts/model/parts'
@@ -142,20 +142,24 @@ function BuildWorkspace({ name }: { name: string }): ReactElement {
     setPreviousWrite(wrote)
     if (wrote) setPicked(wrote)
   }
-  // the agent showed a version or a preview sheet (MCP show)
+  // the agent showed a version or a preview sheet (MCP show / show_sheet): consume once so
+  // reopening the Workspace tab later returns to 3D mode instead of replaying a stale preview
   const shown = useShow()
   const [previousShow, setPreviousShow] = useState<typeof shown | null>(null)
   if (previousShow !== shown) {
     setPreviousShow(shown)
-    if (shown.path?.startsWith(`builds/${name}/out/`)) {
-      setPicked(shown.path)
+    const match = matchShow(shown, name)
+    if (match && 'path' in match) {
+      setPicked(match.path)
       setTab('3d')
-    }
-    if (shown.sheet?.startsWith(`builds/${name}/out/`)) {
-      setShownSheet(shown.sheet)
+    } else if (match && 'sheet' in match) {
+      setShownSheet(match.sheet)
       setTab('sheet')
     }
   }
+  useEffect(() => {
+    if (matchShow(shown, name)) clearShow(shown)
+  }, [name, shown])
 
   const writer = jobs.find((j) => version && lastOf(j).wrote?.path === version.path)
   const jobCounts = writer && lastOf(writer).lint?.counts
