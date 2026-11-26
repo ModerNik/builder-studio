@@ -1,16 +1,23 @@
-// References (G6-4-RF3, grouped board with a lightbox): all images at a glance as even 4:3 tiles, links and
-// notes in their own sections, kept in builds/<name>/refs/. Paste a screenshot or a lone link anywhere that
-// is not a text field, drop images or links on the board, or type a link or note in the add bar. A tile
-// opens the Lightbox. Logic: lib/refs.ts.
-import { useEffect, useState, type DragEvent, type ReactElement, type ReactNode } from 'react'
+// References (visual-first board): clean 4:3 image cards with hidden empty notes, structured link
+// and note cards, type filtering & search, live Chat attachment sync, and a zoomable Lightbox.
+import {
+  useEffect,
+  useRef,
+  useState,
+  type DragEvent,
+  type ReactElement,
+  type ReactNode
+} from 'react'
 import { useParams } from '@tanstack/react-router'
-import { ImagePlus, Images, Trash2 } from 'lucide-react'
+import { Check, Copy, ImagePlus, Images, MessageSquarePlus, Search, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Ref, RefAdd } from '@shared/api'
+import { Badge } from '@/shared/ui/primitives/badge'
 import { Button } from '@/shared/ui/primitives/button'
+import { RemovableChip } from '@/shared/ui/primitives/chip'
 import { Input } from '@/shared/ui/primitives/input'
-import { Textarea } from '@/shared/ui/primitives/textarea'
 import { Skeleton } from '@/shared/ui/primitives/skeleton'
+import { SegmentedControl, SegmentedControlItem } from '@/shared/ui/primitives/toggle-group'
 import { PageHeader } from '@/shared/ui/layout/PageHeader'
 import { CardGrid } from '@/shared/ui/layout/Grids'
 import { RefTile } from '@/shared/ui/data/ImageCards'
@@ -19,14 +26,32 @@ import { ConfirmDestructive } from '@/shared/ui/feedback/ConfirmDestructive'
 import { DropOverlay } from '@/shared/ui/feedback/DropOverlay'
 import { EmptyState } from '@/shared/ui/feedback/EmptyState'
 import { ErrorState } from '@/shared/ui/feedback/ErrorState'
-import { IconAction } from '@/shared/ui/common/Tip'
 import { Kbd } from '@/shared/ui/common/parts'
 import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import { buildUrl } from '@/shared/lib/urls'
 import { useBuild } from '@/entities/build/model/builds'
 import { errorText } from '@/entities/build/model/workspace'
-import { addRefs, asLink, dropped, refImages, refPath, useRefs } from '@/entities/ref/model/refs'
-import { removeRef, saveNote as saveRefNote } from '../model/actions'
+import {
+  addRefs,
+  asLink,
+  classifyDrag,
+  dropped,
+  EMPTY_REF_IDS,
+  formatShortDate,
+  matchesRefQuery,
+  parseUriList,
+  refImages,
+  refPath,
+  useChatRefs,
+  useRefs,
+  type DragKind
+} from '@/entities/ref/model/refs'
+import { copyRefImage, removeRef, saveNote as saveRefNote, updateRefItem } from '../model/actions'
+import { AddLinkPopover, AddNotePopover } from './AddRefPopover'
+import { LinkCard, NoteCard } from './RefCards'
+
+type FilterKind = 'all' | 'image' | 'link' | 'note'
+type PendingAdd = { key: string; name: string }
 
 export function Refs(): ReactElement {
   const { name } = useParams({ from: '/build/$name/refs' })
@@ -38,20 +63,26 @@ function Board({ name }: { name: string }): ReactElement {
   const phone = tier === 'phone'
   const displayName = useBuild(name).data?.displayName || name
   const refs = useRefs(name)
-  const [text, setText] = useState('')
-  const [drag, setDrag] = useState<number | null>(null) // images being dragged in, 0 for a link
-  const [adding, setAdding] = useState<string[]>([])
+  const attachedIds = useChatRefs((s) => s.byBuild[name] ?? EMPTY_REF_IDS)
+  const [filter, setFilter] = useState<FilterKind>('all')
+  const [query, setQuery] = useState('')
+  const [drag, setDrag] = useState<DragKind>(null)
+  const [adding, setAdding] = useState<PendingAdd[]>([])
   const [doomed, setDoomed] = useState<Ref | null>(null)
-  const [shown, setShown] = useState<number | null>(null)
+  const [shownId, setShownId] = useState<string | null>(null)
+  const nextPendingKey = useRef(0)
 
-  async function add(list: RefAdd[]): Promise<void> {
+  const add = async (list: RefAdd[]): Promise<void> => {
     if (!list.length) return
-    const names = list.flatMap((r) => (r.kind === 'image' ? [r.name] : []))
-    setAdding((a) => [...a, ...names])
+    const pending: PendingAdd[] = list.flatMap((r) =>
+      r.kind === 'image' ? [{ key: `add-${++nextPendingKey.current}`, name: r.name }] : []
+    )
+    const keys = new Set(pending.map((p) => p.key))
+    if (pending.length) setAdding((a) => [...a, ...pending])
     const failed = await addRefs(name, list)
-    setAdding((a) => a.filter((n) => !names.includes(n)))
+    if (pending.length) setAdding((a) => a.filter((p) => !keys.has(p.key)))
     for (const f of failed) toast.error(errorText(f))
-    if (names.length)
+    if (pending.length)
       requestAnimationFrame(() =>
         document
           .querySelector('[data-ref-images] > :last-child')
@@ -59,28 +90,34 @@ function Board({ name }: { name: string }): ReactElement {
       )
   }
 
-  // paste anywhere that is not a text field: images, or a lone link
+  const addRefLatest = useRef(add)
+  useEffect(() => {
+    addRefLatest.current = add
+  })
+
+  // Paste images or a lone link anywhere outside text inputs and modals; listener bound once.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent): void => {
-      const t = e.target as HTMLElement
-      if (t.closest('input, textarea, [contenteditable]') || !e.clipboardData) return
+      const target = e.target as HTMLElement | null
+      if (
+        !target ||
+        target.closest(
+          'input, textarea, [contenteditable], [role="dialog"], [role="alertdialog"]'
+        ) ||
+        !e.clipboardData
+      )
+        return
       const files = [...e.clipboardData.files]
       const plain = e.clipboardData.getData('text/plain')
-      if (!files.length && !asLink(plain)) return
+      const uriList = e.clipboardData.getData('text/uri-list')
+      if (!files.length && !parseUriList(uriList) && !asLink(plain)) return
       e.preventDefault()
-      void dropped(files, plain).then(add)
+      void dropped(files, plain, uriList).then((items) => addRefLatest.current(items))
     }
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
-  }) // re-binds each render so `add` is current
+  }, [])
 
-  const submit = (): void => {
-    const t = text.trim()
-    if (!t) return
-    const link = asLink(t)
-    setText('')
-    void add([link ? { kind: 'link', url: link, note: '' } : { kind: 'note', note: t }])
-  }
   const pickFiles = (): void => {
     const input = document.createElement('input')
     input.type = 'file'
@@ -89,130 +126,194 @@ function Board({ name }: { name: string }): ReactElement {
     input.onchange = async () => input.files && add(await refImages(input.files))
     input.click()
   }
+
   const onDragOver = (e: DragEvent): void => {
+    const kind = classifyDrag(e.dataTransfer)
+    if (!kind) return
     e.preventDefault()
-    const items = [...e.dataTransfer.items]
-    setDrag(items.filter((i) => i.kind === 'file' && i.type.startsWith('image/')).length)
+    e.dataTransfer.dropEffect = kind.kind === 'unsupported' ? 'none' : 'copy'
+    setDrag(kind)
   }
+
   const onDrop = async (e: DragEvent): Promise<void> => {
     e.preventDefault()
+    const currentDrag = drag
     setDrag(null)
-    const t = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain')
-    await add(await dropped(e.dataTransfer.files, t))
+    const uriList = e.dataTransfer.getData('text/uri-list')
+    const plain = e.dataTransfer.getData('text/plain')
+    const items = await dropped(e.dataTransfer.files, plain, uriList)
+    if (!items.length) {
+      if (currentDrag?.kind === 'unsupported' || e.dataTransfer.files.length > 0) {
+        toast.error('Only PNG, JPEG, WebP, and GIF images or web links can be added here.')
+      }
+      return
+    }
+    await add(items)
   }
-  const saveNote = (r: Ref, note: string): void => saveRefNote(name, r, note)
 
   const all = refs.data ?? []
-  const images = all.filter((r) => r.kind === 'image')
-  const links = all.filter((r) => r.kind === 'link')
-  const notes = all.filter((r) => r.kind === 'note')
-  const isLink = !!asLink(text)
+  const allImages = all.filter((r) => r.kind === 'image')
+  const allLinks = all.filter((r) => r.kind === 'link')
+  const allNotes = all.filter((r) => r.kind === 'note')
+
+  // Automatically fall back to All if the active filtered kind becomes empty (e.g. after deleting its last item)
+  const effectiveFilter: FilterKind =
+    (filter === 'image' && allImages.length === 0 && adding.length === 0) ||
+    (filter === 'link' && allLinks.length === 0) ||
+    (filter === 'note' && allNotes.length === 0)
+      ? 'all'
+      : filter
+
+  const filtered = all.filter((r) => matchesRefQuery(r, query))
+  const images =
+    effectiveFilter === 'all' || effectiveFilter === 'image'
+      ? filtered.filter((r) => r.kind === 'image')
+      : []
+  const links =
+    effectiveFilter === 'all' || effectiveFilter === 'link'
+      ? filtered.filter((r) => r.kind === 'link')
+      : []
+  const notes =
+    effectiveFilter === 'all' || effectiveFilter === 'note'
+      ? filtered.filter((r) => r.kind === 'note')
+      : []
+  const showPending =
+    (effectiveFilter === 'all' || effectiveFilter === 'image') && adding.length > 0
+
+  const activeAttachedCount = all.filter((r) => attachedIds.includes(r.id)).length
+  const visibleGroups =
+    (images.length > 0 || showPending ? 1 : 0) +
+    (links.length > 0 ? 1 : 0) +
+    (notes.length > 0 ? 1 : 0)
+  const showSectionHeadings = effectiveFilter === 'all' && visibleGroups > 1
+
+  const viewableImages = allImages.filter((r) => !r.missing)
+  const shownIndex = shownId ? viewableImages.findIndex((r) => r.id === shownId) : -1
+  const lightboxOpen = shownIndex >= 0
+
+  const toggleAttach = (id: string): void => useChatRefs.getState().toggle(name, id)
 
   const section = (title: string, count: number, children: ReactNode): ReactNode => (
-    <section aria-labelledby={`refs-${title}`} className="flex flex-col gap-3">
-      <h2
-        id={`refs-${title}`}
-        className="sticky top-0 z-sticky flex items-baseline gap-2 bg-surface py-2 font-medium"
-      >
-        {title}
-        <span className="font-mono text-sm text-fg-muted tabular-nums">{count}</span>
-      </h2>
+    <section
+      aria-labelledby={showSectionHeadings ? `refs-${title}` : undefined}
+      className="flex flex-col gap-3"
+    >
+      {showSectionHeadings && (
+        <h2
+          id={`refs-${title}`}
+          className="flex items-baseline gap-2 text-xs font-medium tracking-wide text-fg-muted uppercase"
+        >
+          {title}
+          <span className="font-mono tabular-nums">{count}</span>
+        </h2>
+      )}
       {children}
     </section>
   )
 
   let board: ReactNode
-  if (refs.isPending)
+  if (refs.isPending) {
     board = (
-      <CardGrid min="12rem" aria-busy="true">
-        {[0, 1, 2].map((i) => (
+      <CardGrid min="13rem" aria-busy="true">
+        {[0, 1, 2, 3].map((i) => (
           <Skeleton key={i} className="aspect-[4/3] w-full rounded-lg" />
         ))}
       </CardGrid>
     )
-  else if (refs.error)
+  } else if (refs.error) {
     board = (
       <ErrorState
-        title="Can’t read the reference board"
+        title="Can’t read references"
         error={refs.error}
         onRetry={() => void refs.refetch()}
         retryLabel="Try again"
-      >
-        builds/{name}/refs/index.json
-      </ErrorState>
+      />
     )
-  else if (!all.length && !adding.length)
+  } else if (!all.length && !adding.length) {
     board = (
       <EmptyState
         icon={Images}
         size="page"
         title={`Collect references for ${displayName}`}
         action={
-          <Button variant="outline" onClick={pickFiles}>
-            <ImagePlus /> Add images…
+          <Button onClick={pickFiles}>
+            <ImagePlus aria-hidden />
+            Add images
           </Button>
         }
       >
-        Paste a screenshot anywhere here
+        Drop screenshots or links anywhere here, press{' '}
         <span className="pointer-coarse:hidden">
-          {' '}
-          (<Kbd keys="Ctrl+V" />)
+          <Kbd keys="Ctrl+V" /> to paste
         </span>
-        , drop images or links, or type a note above. They are kept in refs/ beside the build.
+        <span className="pointer-fine:hidden">paste</span>, or add a link or note above.
       </EmptyState>
     )
-  else
+  } else if (visibleGroups === 0) {
+    board = (
+      <EmptyState
+        icon={Search}
+        size="panel"
+        title="No matching references"
+        action={
+          <Button
+            variant="outline"
+            onClick={() => {
+              setQuery('')
+              setFilter('all')
+            }}
+          >
+            Clear filters
+          </Button>
+        }
+      >
+        Try a different search term or switch back to All.
+      </EmptyState>
+    )
+  } else {
     board = (
       <div className="flex flex-col gap-6">
-        {(images.length > 0 || adding.length > 0) &&
+        {(images.length > 0 || showPending) &&
           section(
             'Images',
             images.length,
-            <CardGrid min={phone ? '100%' : '12rem'} data-ref-images>
-              {images.map((r, i) => (
+            <CardGrid min={phone ? '100%' : '13rem'} className="items-start" data-ref-images>
+              {images.map((r) => (
                 <RefTile
                   key={r.id}
                   name={r.title ?? r.file ?? 'image'}
                   image={buildUrl(refPath(name, r))}
                   note={r.note}
-                  onNoteSave={(n) => saveNote(r, n)}
-                  onOpen={() => setShown(i)}
+                  missing={!!r.missing}
+                  attached={attachedIds.includes(r.id)}
+                  onToggleAttach={() => toggleAttach(r.id)}
+                  onNoteSave={(n) => saveRefNote(name, r, n)}
+                  onOpen={r.missing ? undefined : () => setShownId(r.id)}
                   onDelete={() => setDoomed(r)}
                 />
               ))}
-              {adding.map((n) => (
-                <RefTile key={n} name={n} note="" onNoteSave={() => {}} adding />
-              ))}
+              {showPending &&
+                adding.map((p) => (
+                  <RefTile key={p.key} name={p.name} note="" onNoteSave={() => {}} adding />
+                ))}
             </CardGrid>
           )}
         {links.length > 0 &&
           section(
             'Links',
             links.length,
-            <ul className="flex flex-col divide-y divide-border-subtle">
+            <div className="flex flex-col gap-2">
               {links.map((r) => (
-                <li
+                <LinkCard
                   key={r.id}
-                  className="group/ref flex flex-wrap items-center gap-x-3 gap-y-1 py-2"
-                >
-                  <a
-                    href={r.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="min-w-0 shrink grow-0 basis-80 truncate text-accent-text underline-offset-4 can-hover:hover:underline"
-                  >
-                    {r.url?.replace(/^https?:\/\//, '')}
-                  </a>
-                  <NoteInput
-                    key={r.note}
-                    label={`Note for ${r.url}`}
-                    note={r.note}
-                    onSave={(n) => saveNote(r, n)}
-                  />
-                  <DeleteAction label="Delete link" onClick={() => setDoomed(r)} />
-                </li>
+                  refItem={r}
+                  attached={attachedIds.includes(r.id)}
+                  onToggleAttach={() => toggleAttach(r.id)}
+                  onUpdate={(patch) => updateRefItem(name, r, patch)}
+                  onDelete={() => setDoomed(r)}
+                />
               ))}
-            </ul>
+            </div>
           )}
         {notes.length > 0 &&
           section(
@@ -220,20 +321,33 @@ function Board({ name }: { name: string }): ReactElement {
             notes.length,
             <CardGrid min="16rem">
               {notes.map((r) => (
-                <div
+                <NoteCard
                   key={r.id}
-                  className="group/ref flex items-start gap-1 rounded-lg border border-border-subtle bg-surface-raised p-2"
-                >
-                  <NoteArea key={r.note} note={r.note} onSave={(n) => saveNote(r, n)} />
-                  <DeleteAction label="Delete note" onClick={() => setDoomed(r)} />
-                </div>
+                  refItem={r}
+                  attached={attachedIds.includes(r.id)}
+                  onToggleAttach={() => toggleAttach(r.id)}
+                  onSave={(n) => saveRefNote(name, r, n)}
+                  onDelete={() => setDoomed(r)}
+                />
               ))}
             </CardGrid>
           )}
       </div>
     )
+  }
 
-  const doomedName = doomed?.title ?? doomed?.file ?? ''
+  const doomedName = doomed?.title ?? doomed?.file ?? 'this reference'
+  const overlayLabel =
+    drag?.kind === 'images'
+      ? `Drop to add ${drag.count} ${drag.count === 1 ? 'image' : 'images'}`
+      : drag?.kind === 'unsupported'
+        ? 'Unsupported file type'
+        : 'Drop to add link'
+  const overlayDetail =
+    drag?.kind === 'unsupported'
+      ? 'Drop PNG, JPEG, WebP, or GIF images, or web links.'
+      : 'Saved with this build.'
+
   return (
     <div
       className="relative flex h-full min-w-0 flex-col"
@@ -243,141 +357,138 @@ function Board({ name }: { name: string }): ReactElement {
     >
       <PageHeader
         title="References"
-        description={
-          phone ? (
-            `${all.length} references in refs/`
-          ) : (
-            <>
-              {all.length} {all.length === 1 ? 'reference' : 'references'} in builds/{name}/refs/.
-              Paste a screenshot anywhere here
-              <span className="pointer-coarse:hidden">
-                {' '}
-                (<Kbd keys="Ctrl+V" />)
-              </span>{' '}
-              or drop images and links.
-            </>
-          )
-        }
-        className="border-b border-border-subtle px-4 py-3 sm:px-6"
+        meta={all.length > 0 ? <Badge variant="secondary">{all.length}</Badge> : undefined}
+        className="border-b border-border-subtle px-4 py-2.5 sm:px-6"
         actions={
-          <div className="flex flex-wrap items-center gap-2 max-sm:w-full">
-            <Input
-              aria-label="A link or a note"
-              placeholder={
-                phone ? 'Paste a link or type a note' : 'Paste a link or type a note, Enter adds it'
-              }
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && submit()}
-              className="w-85 max-sm:min-w-0 max-sm:flex-1"
-            />
-            <Button variant="outline" disabled={!text.trim()} onClick={submit}>
-              {isLink ? 'Add link' : 'Add note'}
-            </Button>
-            <Button variant="outline" onClick={pickFiles}>
-              <ImagePlus /> Add images…
+          <div className="flex flex-wrap items-center gap-2">
+            <AddLinkPopover onAdd={(r) => add([r])} />
+            <AddNotePopover onAdd={(r) => add([r])} />
+            <Button variant={all.length === 0 ? 'primary' : 'outline'} onClick={pickFiles}>
+              <ImagePlus aria-hidden />
+              Add images
             </Button>
           </div>
         }
       />
+      {all.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border-subtle bg-surface-bg px-4 py-2 sm:px-6">
+          <SegmentedControl
+            size="sm"
+            aria-label="Filter references by type"
+            value={effectiveFilter}
+            onValueChange={(v) => setFilter(v as FilterKind)}
+          >
+            <SegmentedControlItem value="all">All</SegmentedControlItem>
+            <SegmentedControlItem value="image" disabled={allImages.length === 0}>
+              Images
+              <span className="font-mono text-xs text-fg-muted tabular-nums">
+                {allImages.length}
+              </span>
+            </SegmentedControlItem>
+            <SegmentedControlItem value="link" disabled={allLinks.length === 0}>
+              Links
+              <span className="font-mono text-xs text-fg-muted tabular-nums">
+                {allLinks.length}
+              </span>
+            </SegmentedControlItem>
+            <SegmentedControlItem value="note" disabled={allNotes.length === 0}>
+              Notes
+              <span className="font-mono text-xs text-fg-muted tabular-nums">
+                {allNotes.length}
+              </span>
+            </SegmentedControlItem>
+          </SegmentedControl>
+          {activeAttachedCount > 0 && (
+            <RemovableChip
+              removeLabel="Clear attached references from chat"
+              onRemove={() => useChatRefs.getState().clear(name)}
+            >
+              {activeAttachedCount} in chat
+            </RemovableChip>
+          )}
+          <Input
+            aria-label="Search references"
+            placeholder="Search references…"
+            leading={<Search aria-hidden />}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onClear={() => setQuery('')}
+            className="ms-auto w-60 max-sm:ms-0 max-sm:w-full"
+          />
+        </div>
+      )}
       <div
         aria-label="Reference board"
         role="region"
-        className="min-h-0 flex-1 overflow-auto px-4 pb-6 sm:px-6"
+        tabIndex={0}
+        className="min-h-0 flex-1 overflow-auto px-4 py-5 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus sm:px-6"
       >
-        {board}
+        <div className="mx-auto w-full max-w-wide">{board}</div>
       </div>
-      <DropOverlay
-        active={drag !== null}
-        label={
-          drag ? `Drop to add ${drag} ${drag === 1 ? 'image' : 'images'}` : 'Drop to add a link'
-        }
-        detail="They are copied into refs/ and listed in index.json."
-      />
+      <DropOverlay active={drag !== null} label={overlayLabel} detail={overlayDetail} />
       <Lightbox
-        items={images.map((r) => ({
+        items={viewableImages.map((r) => ({
+          id: r.id,
           src: buildUrl(refPath(name, r)),
           name: r.title ?? r.file ?? 'image',
           note: r.note,
-          meta: `added ${r.added.slice(0, 10)}`
+          meta: formatShortDate(r.added)
         }))}
-        index={shown ?? 0}
-        onIndexChange={setShown}
-        open={shown !== null}
-        onOpenChange={(o) => !o && setShown(null)}
-        onNoteChange={(n, i) => images[i] && saveNote(images[i], n)}
-        actions={() => (
-          <Button variant="outline" onClick={() => shown !== null && setDoomed(images[shown])}>
-            <Trash2 /> Delete…
-          </Button>
-        )}
+        index={lightboxOpen ? shownIndex : 0}
+        onIndexChange={(next) => setShownId(viewableImages[next]?.id ?? null)}
+        open={lightboxOpen}
+        onOpenChange={(o) => !o && setShownId(null)}
+        onNoteChange={(n, i) => {
+          const target = viewableImages[i]
+          if (target) void saveRefNote(name, target, n)
+        }}
+        actions={(it, i) => {
+          const current = viewableImages[i]
+          if (!current) return null
+          const isAttached = attachedIds.includes(current.id)
+          return (
+            <>
+              <Button
+                size="sm"
+                variant={isAttached ? 'secondary' : 'outline'}
+                onClick={() => toggleAttach(current.id)}
+              >
+                {isAttached ? <Check aria-hidden /> : <MessageSquarePlus aria-hidden />}
+                {isAttached ? 'In chat' : 'Attach to chat'}
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => void copyRefImage(it.src)}>
+                <Copy aria-hidden />
+                Copy image
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setDoomed(current)}>
+                <Trash2 aria-hidden />
+                Delete…
+              </Button>
+            </>
+          )
+        }}
       />
       <ConfirmDestructive
         open={!!doomed}
         onOpenChange={(o) => !o && setDoomed(null)}
-        title="Delete this reference?"
+        title={doomed?.kind === 'image' ? 'Delete this image?' : 'Delete this reference?'}
         onConfirm={async () => {
-          const r = doomed!
-          setShown(null)
-          await removeRef(name, r)
+          const target = doomed
+          if (!target) return
+          if (shownId === target.id) {
+            const idx = viewableImages.findIndex((r) => r.id === target.id)
+            const neighbor = viewableImages[idx + 1] ?? viewableImages[idx - 1] ?? null
+            setShownId(neighbor?.id ?? null)
+          }
+          await removeRef(name, target)
         }}
       >
         <p>
           {doomed?.kind === 'image'
-            ? `${doomedName} goes to the Recycle Bin and is removed from refs/index.json.`
-            : 'It is removed from refs/index.json.'}
+            ? `${doomedName} will be moved to the Recycle Bin.`
+            : 'This reference will be removed from the board.'}
         </p>
       </ConfirmDestructive>
     </div>
-  )
-}
-
-function DeleteAction({ label, onClick }: { label: string; onClick: () => void }): ReactElement {
-  return (
-    <span className="opacity-0 transition-opacity duration-fast group-focus-within/ref:opacity-100 group-hover/ref:opacity-100 pointer-coarse:opacity-100">
-      <IconAction label={label} icon={Trash2} onClick={onClick} />
-    </span>
-  )
-}
-
-function NoteInput({
-  label,
-  note,
-  onSave
-}: {
-  label: string
-  note: string
-  onSave: (note: string) => void
-}): ReactElement {
-  const [text, setText] = useState(note)
-  return (
-    <Input
-      aria-label={label}
-      placeholder="Add a note…"
-      value={text}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => text !== note && onSave(text)}
-      className="min-w-40 flex-1 border-transparent bg-transparent text-sm can-hover:hover:border-border-default"
-    />
-  )
-}
-
-function NoteArea({
-  note,
-  onSave
-}: {
-  note: string
-  onSave: (note: string) => void
-}): ReactElement {
-  const [text, setText] = useState(note)
-  return (
-    <Textarea
-      aria-label="Note"
-      value={text}
-      rows={Math.min(8, text.split('\n').length + 1)}
-      onChange={(e) => setText(e.target.value)}
-      onBlur={() => text !== note && onSave(text)}
-      className="min-w-0 flex-1 resize-none border-transparent bg-transparent can-hover:hover:border-border-default"
-    />
   )
 }

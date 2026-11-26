@@ -1,9 +1,9 @@
 import { join } from 'path'
 import { z } from 'zod'
-import { RefAddSchema } from '@shared/api'
+import { RefAddSchema, RefUpdateSchema } from '@shared/api'
 import { buildDir } from '../workspace/projects'
 import { resolved } from '../app/settings'
-import { addRef, listRefs, removeRef, setRefNote } from '../workspace/refs'
+import { addRef, listRefs, removeRef, setRefNote, updateRef } from '../workspace/refs'
 import type { IpcContext } from '../index'
 import type { Handle } from './guard'
 
@@ -17,6 +17,11 @@ export function registerRefs(ctx: IpcContext, handle: Handle): void {
   )
   handle('refs:note', z.object({ build: z.string(), id: z.string(), note: z.string() }), (a) =>
     setRefNote(refsDir(a.build), a.id, a.note)
+  )
+  handle(
+    'refs:update',
+    z.object({ build: z.string(), id: z.string(), patch: RefUpdateSchema }),
+    (a) => updateRef(refsDir(a.build), a.id, a.patch)
   )
   handle('refs:remove', z.object({ build: z.string(), id: z.string() }), (a) =>
     removeRef(refsDir(a.build), a.id, trash)

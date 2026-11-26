@@ -42,12 +42,18 @@ The schema is `ReviewRoundSchema` in `src/shared/api.ts`.
 
 ## Design log
 
-**Log** in a build's screen tabs (`Ctrl 6`, `/build/<name>/log`) renders `DESIGN.md`:
+**Log** in a build's screen tabs (`Ctrl 6`, `/build/<name>/log`) presents `DESIGN.md` and saved
+`review/round_N.json` files as a structured build journal:
 
-- The `## Status` block pinned at the top.
-- The reviews as a timeline with their sheets; click one to jump to it.
-- **Edit** opens the raw file. Saving writes the whole file, but refuses a change to the Status block,
-  and refuses if the file changed on disk since you opened it.
+- A single non-sticky **Status** summary at the top (hidden when empty and never duplicated below),
+  followed by **Brief**, **Decisions**, and any custom sections.
+- **History** lists saved reviews and export results (newest first by default, with a sort toggle
+  and live search). Review cards show the picked version, approved parts, structured pins, and
+  clickable render sheets that open in the zoomable Lightbox.
+- A slim **Contents** outline sits beside the journal on wide screens (or opens in a sheet when
+  narrow) for quick jumping.
+- **Edit** opens the raw Markdown editor while automatically preserving the assistant's `## Status`
+  block on save, and safely detects external changes on disk.
 
 ## Export
 

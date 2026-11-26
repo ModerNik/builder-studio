@@ -12,22 +12,27 @@ Open **Location**, **Refs** and **Variants** from a build's screen tabs (`Ctrl 5
 1. Pick a world save (or browse to any world folder) and dimension (**Overworld**, **Nether**, **End**). The interactive 3D map loads immediately around your saved location, player position, or world spawn.
 2. Navigate freely in **3D**, **Iso**, or **2D** (`1 / 2 / 3`, drag to orbit, right-drag to pan, WASD to fly, or jump to **Spawn** / **Player** / coordinates).
 3. The right rail adapts automatically:
-   - **Scout terrain** *(before a draft exists)*: click the terrain to position the area, drag the corner handles (or Shift-drag) to resize, and set the terrain margin.
-   - **Place build** *(once a `.litematic` draft exists)*: previews your 3D build directly on the terrain; move it with the 3D X/Y/Z handles, click terrain to snap to ground, and rotate in 90° steps (`R`).
+   - **Scout terrain** _(before a draft exists)_: click the terrain to position the area, drag the corner handles (or Shift-drag) to resize, and set the terrain margin.
+   - **Place build** _(once a `.litematic` draft exists)_: previews your 3D build directly on the terrain; move it with the 3D X/Y/Z handles, click terrain to snap to ground, and rotate in 90° steps (`R`).
 4. Click **Save location** to write `builds/<name>/data/terrain.npz` + `data/site.json` and update `ORIGIN` in `build.py`.
 
 Builder Studio reads only cached copies of region files and never writes to a world save.
 
 ## References
 
-`/build/<name>/refs`: the build's reference board, kept in `builds/<name>/refs/` (the images plus
+`/build/<name>/refs`: the build's visual reference board, kept in `builds/<name>/refs/` (images plus
 `index.json`).
 
-- Paste a screenshot anywhere on the board, drop images or links, or type a link or a note.
-- Every card has an editable note.
-- A deleted image goes to the Recycle Bin and is removed from `refs/index.json`.
-- **Attach refs**, under the assistant's input and in the Brief form, sends the chosen references with
-  your message (paths and notes; the assistant reads the images itself).
+- Paste a screenshot anywhere on the board (`Ctrl+V`), drop images or web links, or use **Add
+  images**, **Add link**, and **Add note**.
+- Filter by **All / Images / Links / Notes** and search by note, filename, or URL.
+- Image cards stay visual-first: empty notes stay hidden at rest, and clicking any filled caption or
+  hovering the card lets you edit notes inline. Click an image to open the zoomable Lightbox with
+  dimensions, **Copy image**, and inline caption editing.
+- Toggle **Attach to chat** on any image, link, or note (or from the Lightbox) to queue it directly
+  into the assistant composer's references chip — synced live with the composer's attach menu.
+- A deleted image goes to the Recycle Bin and is removed from `refs/index.json`; if an image file is
+  removed on disk, the board flags it as missing without breaking the rest of the board.
 
 ## Variants
 

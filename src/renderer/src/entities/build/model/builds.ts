@@ -4,7 +4,12 @@ import { create } from 'zustand'
 import type { BuildSummary } from '@shared/api'
 import { queryClient, studio } from '@/shared/api/studio'
 
-studio.builds.onChanged(() => void queryClient.invalidateQueries({ queryKey: ['builds'] }))
+studio.builds.onChanged(() => {
+  void queryClient.invalidateQueries({ queryKey: ['builds'] })
+  void queryClient.invalidateQueries({ queryKey: ['design'] })
+  void queryClient.invalidateQueries({ queryKey: ['rounds'] })
+  void queryClient.invalidateQueries({ queryKey: ['refs'] })
+})
 
 export const useBuilds = (): UseQueryResult<BuildSummary[]> =>
   useQuery({ queryKey: ['builds'], queryFn: () => studio.builds.list() })
