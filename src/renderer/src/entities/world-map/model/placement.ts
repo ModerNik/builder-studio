@@ -1,4 +1,5 @@
 // Pure placement & ground-stat maths for the 3D World Map (Scout Terrain & Place Build modes).
+import type { WorldDimension, WorldInfo } from '@shared/api'
 import type { Box2D, GroundStats, RotationDeg, Vec3 } from './types'
 
 export function normalizeBox([x1, z1, x2, z2]: Box2D): Box2D {
@@ -77,4 +78,34 @@ export function centeredBox(cx: number, cz: number, width: number, depth: number
   const x1 = Math.round(cx - w / 2)
   const z1 = Math.round(cz - d / 2)
   return [x1, z1, x1 + w - 1, z1 + d - 1]
+}
+
+function hasNearbyRegion(regs: [number, number][] | undefined, x: number, z: number): boolean {
+  if (!regs || regs.length === 0) return false
+  const rx = Math.floor(x / 512)
+  const rz = Math.floor(z / 512)
+  return regs.some(([a, b]) => Math.abs(a - rx) <= 1 && Math.abs(b - rz) <= 1)
+}
+
+/** Pick an initial camera/placement anchor that lands on populated terrain when available. */
+export function defaultAnchor(info: WorldInfo, dim: WorldDimension): Vec3 {
+  const regs = info.regions[dim]
+  if (
+    info.player &&
+    info.playerDimension === dim &&
+    hasNearbyRegion(regs, info.player[0], info.player[2])
+  ) {
+    return [...info.player]
+  }
+  if (dim === 'overworld' && info.spawn && hasNearbyRegion(regs, info.spawn[0], info.spawn[2])) {
+    return [...info.spawn]
+  }
+  if (regs && regs.length > 0) {
+    // Pick the region closest to (0, 0)
+    const best = [...regs].sort((a, b) => Math.hypot(a[0], a[1]) - Math.hypot(b[0], b[1]))[0]
+    return [best[0] * 512 + 256, 68, best[1] * 512 + 256]
+  }
+  if (info.player && info.playerDimension === dim) return [...info.player]
+  if (dim === 'overworld' && info.spawn) return [...info.spawn]
+  return [0, 68, 0]
 }

@@ -15,6 +15,7 @@ const OPAQUE = 0
 const CUTOUT = 1
 const TRANSLUCENT = 2
 const LIQUID = 3
+export const UNTEXTURED = 4
 
 const STRIDE = 11 // x, y, z, nx, ny, nz, u, v, r, g, b
 
@@ -41,8 +42,20 @@ export interface HiresMeshResult {
   id: number
   cx: number
   cz: number
-  buckets: [MeshBucketBuffer, MeshBucketBuffer, MeshBucketBuffer, MeshBucketBuffer]
+  buckets: [
+    MeshBucketBuffer,
+    MeshBucketBuffer,
+    MeshBucketBuffer,
+    MeshBucketBuffer,
+    MeshBucketBuffer
+  ]
   surfaceY: Int16Array
+}
+
+export interface WorkerErrorResult {
+  type: 'error'
+  id: number
+  message: string
 }
 
 type WorkerIn =
@@ -407,14 +420,20 @@ function aoFactor(side1: boolean, side2: boolean, corner: boolean): number {
 }
 
 /** Build full 3D face-culled, AO-shaded, textured voxel geometry for a 16x16 hires chunk. */
-export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
+export function meshHires(
+  id: number,
+  buffer: ArrayBuffer,
+  atlasOverride?: BlockAtlasMap | null
+): HiresMeshResult {
   const chunk = decodeHiresChunk(buffer)
   const { cx, cz, minY, height, palette, surfaceY, blocks } = chunk
-  const bufs: [QuadBuf, QuadBuf, QuadBuf, QuadBuf] = [
+  const activeAtlas = atlasOverride !== undefined ? atlasOverride : atlas
+  const bufs: [QuadBuf, QuadBuf, QuadBuf, QuadBuf, QuadBuf] = [
     new QuadBuf(16384),
     new QuadBuf(4096),
     new QuadBuf(1024),
-    new QuadBuf(4096)
+    new QuadBuf(4096),
+    new QuadBuf(1024)
   ]
 
   const meta: PaletteMeta[] = palette.map((raw, i) => {
@@ -444,10 +463,10 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
     const isLeaves = short.endsWith('_leaves')
     const isGlass = short.includes('glass')
     const isIce = short === 'ice'
-    const uv = atlas?.[short]
+    const uv = isWater ? (activeAtlas?.[short] ?? activeAtlas?.['water']) : activeAtlas?.[short]
     const fallbackRgb = colors[short] ?? [0.58, 0.59, 0.61]
 
-    const bucket = isWater
+    const baseBucket = isWater
       ? LIQUID
       : isCross || isLeaves
         ? CUTOUT
@@ -459,7 +478,10 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
               ? CUTOUT
               : OPAQUE
 
-    const opaque = bucket === OPAQUE && !isCross && !isThin && !isSlab
+    // When a texture atlas is active, route blocks without a sprite to the untextured solid-color
+    // bucket instead of sampling the missing-texture tile at UV (0, 0).
+    const bucket = activeAtlas && !uv ? UNTEXTURED : baseBucket
+    const opaque = baseBucket === OPAQUE && !isCross && !isThin && !isSlab
     const selfCull = isWater || isIce || isGlass
     const blockH = isThin ? 0.14 : isSlab ? 0.5 : 1
 
@@ -671,7 +693,7 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
         }
 
         // +Z (south) — CCW viewed from +Z: top-right -> top-left -> bottom-left -> bottom-right
-        if (!hiddenBy(m, at(lx, ly, lz + 1))) {
+        if (!(m.water && lz === 15) && !hiddenBy(m, at(lx, ly, lz + 1))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const az = lz + 1
@@ -719,7 +741,7 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
         }
 
         // -Z (north) — CCW viewed from -Z: top-right -> top-left -> bottom-left -> bottom-right
-        if (!hiddenBy(m, at(lx, ly, lz - 1))) {
+        if (!(m.water && lz === 0) && !hiddenBy(m, at(lx, ly, lz - 1))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const az = lz - 1
@@ -767,7 +789,7 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
         }
 
         // +X (east) — CCW viewed from +X: top-right -> top-left -> bottom-left -> bottom-right
-        if (!hiddenBy(m, at(lx + 1, ly, lz))) {
+        if (!(m.water && lx === 15) && !hiddenBy(m, at(lx + 1, ly, lz))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const ax = lx + 1
@@ -815,7 +837,7 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
         }
 
         // -X (west) — CCW viewed from -X: top-right -> top-left -> bottom-left -> bottom-right
-        if (!hiddenBy(m, at(lx - 1, ly, lz))) {
+        if (!(m.water && lx === 0) && !hiddenBy(m, at(lx - 1, ly, lz))) {
           const [u0, v0, u1, v1] = m.sideUv
           const [r, g, b] = m.sideColor
           const ax = lx - 1
@@ -870,7 +892,13 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
     id,
     cx,
     cz,
-    buckets: [bufs[0].finish(), bufs[1].finish(), bufs[2].finish(), bufs[3].finish()],
+    buckets: [
+      bufs[0].finish(),
+      bufs[1].finish(),
+      bufs[2].finish(),
+      bufs[3].finish(),
+      bufs[4].finish()
+    ],
     surfaceY: new Int16Array(surfaceY)
   }
 }
@@ -878,7 +906,7 @@ export function meshHires(id: number, buffer: ArrayBuffer): HiresMeshResult {
 if (typeof self !== 'undefined') {
   const workerScope = self as unknown as {
     onmessage: ((e: MessageEvent<WorkerIn>) => void) | null
-    postMessage(message: unknown, transfer: Transferable[]): void
+    postMessage(message: unknown, transfer?: Transferable[]): void
   }
 
   workerScope.onmessage = (e: MessageEvent<WorkerIn>) => {
@@ -888,25 +916,34 @@ if (typeof self !== 'undefined') {
       atlas = msg.atlas
       return
     }
-    if (msg.type === 'lowres') {
-      const res = meshLowres(msg.id, msg.buffer)
-      const transfers: Transferable[] = [
-        res.terrain.vertices.buffer,
-        res.terrain.indices.buffer,
-        res.water.vertices.buffer,
-        res.water.indices.buffer,
-        res.surfaceY.buffer
-      ]
-      workerScope.postMessage(res, transfers)
-      return
-    }
-    if (msg.type === 'hires') {
-      const res = meshHires(msg.id, msg.buffer)
-      const transfers: Transferable[] = [res.surfaceY.buffer]
-      for (const b of res.buckets) {
-        transfers.push(b.vertices.buffer, b.indices.buffer)
+    try {
+      if (msg.type === 'lowres') {
+        const res = meshLowres(msg.id, msg.buffer)
+        const transfers: Transferable[] = [
+          res.terrain.vertices.buffer,
+          res.terrain.indices.buffer,
+          res.water.vertices.buffer,
+          res.water.indices.buffer,
+          res.surfaceY.buffer
+        ]
+        workerScope.postMessage(res, transfers)
+        return
       }
-      workerScope.postMessage(res, transfers)
+      if (msg.type === 'hires') {
+        const res = meshHires(msg.id, msg.buffer)
+        const transfers: Transferable[] = [res.surfaceY.buffer]
+        for (const b of res.buckets) {
+          transfers.push(b.vertices.buffer, b.indices.buffer)
+        }
+        workerScope.postMessage(res, transfers)
+      }
+    } catch (err) {
+      const errorMsg: WorkerErrorResult = {
+        type: 'error',
+        id: msg.id,
+        message: err instanceof Error ? err.message : String(err)
+      }
+      workerScope.postMessage(errorMsg)
     }
   }
 }

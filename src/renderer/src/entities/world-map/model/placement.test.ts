@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
+import type { WorldInfo } from '@shared/api'
 import {
   boxDimensions,
   boxWithMargin,
   buildBoxFromOrigin,
   centeredBox,
   computeGroundStats,
+  defaultAnchor,
   formatOriginLine,
   nextRotation,
   normalizeBox,
@@ -39,5 +41,33 @@ describe('world-map placement math', () => {
     )
     expect(stats).toEqual({ min: 61, max: 66, median: 63 })
     expect(computeGroundStats([0, 0, 2, 2], () => null)).toBeNull()
+  })
+
+  it('chooses player or spawn when a nearby region exists, otherwise falls back to a populated region', () => {
+    const base: WorldInfo = {
+      name: 'Test Save',
+      path: 'C:\\saves\\Test',
+      dataVersion: 4671,
+      spawn: [0, 64, 0],
+      player: [200, 72, -300],
+      playerDimension: 'overworld',
+      dimensions: ['overworld'],
+      regions: { overworld: [[0, -1]], nether: [], end: [] }
+    }
+    expect(defaultAnchor(base, 'overworld')).toEqual([200, 72, -300])
+
+    const pruned: WorldInfo = {
+      ...base,
+      player: [100, 70, 100],
+      regions: {
+        overworld: [
+          [10, -5],
+          [4, 2]
+        ],
+        nether: [],
+        end: []
+      }
+    }
+    expect(defaultAnchor(pruned, 'overworld')).toEqual([4 * 512 + 256, 68, 2 * 512 + 256])
   })
 })

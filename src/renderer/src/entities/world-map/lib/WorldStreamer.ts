@@ -17,8 +17,34 @@ import {
   type BlockAtlasMap,
   type Rgb
 } from './color-table'
-import type { HiresMeshResult, LowresMeshResult, MeshBucketBuffer } from './world-mesher.worker'
+import {
+  UNTEXTURED,
+  type HiresMeshResult,
+  type LowresMeshResult,
+  type MeshBucketBuffer,
+  type WorkerErrorResult
+} from './world-mesher.worker'
 import type { CameraMode, StreamStats, WorldDataSource } from '../model/types'
+
+export interface WorkerLike {
+  onmessage: ((e: MessageEvent<LowresMeshResult | HiresMeshResult | WorkerErrorResult>) => void) | null
+  onerror: ((e: ErrorEvent) => void) | null
+  onmessageerror: ((e: MessageEvent) => void) | null
+  postMessage(message: unknown, transfer?: Transferable[]): void
+  terminate(): void
+}
+
+export interface WorldStreamerOptions {
+  createWorker?: () => WorkerLike
+  workerCount?: number
+  loadColors?: () => Promise<Record<string, Rgb>>
+}
+
+interface PendingJob {
+  worker: WorkerLike
+  resolve: (msg: LowresMeshResult | HiresMeshResult) => void
+  reject: (err: Error) => void
+}
 
 const STRIDE = 11
 const MAX_LOWRES_REGIONS = 49 // up to 7x7 regions = 3584 x 3584 blocks
@@ -89,10 +115,10 @@ export class WorldStreamer {
   readonly lowresGroup = new THREE.Group()
   readonly hiresGroup = new THREE.Group()
 
-  private workers: Worker[] = []
+  private workers: WorkerLike[] = []
   private nextWorker = 0
   private nextJobId = 1
-  private pendingJobs = new Map<number, (msg: LowresMeshResult | HiresMeshResult) => void>()
+  private pendingJobs = new Map<number, PendingJob>()
 
   private source: WorldDataSource | null = null
   private availableRegions: Set<string> | null = null
@@ -100,6 +126,8 @@ export class WorldStreamer {
   private chunks = new Map<string, ChunkEntry>()
   private emptyRegions = new Set<string>()
   private emptyChunks = new Set<string>()
+  private failedRegions = new Set<string>()
+  private failedChunks = new Set<string>()
   private inflightLowres = new Map<string, AbortController>()
   private inflightHires = new Map<string, AbortController>()
 
@@ -108,55 +136,88 @@ export class WorldStreamer {
   private colors: Record<string, Rgb> = { ...FALLBACK_COLORS }
   private atlas: BlockAtlasMap | null = null
   private generation = 0
+  private hiresGen = 0
   private tick = 0
+  private lastError: string | null = null
+  private lastStats: StreamStats | null = null
   private disposed = false
 
   constructor(
     private onInvalidate: () => void,
-    private onStats?: (stats: StreamStats) => void
+    private onStats?: (stats: StreamStats) => void,
+    options?: WorldStreamerOptions
   ) {
     this.lowresGroup.name = 'world-lowres'
     this.hiresGroup.name = 'world-hires'
     this.hiresMaterials = this.createHiresMaterials(null)
-    this.spawnWorkers()
-    void loadWorldColors().then((c) => {
-      if (this.disposed) return
-      this.colors = c
-      if (this.resources) {
-        this.atlas = buildBlockAtlasMap(this.resources, Object.keys(this.colors))
-      }
-      this.broadcastWorkerInit()
-    })
+    this.spawnWorkers(options)
+    const loadColors = options?.loadColors ?? loadWorldColors
+    void loadColors()
+      .then((c) => {
+        if (this.disposed) return
+        this.colors = c
+        if (this.resources) {
+          this.atlas = buildBlockAtlasMap(this.resources, Object.keys(this.colors))
+        }
+        this.broadcastWorkerInit()
+      })
+      .catch(() => {
+        // Keep FALLBACK_COLORS when block_colors.json is unavailable
+      })
   }
 
   private createHiresMaterials(res: Resources | null): THREE.MeshLambertMaterial[] {
     const map = res?.texture ?? null
-    return [OPAQUE, CUTOUT, TRANSLUCENT, LIQUID].map((k) => {
+    return [OPAQUE, CUTOUT, TRANSLUCENT, LIQUID, UNTEXTURED].map((k) => {
       const m = new THREE.MeshLambertMaterial({
-        map,
+        map: k === UNTEXTURED ? null : map,
         vertexColors: true,
-        alphaTest: k === CUTOUT ? 0.5 : k === OPAQUE ? 0 : 0.01,
+        alphaTest: k === CUTOUT ? 0.5 : k === OPAQUE || k === UNTEXTURED ? 0 : 0.01,
         transparent: k === TRANSLUCENT || k === LIQUID,
         opacity: k === LIQUID ? 0.78 : 1,
-        depthWrite: k === OPAQUE || k === CUTOUT
+        depthWrite: k === OPAQUE || k === CUTOUT || k === UNTEXTURED
       })
       m.userData = { bucket: k }
       return m
     })
   }
 
-  private spawnWorkers(): void {
-    const count = Math.max(2, Math.min(4, navigator.hardwareConcurrency || 2))
-    for (let i = 0; i < count; i++) {
-      const w = new Worker(new URL('./world-mesher.worker.ts', import.meta.url), {
+  private rejectWorkerJobs(worker: WorkerLike, message: string): void {
+    const err = new Error(message)
+    for (const [id, job] of this.pendingJobs) {
+      if (job.worker !== worker) continue
+      this.pendingJobs.delete(id)
+      job.reject(err)
+    }
+  }
+
+  private spawnWorkers(options?: WorldStreamerOptions): void {
+    const defaultCreate = (): WorkerLike =>
+      new Worker(new URL('./world-mesher.worker.ts', import.meta.url), {
         type: 'module'
       })
-      w.onmessage = (e: MessageEvent<LowresMeshResult | HiresMeshResult>) => {
-        const resolve = this.pendingJobs.get(e.data.id)
-        if (resolve) {
-          this.pendingJobs.delete(e.data.id)
-          resolve(e.data)
+    const create = options?.createWorker ?? (typeof Worker !== 'undefined' ? defaultCreate : null)
+    if (!create) return
+    const hw = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2
+    const count = options?.workerCount ?? Math.max(2, Math.min(4, hw))
+    for (let i = 0; i < count; i++) {
+      const w = create()
+      w.onmessage = (e: MessageEvent<LowresMeshResult | HiresMeshResult | WorkerErrorResult>) => {
+        const job = this.pendingJobs.get(e.data.id)
+        if (!job) return
+        this.pendingJobs.delete(e.data.id)
+        if (e.data.type === 'error') {
+          job.reject(new Error(e.data.message || 'World mesher worker error'))
+        } else {
+          job.resolve(e.data)
         }
+      }
+      w.onerror = (e: ErrorEvent) => {
+        const msg = e.message || 'World mesher worker failed'
+        this.rejectWorkerJobs(w, msg)
+      }
+      w.onmessageerror = () => {
+        this.rejectWorkerJobs(w, 'World mesher worker message error')
       }
       this.workers.push(w)
     }
@@ -191,6 +252,9 @@ export class WorldStreamer {
     this.clearLowres()
     this.emptyRegions.clear()
     this.emptyChunks.clear()
+    this.failedRegions.clear()
+    this.failedChunks.clear()
+    this.lastError = null
     this.source = source
     this.availableRegions = source?.regions
       ? new Set(source.regions.map(([rx, rz]) => `${rx},${rz}`))
@@ -204,6 +268,7 @@ export class WorldStreamer {
     if (!this.source || this.disposed) return
     this.tick++
     const gen = this.generation
+    const hGen = this.hiresGen
 
     // 1. Stream LOD-1 regions in a radius scaled to camera distance (up to 3 regions = 1536 blocks each way)
     const centerRx = Math.floor(targetX / 512)
@@ -220,7 +285,8 @@ export class WorldStreamer {
           existing.lastUsed = this.tick
           continue
         }
-        if (this.emptyRegions.has(key) || this.inflightLowres.has(key)) continue
+        if (this.emptyRegions.has(key) || this.failedRegions.has(key) || this.inflightLowres.has(key))
+          continue
         const d = Math.hypot((rx + 0.5) * 512 - targetX, (rz + 0.5) * 512 - targetZ)
         desiredRegions.push({ rx, rz, dist: d, key })
       }
@@ -260,14 +326,15 @@ export class WorldStreamer {
             existing.lastUsed = this.tick
             continue
           }
-          if (this.emptyChunks.has(key) || this.inflightHires.has(key)) continue
+          if (this.emptyChunks.has(key) || this.failedChunks.has(key) || this.inflightHires.has(key))
+            continue
           desiredChunks.push({ cx, cz, dist: d, key })
         }
       }
       desiredChunks.sort((a, b) => a.dist - b.dist)
       for (const c of desiredChunks) {
         if (this.inflightHires.size >= MAX_INFLIGHT_HIRES) break
-        this.startHires(c.cx, c.cz, c.key, gen)
+        this.startHires(c.cx, c.cz, c.key, gen, hGen)
       }
     }
 
@@ -304,12 +371,28 @@ export class WorldStreamer {
     type: 'lowres' | 'hires',
     buffer: ArrayBuffer
   ): Promise<T> {
+    if (!this.workers.length) {
+      return Promise.reject(new Error('World mesher worker unavailable'))
+    }
     const id = this.nextJobId++
     const worker = this.workers[this.nextWorker++ % this.workers.length]
-    return new Promise((resolve) => {
-      this.pendingJobs.set(id, resolve as (msg: LowresMeshResult | HiresMeshResult) => void)
+    return new Promise((resolve, reject) => {
+      this.pendingJobs.set(id, {
+        worker,
+        resolve: resolve as (msg: LowresMeshResult | HiresMeshResult) => void,
+        reject
+      })
       worker.postMessage({ type, id, buffer }, [buffer])
     })
+  }
+
+  private recordFailure(kind: 'region' | 'chunk', key: string, err: unknown, gen: number): void {
+    if (this.disposed || gen !== this.generation) return
+    const message = err instanceof Error ? err.message : String(err)
+    console.error(`[world-map] Failed to load ${kind} ${key}:`, err)
+    if (kind === 'region') this.failedRegions.add(key)
+    else this.failedChunks.add(key)
+    this.lastError = message || `Could not load world ${kind}`
   }
 
   private startLowres(rx: number, rz: number, key: string, gen: number): void {
@@ -329,16 +412,17 @@ export class WorldStreamer {
         if (this.disposed || gen !== this.generation) return
         this.mountLowres(key, mesh)
       })
-      .catch(() => {
-        // Ignore aborted fetches
+      .catch((err: unknown) => {
+        if (ctrl.signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
+        this.recordFailure('region', key, err, gen)
       })
       .finally(() => {
-        this.inflightLowres.delete(key)
+        if (this.inflightLowres.get(key) === ctrl) this.inflightLowres.delete(key)
         this.emitStats()
       })
   }
 
-  private startHires(cx: number, cz: number, key: string, gen: number): void {
+  private startHires(cx: number, cz: number, key: string, gen: number, hGen: number): void {
     const src = this.source
     if (!src) return
     const ctrl = new AbortController()
@@ -346,20 +430,22 @@ export class WorldStreamer {
     void src
       .fetchHires(cx, cz, ctrl.signal)
       .then(async (buf) => {
-        if (this.disposed || gen !== this.generation) return
+        if (this.disposed || gen !== this.generation || hGen !== this.hiresGen) return
         if (!buf) {
           this.emptyChunks.add(key)
           return
         }
         const mesh = await this.runWorker<HiresMeshResult>('hires', buf)
-        if (this.disposed || gen !== this.generation) return
+        if (this.disposed || gen !== this.generation || hGen !== this.hiresGen) return
         this.mountHires(key, mesh)
       })
-      .catch(() => {
-        // Ignore aborted fetches
+      .catch((err: unknown) => {
+        if (ctrl.signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
+        if (hGen !== this.hiresGen) return
+        this.recordFailure('chunk', key, err, gen)
       })
       .finally(() => {
-        this.inflightHires.delete(key)
+        if (this.inflightHires.get(key) === ctrl) this.inflightHires.delete(key)
         this.emitStats()
       })
   }
@@ -424,6 +510,7 @@ export class WorldStreamer {
       step: res.step,
       lastUsed: this.tick
     })
+    this.lastError = null
     this.onInvalidate()
   }
 
@@ -433,11 +520,11 @@ export class WorldStreamer {
 
     const group = new THREE.Group()
     group.name = `c.${res.cx}.${res.cz}`
-    for (let b = 0; b < 4; b++) {
+    for (let b = 0; b < res.buckets.length; b++) {
       const geo = buildGeometry(res.buckets[b])
       if (!geo) continue
       const mesh = new THREE.Mesh(geo, this.hiresMaterials[b])
-      if (b === OPAQUE || b === CUTOUT) mesh.userData.isTerrain = true
+      if (b === OPAQUE || b === CUTOUT || b === UNTEXTURED) mesh.userData.isTerrain = true
       if (b === LIQUID || b === TRANSLUCENT) mesh.renderOrder = 2
       group.add(mesh)
     }
@@ -451,6 +538,7 @@ export class WorldStreamer {
       lastUsed: this.tick
     })
     this.setRegionMaskBit(res.cx, res.cz, 255)
+    this.lastError = null
     this.onInvalidate()
   }
 
@@ -505,6 +593,7 @@ export class WorldStreamer {
   }
 
   private clearHires(): void {
+    this.hiresGen++
     for (const ctrl of this.inflightHires.values()) ctrl.abort()
     this.inflightHires.clear()
     for (const c of this.chunks.values()) this.disposeChunk(c)
@@ -526,11 +615,23 @@ export class WorldStreamer {
   }
 
   private emitStats(): void {
-    this.onStats?.({
+    const next: StreamStats = {
       lowresLoaded: this.regions.size,
       hiresLoaded: this.chunks.size,
-      pending: this.inflightLowres.size + this.inflightHires.size
-    })
+      pending: this.inflightLowres.size + this.inflightHires.size,
+      error: this.lastError
+    }
+    if (
+      this.lastStats &&
+      this.lastStats.lowresLoaded === next.lowresLoaded &&
+      this.lastStats.hiresLoaded === next.hiresLoaded &&
+      this.lastStats.pending === next.pending &&
+      this.lastStats.error === next.error
+    ) {
+      return
+    }
+    this.lastStats = next
+    this.onStats?.(next)
   }
 
   dispose(): void {
@@ -541,6 +642,9 @@ export class WorldStreamer {
     this.hiresMaterials.forEach((m) => m.dispose())
     this.workers.forEach((w) => w.terminate())
     this.workers = []
+    const err = new Error('WorldStreamer disposed')
+    err.name = 'AbortError'
+    for (const job of this.pendingJobs.values()) job.reject(err)
     this.pendingJobs.clear()
   }
 }

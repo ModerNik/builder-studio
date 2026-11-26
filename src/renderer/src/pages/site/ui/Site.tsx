@@ -342,9 +342,25 @@ function Location({ name }: { name: string }): ReactElement {
         <div className="grid size-full place-items-center p-6">
           <EmptyState icon={Globe} size="panel" title="Could not read world">
             <p className="text-sm text-fg-secondary">{errorText(loc.worldInfo.error)}</p>
-            <Button variant="outline" className="mt-3" onClick={() => void loc.pickWorldFolder()}>
-              <FolderOpen /> Choose world folder…
-            </Button>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              {listed.length > 0 && (
+                <Select value="" onValueChange={loc.setWorld}>
+                  <SelectTrigger size="sm" aria-label="Switch world" className="w-48">
+                    <SelectValue placeholder="Switch to another save…" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {listed.map((w) => (
+                      <SelectItem key={w.path} value={w.path}>
+                        {w.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+              <Button variant="outline" onClick={() => void loc.pickWorldFolder()}>
+                <FolderOpen /> Choose world folder…
+              </Button>
+            </div>
           </EmptyState>
         </div>
       ) : (

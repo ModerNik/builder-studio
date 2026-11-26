@@ -9,7 +9,7 @@ import {
   LOWRES_STEP,
   NO_HEIGHT
 } from '@shared/world-tiles'
-import { meshHires, meshLowres, type MeshBucketBuffer } from './world-mesher.worker'
+import { meshHires, meshLowres, UNTEXTURED, type MeshBucketBuffer } from './world-mesher.worker'
 
 const STRIDE = 11
 
@@ -107,5 +107,63 @@ describe('world-mesher winding', () => {
     const res = meshHires(2, new Uint8Array(encoded).buffer)
     // 6 faces * 2 triangles = 12 triangles
     expect(assertOutwardWinding(res.buckets[0], 'hires opaque')).toBe(12)
+  })
+
+  it('routes unmapped blocks to the untextured bucket when a texture atlas is active', () => {
+    const height = 4
+    const blocks = new Uint16Array(16 * height * 16)
+    const surfaceY = new Int16Array(256).fill(NO_HEIGHT)
+    blocks[(1 << 8) | (4 << 4) | 4] = 1 // mapped stone
+    blocks[(1 << 8) | (6 << 4) | 6] = 2 // unmapped custom block
+    surfaceY[4 * 16 + 4] = 65
+    surfaceY[6 * 16 + 6] = 65
+
+    const encoded = encodeHiresChunk({
+      cx: 0,
+      cz: 0,
+      minY: 64,
+      height,
+      palette: ['minecraft:air', 'minecraft:stone', 'minecraft:unmapped_block'],
+      surfaceY,
+      blocks
+    })
+
+    const atlas = {
+      stone: {
+        top: [0.1, 0.1, 0.2, 0.2] as [number, number, number, number],
+        side: [0.1, 0.1, 0.2, 0.2] as [number, number, number, number],
+        bottom: [0.1, 0.1, 0.2, 0.2] as [number, number, number, number],
+        bucket: 0
+      }
+    }
+    const res = meshHires(3, new Uint8Array(encoded).buffer, atlas)
+    expect(assertOutwardWinding(res.buckets[0], 'mapped stone')).toBe(12)
+    expect(assertOutwardWinding(res.buckets[UNTEXTURED], 'unmapped fallback')).toBe(12)
+  })
+
+  it('omits water side faces on chunk boundaries to avoid chunk-seam aquarium walls', () => {
+    const height = 2
+    const blocks = new Uint16Array(16 * height * 16)
+    const surfaceY = new Int16Array(256).fill(NO_HEIGHT)
+    // Fill an entire 16x16 sheet of water at ly=1
+    for (let z = 0; z < 16; z++) {
+      for (let x = 0; x < 16; x++) {
+        blocks[(1 << 8) | (z << 4) | x] = 1
+        surfaceY[z * 16 + x] = 63
+      }
+    }
+    const encoded = encodeHiresChunk({
+      cx: 0,
+      cz: 0,
+      minY: 62,
+      height,
+      palette: ['minecraft:air', 'minecraft:water'],
+      surfaceY,
+      blocks
+    })
+    const res = meshHires(4, new Uint8Array(encoded).buffer)
+    // Only top (+Y) and bottom (-Y) faces for 256 water blocks -> 256 * 2 faces * 2 tris = 1024 tris,
+    // with zero vertical chunk-border walls on lx=0/15 or lz=0/15.
+    expect(assertOutwardWinding(res.buckets[3], 'hires water')).toBe(1024)
   })
 })
