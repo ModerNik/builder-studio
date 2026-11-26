@@ -9,10 +9,18 @@ import { insideRepo } from './agent/permissions'
 
 const state = vi.hoisted(() => ({
   theme: { themeSource: 'system', shouldUseDarkColors: true, on: vi.fn() },
-  setTitleBarOverlay: vi.fn(),
+  windowOptions: null as Record<string, unknown> | null,
+  setBackgroundColor: vi.fn(),
+  maximized: false,
+  minimize: vi.fn(),
+  maximize: vi.fn(),
+  unmaximize: vi.fn(),
+  close: vi.fn(),
+  winListeners: new Map<string, (() => void)[]>(),
   handlers: new Map<string, (event: unknown, arg: unknown) => unknown>(),
   settings: null as Settings | null,
   sender: {},
+  sendToRenderer: vi.fn(),
   jobs: [] as Record<string, unknown>[],
   showItemInFolder: vi.fn(),
   agent: 'off',
@@ -60,18 +68,37 @@ vi.mock('electron', () => ({
     decryptString: vi.fn()
   },
   BrowserWindow: class {
+    constructor(options: Record<string, unknown>) {
+      state.windowOptions = options
+    }
     webContents = Object.assign(state.sender, {
-      send: vi.fn(),
+      send: state.sendToRenderer,
       setWindowOpenHandler: vi.fn(),
       setZoomFactor: vi.fn(),
       on: vi.fn()
     })
-    on = vi.fn()
+    on = vi.fn((event: string, listener: () => void) => {
+      const list = state.winListeners.get(event) ?? []
+      list.push(listener)
+      state.winListeners.set(event, list)
+    })
     loadFile = vi.fn()
     isMinimized = (): boolean => false
+    isMaximized = (): boolean => state.maximized
+    minimize = state.minimize
+    maximize = (): void => {
+      state.maximized = true
+      state.maximize()
+      state.winListeners.get('maximize')?.forEach((fn) => fn())
+    }
+    unmaximize = (): void => {
+      state.maximized = false
+      state.unmaximize()
+      state.winListeners.get('unmaximize')?.forEach((fn) => fn())
+    }
+    close = state.close
     focus = vi.fn()
-    setBackgroundColor = vi.fn()
-    setTitleBarOverlay = state.setTitleBarOverlay
+    setBackgroundColor = state.setBackgroundColor
   },
   nativeTheme: state.theme,
   ipcMain: {
@@ -215,6 +242,9 @@ beforeEach(async () => {
   vi.clearAllMocks()
   vi.resetModules()
   state.handlers.clear()
+  state.winListeners.clear()
+  state.windowOptions = null
+  state.maximized = false
   state.theme.themeSource = 'system'
   state.theme.shouldUseDarkColors = true
   state.settings = SettingsSchema.parse({
@@ -276,45 +306,50 @@ it('upgrades only after the generator validates and rejects the same or an older
   )
 })
 
-it.skipIf(process.platform === 'darwin')(
-  'paints native caption symbols for explicit themes and live system changes',
-  async () => {
-    const setTheme = (theme: Settings['appearance']['theme']): Promise<unknown> =>
-      invoke('settings:set', {
-        ...state.settings,
-        appearance: { ...state.settings!.appearance, theme, scale: 1.25 }
-      })
-
-    await setTheme('light')
-    expect(state.theme.themeSource).toBe('light')
-    expect(state.setTitleBarOverlay).toHaveBeenLastCalledWith({
-      color: '#f2f2f3',
-      symbolColor: '#17181b',
-      height: 54
-    })
-
-    state.theme.shouldUseDarkColors = false
-    await setTheme('dark')
-    expect(state.theme.themeSource).toBe('dark')
-    expect(state.setTitleBarOverlay).toHaveBeenLastCalledWith({
-      color: '#121316',
-      symbolColor: '#ededef',
-      height: 54
-    })
-
-    await setTheme('system')
-    expect(state.theme.themeSource).toBe('system')
-    expect(state.setTitleBarOverlay).toHaveBeenLastCalledWith(
-      expect.objectContaining({ color: '#f2f2f3' })
-    )
-    state.theme.shouldUseDarkColors = true
-    const updateTheme = state.theme.on.mock.calls.find(([event]) => event === 'updated')![1]
-    updateTheme()
-    expect(state.setTitleBarOverlay).toHaveBeenLastCalledWith(
-      expect.objectContaining({ color: '#121316' })
-    )
+it('paints the window background for explicit themes and live system changes, and handles window controls IPC', async () => {
+  if (process.platform !== 'darwin') {
+    expect(state.windowOptions?.titleBarStyle).toBe('hidden')
+    expect(state.windowOptions?.titleBarOverlay).toBeUndefined()
   }
-)
+
+  const setTheme = (theme: Settings['appearance']['theme']): Promise<unknown> =>
+    invoke('settings:set', {
+      ...state.settings,
+      appearance: { ...state.settings!.appearance, theme, scale: 1.25 }
+    })
+
+  await setTheme('light')
+  expect(state.theme.themeSource).toBe('light')
+  expect(state.setBackgroundColor).toHaveBeenLastCalledWith('#f2f2f3')
+
+  state.theme.shouldUseDarkColors = false
+  await setTheme('dark')
+  expect(state.theme.themeSource).toBe('dark')
+  expect(state.setBackgroundColor).toHaveBeenLastCalledWith('#121316')
+
+  await setTheme('system')
+  expect(state.theme.themeSource).toBe('system')
+  expect(state.setBackgroundColor).toHaveBeenLastCalledWith('#f2f2f3')
+  state.theme.shouldUseDarkColors = true
+  const updateTheme = state.theme.on.mock.calls.find(([event]) => event === 'updated')![1]
+  updateTheme()
+  expect(state.setBackgroundColor).toHaveBeenLastCalledWith('#121316')
+
+  await expect(invoke('window:state')).resolves.toEqual({ maximized: false })
+  await invoke('window:toggleMaximize')
+  expect(state.maximize).toHaveBeenCalledTimes(1)
+  expect(state.sendToRenderer).toHaveBeenLastCalledWith('window:state', { maximized: true })
+  await expect(invoke('window:state')).resolves.toEqual({ maximized: true })
+
+  await invoke('window:toggleMaximize')
+  expect(state.unmaximize).toHaveBeenCalledTimes(1)
+  expect(state.sendToRenderer).toHaveBeenLastCalledWith('window:state', { maximized: false })
+
+  await invoke('window:minimize')
+  expect(state.minimize).toHaveBeenCalledTimes(1)
+  await invoke('window:close')
+  expect(state.close).toHaveBeenCalledTimes(1)
+})
 
 it('rejects workspace actions during jobs, live sessions, authentication, variants, reviews and runtime installation', async () => {
   const preview = { source: 'D:/source', destination: 'D:/destination', assets: true }
