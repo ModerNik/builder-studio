@@ -23,7 +23,6 @@ export const SCREENS = [
     badgeLabel: '2 lanes need you',
     badgeTone: 'attention' as const
   },
-  { id: 'export', label: 'Export', icon: Rocket, group: 'core' },
   { id: 'site', label: 'Location', icon: MapIcon, group: 'support' },
   {
     id: 'refs',
@@ -33,7 +32,8 @@ export const SCREENS = [
     badge: 4,
     badgeLabel: '4 references'
   },
-  { id: 'log', label: 'Log', icon: ScrollText, group: 'support' }
+  { id: 'log', label: 'Log', icon: ScrollText, group: 'support' },
+  { id: 'export', label: 'Export', icon: Rocket, group: 'export' }
 ]
 
 /** A stand-in camera for the kit's gizmos, in degrees. */

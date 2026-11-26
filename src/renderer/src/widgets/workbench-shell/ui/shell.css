@@ -76,6 +76,24 @@
   margin-inline-start: var(--space-1);
   background: var(--color-border-subtle);
 }
+[data-tier='tablet'] .workbench-title-search-trigger,
+[data-tier='phone'] .workbench-title-search-trigger {
+  width: max(2rem, var(--density-control-sm));
+  justify-content: center;
+  padding-inline: 0;
+  border-color: transparent;
+  background: transparent;
+}
+[data-tier='tablet'] .workbench-title-search-trigger:hover,
+[data-tier='phone'] .workbench-title-search-trigger:hover {
+  border-color: transparent;
+  background: var(--color-surface-hover);
+  color: var(--color-fg);
+}
+[data-tier='tablet'] .workbench-title-search-trigger .workbench-search-label,
+[data-tier='phone'] .workbench-title-search-trigger .workbench-search-label {
+  display: none;
+}
 @container (width < 50rem) {
   .workbench-title-search-trigger {
     width: max(2rem, var(--density-control-sm));

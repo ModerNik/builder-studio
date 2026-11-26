@@ -10,12 +10,12 @@ export default function ScreenTabsDemo(): ReactElement {
   return (
     <div>
       <p className="mb-4 max-w-prose text-fg-secondary">
-        Workflow-grouped soft pills with icons and a hairline between core and supporting screens.
-        One tab stop; arrow keys, Home and End move between screens. Screens that do not fit move
-        into More, and the current screen always stays visible. On tablet and phone tiers the strip
-        collapses to compact icon-only pills with tooltips and corner badges. A badge for something
-        waiting on the user (Review asked for, Variants lanes asking) takes badgeTone attention:
-        amber, and the More dot turns amber when such a screen is in it.
+        Workflow-grouped soft pills with icons and hairlines separating core, context, and export
+        screens. One tab stop; arrow keys, Home and End move between screens. Screens that do not
+        fit move into More, and the current screen always stays visible. On tablet and phone tiers
+        the strip collapses to compact icon-only pills with tooltips and corner badges. A badge for
+        something waiting on the user (Review asked for, Variants lanes asking) takes badgeTone
+        attention: amber, and the More dot turns amber when such a screen is in it.
       </p>
       <Specimen
         label="Workflow-grouped pills with overflow (desktop / wide)"

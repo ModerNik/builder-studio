@@ -4,6 +4,7 @@ import type { ReactElement, ReactNode } from 'react'
 import { DropdownMenu } from 'radix-ui'
 import { Boxes, Check, ChevronDown, ChevronRight, Ellipsis, Search } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
+import { formatKeys } from '@/shared/lib/shortcuts'
 import { useWorkbench } from '../model/context'
 import { Tip } from '@/shared/ui/common/Tip'
 import { IconButton, Kbd } from '@/shared/ui/common/parts'
@@ -24,7 +25,7 @@ export interface Crumb {
 function CrumbItem({ crumb, last }: { crumb: Crumb; last: boolean }): ReactElement {
   const cls = cn(
     chromeButton,
-    'h-[max(2rem,var(--density-control-sm))] min-w-0 px-2 text-sm',
+    'h-[max(2rem,var(--density-control-sm))] min-w-0 max-w-full shrink px-2 text-sm',
     last && 'font-medium text-fg'
   )
   if (crumb.menu)
@@ -33,12 +34,12 @@ function CrumbItem({ crumb, last }: { crumb: Crumb; last: boolean }): ReactEleme
         <DropdownMenu.Trigger
           className={cn(
             chromeButton,
-            'h-[max(2rem,var(--density-control-sm))] min-w-0 gap-1.5 px-2.5 text-sm font-semibold text-fg'
+            'h-[max(2rem,var(--density-control-sm))] min-w-0 max-w-full shrink gap-1.5 px-2.5 text-sm font-semibold text-fg [&_svg]:size-3.5'
           )}
           aria-label={`${crumb.menu.label}: ${crumb.label}`}
         >
           <span className="truncate">{crumb.label}</span>
-          <ChevronDown aria-hidden="true" className="size-3.5 text-fg-muted" />
+          <ChevronDown aria-hidden="true" className="text-fg-muted" />
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
@@ -160,7 +161,7 @@ export function TitleBar({
 
       <div className="workbench-title-actions flex shrink-0 items-center gap-2">
         {onSearch && (
-          <Tip label={`${searchLabel} (Ctrl K)`}>
+          <Tip label={`${searchLabel} (${formatKeys('Ctrl+K').join(' ')})`}>
             <button
               type="button"
               onClick={onSearch}

@@ -1,6 +1,6 @@
 // The one contract between main, preload and renderer. Main checks every input with these zod schemas.
 import { z } from 'zod'
-import { isMinecraftVersion } from './minecraft'
+import { EXPORT_FORMATS, isMinecraftVersion } from './minecraft'
 import {
   BuildFolderNameSchema,
   PROJECT_NAME_MAX_LENGTH,
@@ -291,6 +291,7 @@ export const JobSpecSchema = z
         .regex(/^[\w,]*$/)
         .optional(),
       look: z.enum(['game', 'sun', 'flat']).optional(),
+      format: z.enum(EXPORT_FORMATS).optional(), // full: export schematic format override
       ship: z.boolean().optional(), // full: finalize into a staging folder, not the game's (ship:finalize copies it)
       noRender: z.boolean().optional() // generate a draft or full export without a preview
     }),
@@ -923,6 +924,11 @@ export type UpdateState =
   | { s: 'ready'; version: string } // downloaded: restart to install
   | { s: 'error' }
 
+export interface ShipCommitResult {
+  committed: boolean
+  output: string
+}
+
 /** window.studio: everything the renderer may ask of main. */
 export interface StudioApi {
   setup: {
@@ -1001,9 +1007,10 @@ export interface StudioApi {
     write(build: string, base: string, md: string): Promise<void> // refused if Status changed or base is stale
   }
   ship: {
-    finalize(job: number, dry: boolean): Promise<string> // the ship job's staged final into the schematics folder (dry: a temp one)
+    finalize(job: number, targetDir?: string): Promise<string> // copies the ship job's staged final into targetDir or the schematics folder
     results(build: string, title: string, rows: [string, string][]): Promise<void> // a table in the DESIGN.md log
-    commit(build: string, message: string, dry: boolean): Promise<string> // git, builds/<name> only; dry: git status
+    commit(build: string, message: string): Promise<ShipCommitResult> // git, builds/<name> only; succeeds cleanly if nothing changed
+    reveal(path: string): Promise<void> // reveals an exported file in the OS file manager
   }
   app: {
     report(s: AppState): void // what the user has open, for the MCP status() tool
@@ -1151,6 +1158,7 @@ export const CHANNELS = [
   'ship:finalize',
   'ship:results',
   'ship:commit',
+  'ship:reveal',
   'app:report',
   'updater:get',
   'updater:check',

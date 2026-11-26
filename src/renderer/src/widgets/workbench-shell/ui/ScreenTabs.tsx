@@ -1,7 +1,7 @@
 // Workflow-grouped soft-pill screen tabs (Tabs 3): one Tab stop with arrow keys inside, hairline
 // dividers between workflow groups, patina active pill, compact icon-only mode for tablet/phone,
 // and More overflow (the current screen always stays visible).
-import { Fragment, useRef, type KeyboardEvent, type ReactElement } from 'react'
+import { useRef, type KeyboardEvent, type ReactElement } from 'react'
 import { DropdownMenu } from 'radix-ui'
 import { Check, ChevronDown, Ellipsis, type LucideIcon } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
@@ -14,7 +14,7 @@ export interface Screen {
   id: string
   label: string
   icon?: LucideIcon
-  /** Optional workflow group (e.g. 'core' | 'support'); a hairline divider separates adjacent groups. */
+  /** Optional workflow group (e.g. 'core' | 'support' | 'export'); a hairline divider separates adjacent groups. */
   group?: string
   badge?: number | 'dot'
   /** What the badge means, e.g. "3 open pins". */
@@ -23,8 +23,10 @@ export interface Screen {
   badgeTone?: TabBadgeTone
 }
 
-const MORE_WIDTH = 76 // px kept for the More button when labelled tabs overflow
+const MORE_WIDTH = 92 // px kept for the labelled More button (icon + label + optional dot) when tabs overflow
 const MORE_ICON_WIDTH = 40 // px kept for the icon-only More button on compact viewports
+const DIVIDER_EXTRA = 13 // px reserved when a swapped-in active tab introduces a group divider
+const DIVIDER_EXTRA_COMPACT = 9
 
 const pillBase = cn(
   'group relative inline-flex h-[max(2rem,var(--density-control-sm))] shrink-0 items-center justify-center rounded-md border text-sm font-medium whitespace-nowrap',
@@ -52,7 +54,10 @@ function GroupDivider({ compact }: { compact?: boolean }): ReactElement {
   return (
     <span
       aria-hidden="true"
-      className={cn('shrink-0 bg-border-default', compact ? 'mx-1 h-4 w-px' : 'mx-1.5 h-5 w-px')}
+      className={cn(
+        'shrink-0 bg-border-default',
+        compact ? 'ms-0.5 me-1.5 h-4 w-px' : 'ms-1 me-2 h-5 w-px'
+      )}
     />
   )
 }
@@ -135,10 +140,20 @@ export function ScreenTabs({
   const iconsOnly = mode === 'icons'
   const box = useRef<HTMLDivElement>(null)
   const measure = useRef<HTMLDivElement>(null)
-  const fit =
-    useFit(box, measure, { moreWidth: iconsOnly ? MORE_ICON_WIDTH : MORE_WIDTH }) ?? screens.length
   const currentIndex = screens.findIndex((s) => s.id === value)
   const current = screens[currentIndex]
+  const keepExtra =
+    currentIndex > 0 && !hasDividerBefore(screens, currentIndex) && !!current?.group
+      ? iconsOnly
+        ? DIVIDER_EXTRA_COMPACT
+        : DIVIDER_EXTRA
+      : 0
+  const fit =
+    useFit(box, measure, {
+      moreWidth: iconsOnly ? MORE_ICON_WIDTH : MORE_WIDTH,
+      keepIndex: currentIndex >= 0 ? currentIndex : undefined,
+      keepExtra
+    }) ?? screens.length
 
   if (mode === 'menu') {
     const CurrentIcon = current?.icon
@@ -204,10 +219,13 @@ export function ScreenTabs({
   const itemClass = iconsOnly ? iconPillClass : tabPillClass
 
   return (
-    <nav aria-label={label} className={cn('relative flex h-full min-w-0 flex-1', className)}>
+    <nav
+      aria-label={label}
+      className={cn('relative flex h-full min-w-0 flex-1 overflow-hidden pe-1', className)}
+    >
       <div
         ref={box}
-        className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-hidden pe-1"
+        className="flex h-full min-w-0 flex-1 items-center gap-1 overflow-hidden"
         onKeyDown={onKeyDown}
       >
         {shown.map((s, i) => {
@@ -230,7 +248,7 @@ export function ScreenTabs({
             </button>
           )
           return (
-            <Fragment key={s.id}>
+            <span key={s.id} className="inline-flex shrink-0 items-center">
               {hasDividerBefore(shown, i) && <GroupDivider compact={iconsOnly} />}
               {isIconButton ? (
                 <Tip side="bottom" label={tipLabel}>
@@ -239,19 +257,19 @@ export function ScreenTabs({
               ) : (
                 btn
               )}
-            </Fragment>
+            </span>
           )
         })}
         {hidden.length > 0 && (
           <DropdownMenu.Root>
             {iconsOnly ? (
-              <DropdownMenu.Trigger asChild>
-                <Tip
-                  side="bottom"
-                  label={
-                    hiddenBadge ? 'More screens · A screen in More needs attention' : 'More screens'
-                  }
-                >
+              <Tip
+                side="bottom"
+                label={
+                  hiddenBadge ? 'More screens · A screen in More needs attention' : 'More screens'
+                }
+              >
+                <DropdownMenu.Trigger asChild>
                   <button
                     type="button"
                     data-roving=""
@@ -273,8 +291,8 @@ export function ScreenTabs({
                       </span>
                     )}
                   </button>
-                </Tip>
-              </DropdownMenu.Trigger>
+                </DropdownMenu.Trigger>
+              </Tip>
             ) : (
               <DropdownMenu.Trigger
                 data-roving=""

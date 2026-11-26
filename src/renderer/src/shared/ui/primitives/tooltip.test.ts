@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
+import { DropdownMenu } from 'radix-ui'
 import { describe, expect, it } from 'vitest'
 import { Tip } from '@/shared/ui/common/Tip'
 import { Tabs, TabsList, TabsTrigger } from './tabs'
@@ -97,6 +98,27 @@ describe('TooltipTrigger', () => {
     )
 
     expect(html).toContain('data-state="open"')
+  })
+
+  it('preserves DropdownMenu.Trigger menu attributes when wrapped inside Tip', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(
+        DropdownMenu.Root,
+        null,
+        withTip(
+          'More screens',
+          React.createElement(
+            DropdownMenu.Trigger,
+            { asChild: true },
+            React.createElement('button', { type: 'button', 'aria-label': 'More screens' }, 'More')
+          )
+        )
+      )
+    )
+
+    expect(html).toContain('aria-haspopup="menu"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).toContain('aria-label="More screens"')
   })
 
   it('keeps default data-slot and data-state when not using asChild', () => {

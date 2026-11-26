@@ -4,6 +4,7 @@ import {
   defaultDock,
   dockReducer,
   fitCount,
+  fitLeadingWithKept,
   renamePanel,
   resolveDock,
   tierOf,
@@ -126,6 +127,12 @@ describe('fitCount', () => {
   })
   it('reserves pinned space and can fit nothing', () => {
     expect(fitCount([100, 100], 200, 8, 60, 120)).toBe(0)
+  })
+  it('reduces leading items when a wider kept item swaps into the last slot', () => {
+    // 110 + 4 + 80 + 4 + 102 + 4 + 92 = 396: fits 2 leading items at 400px, only 1 at 385px
+    expect(fitLeadingWithKept([110, 80, 90], 400, 4, 92, 102)).toBe(2)
+    expect(fitLeadingWithKept([110, 80, 90], 385, 4, 92, 102)).toBe(1)
+    expect(fitLeadingWithKept([110, 80, 90], 180, 4, 92, 102)).toBe(0)
   })
 })
 

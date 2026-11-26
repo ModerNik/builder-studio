@@ -9,10 +9,10 @@ export const BUILD_SCREENS = [
   { id: 'workspace', label: 'Workspace', group: 'core', chat: true },
   { id: 'review', label: 'Review', group: 'core', chat: true },
   { id: 'variants', label: 'Variants', group: 'core', chat: true },
-  { id: 'ship', label: 'Export', group: 'core', chat: true },
   { id: 'site', label: 'Location', group: 'support', chat: true },
   { id: 'refs', label: 'Refs', group: 'support', chat: true },
-  { id: 'log', label: 'Log', group: 'support', chat: true }
+  { id: 'log', label: 'Log', group: 'support', chat: true },
+  { id: 'ship', label: 'Export', group: 'export', chat: true }
 ] as const
 
 export type ScreenId = (typeof BUILD_SCREENS)[number]['id']

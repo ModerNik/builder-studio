@@ -21,7 +21,7 @@ shipped build, full build, or latest draft), sorted by the most recent change.
 ## The build workspace
 
 Opening a build (`/build/<name>`) shows its versions, a large 3D view and the **Editor** panel. The
-screen tabs (Workspace, Review, Variants, Export, Location, Refs, Log) open the build's other screens,
+screen tabs (Workspace, Review, Variants, Location, Refs, Log, Export) open the build's other screens,
 and the **Editor**, **Chat** and **Activity** (`Ctrl \``) buttons beside them show and hide those
 panels.
 
@@ -191,9 +191,9 @@ The engine's lint reports each kind separately; the app labels them:
 | Slab gaps                | `groove`      | On      |
 | Block types              | `palette`     | Info    |
 
-The exact rules belong to the engine. When the linter is enabled, **Export** requires zero problems
-across the enabled lint rules before the full build. When the linter (or every rule) is turned off,
-Export skips the lint check step.
+The exact rules belong to the engine. When the linter is enabled, **Export** runs the enabled lint
+rules as non-blocking suggestions during export. When the linter (or every rule) is turned off,
+Export skips the advisory lint step.
 
 ## Keyboard shortcuts
 
@@ -203,7 +203,7 @@ Export skips the lint check step.
 | Ctrl ,                    | Open Settings                                                                   |
 | Ctrl − / Ctrl + / Ctrl 0  | Decrease / increase / reset interface size                                      |
 | ?                         | Show keyboard shortcuts overlay                                                 |
-| Ctrl 1 – Ctrl 7           | Switch build screens (Workspace, Review, Variants, Export, Location, Refs, Log) |
+| Ctrl 1 – Ctrl 7           | Switch build screens (Workspace, Review, Variants, Location, Refs, Log, Export) |
 | Ctrl Tab / Ctrl Shift Tab | Next / previous build screen                                                    |
 | F6 / Shift F6             | Move focus to next / previous workbench region                                  |
 | Ctrl J                    | AI assistant panel                                                              |

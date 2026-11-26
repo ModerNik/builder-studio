@@ -1,10 +1,11 @@
 // Ship: the last steps of a build that touch things outside out/. A ship job's `full` finalizes into a staging
-// folder (MCB_SCHEMATICS), so nothing reaches the game's folder until the user confirms finalize here.
+// folder (MCB_SCHEMATICS), so nothing reaches the destination until verify passes and finalize copies it.
 import { execFile } from 'child_process'
-import { copyFileSync, existsSync, mkdirSync } from 'fs'
-import { readFile } from 'fs/promises'
-import { dirname, join, posix, relative } from 'path'
+import { constants, copyFileSync, existsSync, mkdirSync } from 'fs'
+import { access, readFile, stat } from 'fs/promises'
+import { dirname, isAbsolute, join, posix, relative } from 'path'
 import { promisify } from 'util'
+import type { ShipCommitResult } from '@shared/api'
 import { buildDir } from './projects'
 import { under } from './paths'
 import { appendGist, writeAtomic } from './review'
@@ -12,6 +13,20 @@ import { appendGist, writeAtomic } from './review'
 /** A fresh staging folder for one ship job's finalize. */
 export const stagingDir = (cache: string, build: string): string =>
   join(cache, 'ship', `${build.replace(/[^\w.-]/g, '_')}-${Date.now()}`)
+
+/** Validates that the export destination is an absolute, existing, writable folder. */
+export async function validateExportDir(dir: string): Promise<string> {
+  const trimmed = dir.trim()
+  if (!trimmed) throw new Error('Choose an export destination folder')
+  if (!isAbsolute(trimmed))
+    throw new Error(`Export destination must be an absolute path: ${trimmed}`)
+  const info = await stat(trimmed).catch(() => null)
+  if (!info?.isDirectory()) throw new Error(`Export destination is not a folder: ${trimmed}`)
+  await access(trimmed, constants.W_OK).catch(() => {
+    throw new Error(`Export destination is not writable: ${trimmed}`)
+  })
+  return trimmed
+}
 
 /** Copies the staged final to the same sub path under `target`; refuses a file outside the staging folder. */
 export function finalizeStaged(staged: string, staging: string, target: string): string {
@@ -46,19 +61,20 @@ export async function appendResults(
 
 const git = promisify(execFile)
 
-/** Stages and commits builds/<name> only, nothing else in the repo; dry returns what it would commit. */
+/** Stages and commits builds/<name> only, nothing else in the repo; succeeds cleanly if nothing changed. */
 export async function commitBuild(
   repo: string,
   build: string,
   message: string,
-  dry: boolean,
   executable = 'git'
-): Promise<string> {
+): Promise<ShipCommitResult> {
   buildDir(repo, build) // validates the name
   const path = posix.join('builds', build)
   const run = async (...args: string[]): Promise<string> =>
     (await git(executable, args, { cwd: repo, windowsHide: true })).stdout
-  if (dry) return (await run('status', '--porcelain', '--', path)) || 'nothing to commit'
+  const status = (await run('status', '--porcelain', '--', path)).trim()
+  if (!status) return { committed: false, output: 'Nothing to commit (already up to date)' }
   await run('add', '-A', '--', path)
-  return run('commit', '-m', message, '--', path)
+  const output = await run('commit', '-m', message, '--', path)
+  return { committed: true, output }
 }

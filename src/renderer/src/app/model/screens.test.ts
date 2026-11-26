@@ -14,6 +14,24 @@ describe('hasChatDock', () => {
     }
   })
 
+  it('places Export (ship) at the end of the build tabs', () => {
+    expect(BUILD_SCREENS.at(-1)).toEqual({
+      id: 'ship',
+      label: 'Export',
+      group: 'export',
+      chat: true
+    })
+    expect(BUILD_SCREENS.map((s) => s.id)).toEqual([
+      'workspace',
+      'review',
+      'variants',
+      'site',
+      'refs',
+      'log',
+      'ship'
+    ])
+  })
+
   it('respects per-tab chat flags when a tab opts out', () => {
     const custom: BuildScreen[] = BUILD_SCREENS.map((s) =>
       s.id === 'log' || s.id === 'ship' ? { ...s, chat: false } : s
@@ -25,17 +43,17 @@ describe('hasChatDock', () => {
     expect(hasChatDock(null, 'workspace', custom)).toBe(false)
   })
 
-  it('groups core build workflow tabs ahead of supporting context tabs', () => {
+  it('groups core build tabs, supporting context tabs, and Export in workflow order', () => {
     expect(BUILD_SCREENS.filter((s) => s.group === 'core').map((s) => s.id)).toEqual([
       'workspace',
       'review',
-      'variants',
-      'ship'
+      'variants'
     ])
     expect(BUILD_SCREENS.filter((s) => s.group === 'support').map((s) => s.id)).toEqual([
       'site',
       'refs',
       'log'
     ])
+    expect(BUILD_SCREENS.filter((s) => s.group === 'export').map((s) => s.id)).toEqual(['ship'])
   })
 })

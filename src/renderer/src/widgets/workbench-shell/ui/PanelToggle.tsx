@@ -41,7 +41,7 @@ export function PanelToggle({
           onClick={() => dock({ type: 'toggle', id: panel.id })}
           className={cn(
             chromeButton,
-            'h-[max(2rem,var(--density-control-sm))] border px-2.5 text-xs font-medium',
+            'h-[max(2rem,var(--density-control-sm))] border px-2.5 text-xs font-medium [&_svg]:size-3.5',
             open
               ? 'border-border-default bg-surface-hover text-fg aria-pressed:text-fg'
               : 'border-transparent text-fg-secondary'
@@ -49,7 +49,7 @@ export function PanelToggle({
         >
           <Icon
             aria-hidden="true"
-            className={cn('size-3.5 shrink-0', open ? 'text-accent-text' : 'text-fg-muted')}
+            className={cn('shrink-0', open ? 'text-accent-text' : 'text-fg-muted')}
           />
           <span>{panel.title}</span>
           {badge !== undefined && <TabBadge badge={badge} tone={panel.badgeTone} />}

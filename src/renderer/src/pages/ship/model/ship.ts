@@ -1,25 +1,8 @@
-// The Export screen's logic: step statuses from the jobs, lint and bill text, the rejected variants of the newest
-// round with a pick, and the rows of the results table it writes into DESIGN.md.
-import { DEFAULT_LINT_RULES, type Job, type LintRuleToggles, type ReviewRound } from '@shared/api'
+// The Export screen's pure logic: lint formatting, DESIGN.md result rows, and job waiting.
+import { DEFAULT_LINT_RULES, type Job, type LintRuleToggles } from '@shared/api'
+import { EXPORT_FORMAT_INFO, type ExportFormat } from '@shared/minecraft'
 import { useJobs } from '@/entities/job/model/jobs'
-import type { CheckStatus } from '@/shared/ui/data/progress'
 import { isLintRuleEnabled, LINT_LABELS } from '@/shared/lib/format'
-
-// shortcut: a hand list of blocks that are slow or costly to gather in survival; the engine has no such notion yet
-const RARE =
-  /froglight|tinted_glass|prismarine|sea_lantern|sponge|beacon|conduit|shulker|sculk|end_stone|purpur|netherite|diamond_block|emerald_block|gold_block|crying_obsidian|amethyst|dragon|_head$|skull|budding|heavy_core|trial_spawner|vault/
-
-export const isRare = (state: string): boolean => RARE.test(state)
-
-export const rareBlocks = (top: [string, number][]): [string, number][] =>
-  top.filter(([s]) => isRare(s))
-
-/** A job's step status; `ok` is the step's own pass test on a finished job (lint zero, say). */
-export function jobStatus(j: Job | undefined, ok = true): CheckStatus {
-  if (!j) return 'idle'
-  if (j.state === 'running') return 'running'
-  return j.state === 'done' && ok ? 'done' : 'failed'
-}
 
 /** "falls (gravity) 3, overhang 2", "clean", or "not run". */
 export function lintText(
@@ -35,26 +18,37 @@ export function lintText(
   )
 }
 
-/** The newest round with a pick, and its other files still on disk. */
-export function rejectedVariants(
-  rounds: ReviewRound[],
-  onDisk: string[]
-): { round: ReviewRound | undefined; paths: string[] } {
-  const round = [...rounds].reverse().find((r) => r.pick)
-  const paths = (round?.files ?? [])
-    .filter((f) => f.name !== round?.pick && onDisk.includes(f.path))
-    .map((f) => f.path)
-  return { round, paths }
+/** True when exporting as vanilla Structure Block (.nbt) and the build exceeds 48×48×48. */
+export function exceedsVanillaStructureLimit(
+  format: ExportFormat,
+  shape: readonly number[] | undefined
+): boolean {
+  return format === 'nbt' && !!shape && shape.some((axis) => axis > 48)
 }
 
-export const percent = (part: number, whole: number): number =>
-  Math.round((part / Math.max(whole, 1)) * 100)
+/** Rows appended to builds/<name>/DESIGN.md after an automatic export. */
+export function exportResultsRows(input: {
+  file: string
+  format: ExportFormat
+  shape: readonly number[]
+  paste: readonly number[]
+  lintSummary: string
+  verifySummary: string
+  exportedTo: string
+}): [string, string][] {
+  const fmt = EXPORT_FORMAT_INFO[input.format]
+  return [
+    ['File', input.file],
+    ['Format', `${fmt.extension} (${fmt.label})`],
+    ['Shape', input.shape.join(' × ')],
+    ['Paste at', input.paste.join(', ')],
+    ['Lint', input.lintSummary],
+    ['Verify', input.verifySummary],
+    ['Exported to', input.exportedTo]
+  ]
+}
 
-/** "28 × 64 + 50" for a count of blocks, or the count under one stack. */
-export const stacks = (count: number): string =>
-  count < 64 ? `${count}` : `${Math.floor(count / 64)} × 64${count % 64 ? ` + ${count % 64}` : ''}`
-
-/** Resolves with the job once it ends (Run steps 1 to 6 waits on each job in turn). */
+/** Resolves with the job once it ends. */
 export function waitForJob(id: number): Promise<Job> {
   return new Promise((resolve) => {
     const ended = (): Job | undefined =>
