@@ -57,11 +57,11 @@ Explore 2 to 6 directions simultaneously from a single brief or review. Each lan
 
 ### 🗺️ Fit builds to your world
 
-Pick a Minecraft save in **Build location**, render a top-down map of the area, drag out a footprint with margins, copy `ORIGIN = (x, y, z)`, and export terrain data (`terrain.npz`). World saves are always read through copies — Builder Studio never writes to your Minecraft world.
+Pick a Minecraft save in **Build location** to explore the Overworld, Nether, or End in an interactive 3D world map (**3D**, **Iso**, or **2D**). Scout a terrain footprint before drafting or preview your live 3D `.litematic` build directly on the terrain with position handles, ground snap, and 90° rotation, then save `terrain.npz`, `site.json`, and `ORIGIN = (x, y, z)` in `build.py` with one click. World saves are always read through copies — Builder Studio never writes to your Minecraft world.
 
 ### 🧩 Parts, checks, and materials
 
-Browse builds by named parts, colour-code or isolate parts in 3D, send selected parts to the assistant with their exact coordinates and code lines, run structural lint checks (floating blocks, missing support, gravity blocks, dark areas, fire risk, invalid states, and more), and inspect full material counts.
+Browse builds by named parts, colour-code or isolate parts in 3D, send selected parts to the assistant with their exact coordinates and code lines, run optional structural lint checks with per-rule and 3D highlight toggles (floating blocks, missing support, gravity blocks, dark areas, fire risk, invalid states, and more), and inspect full material counts.
 
 ### 🎨 Reference board and Labs
 
@@ -69,7 +69,7 @@ Keep a per-build reference board (paste screenshots, drop images, save links and
 
 ### 🚀 Confidence-checked export
 
-The 10-step **Export** checklist verifies tool availability, requires zero lint issues, runs a full build, checks interior hollowing, lists materials with rare blocks flagged, reloads the schematic to confirm integrity, writes a results table to `DESIGN.md`, commits the build folder locally, and only then copies the output (`.litematic`, `.schem`, or `.schematic` depending on your project's Minecraft version) into your schematics folder. **Dry run** is enabled by default.
+The 10-step **Export** checklist verifies tool availability, checks enabled lint rules when the linter is on, runs a full build, checks interior hollowing, lists materials with rare blocks flagged, reloads the schematic to confirm integrity, writes a results table to `DESIGN.md`, commits the build folder locally, and only then copies the output (`.litematic`, `.schem`, or `.schematic` depending on your project's Minecraft version) into your schematics folder. **Dry run** is enabled by default.
 
 ### 📜 Plain files, Git history, and external agents (MCP)
 
