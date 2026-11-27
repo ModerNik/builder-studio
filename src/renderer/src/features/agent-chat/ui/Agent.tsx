@@ -17,7 +17,8 @@ import { IconButton } from '@/shared/ui/primitives/icon-button'
 import { Alert } from '@/shared/ui/feedback/Alert'
 import { EmptyState } from '@/shared/ui/feedback/EmptyState'
 import { LoadingState } from '@/shared/ui/feedback/LoadingState'
-import { IconAction } from '@/shared/ui/common/Tip'
+import { IconAction, Tip } from '@/shared/ui/common/Tip'
+import { cn } from '@/shared/lib/utils'
 import { ContextDialog, RewindDialog } from '@/features/agent-chat/ui/CommandDialogs'
 import type { ChatCommand } from '@/features/agent-chat/model/commands'
 import { errorMessage } from '@/shared/ui/feedback/errors'
@@ -92,6 +93,85 @@ export function AgentPanel(): ReactElement {
   return <BuildAgent build={build} />
 }
 
+const STARTER_PROMPTS = [
+  {
+    label: 'Check build & lint',
+    text: 'Run a check on this build and list any lint or structural issues.'
+  },
+  {
+    label: 'Suggest block palette',
+    text: 'Suggest a cohesive block palette and material mix for this build.'
+  },
+  {
+    label: 'Draft prototype',
+    text: 'Generate a prototype build (`build.py proto`) and show the render sheet.'
+  },
+  {
+    label: 'Review proportions',
+    text: 'Review the current proportions, silhouette, and roof details and suggest improvements.'
+  }
+] as const
+
+function ContextPill({
+  context,
+  onClick
+}: {
+  context: { tokens: number; max: number }
+  onClick: () => void
+}): ReactElement | null {
+  if (!context.max) return null
+  const ratio = Math.min(1, Math.max(0, context.tokens / context.max))
+  const pct = Math.round(ratio * 100)
+  const circumference = 2 * Math.PI * 6
+  const offset = circumference * (1 - ratio)
+  const tone =
+    pct >= 90
+      ? { text: 'text-danger-text', stroke: 'stroke-danger-solid' }
+      : pct >= 75
+        ? { text: 'text-warning-text', stroke: 'stroke-warning-solid' }
+        : { text: 'text-fg-secondary', stroke: 'stroke-accent-solid' }
+  return (
+    <Tip
+      label={`Context usage: ${context.tokens.toLocaleString()} / ${context.max.toLocaleString()} tokens (${pct}%)`}
+    >
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        aria-label={`Context usage ${pct} percent`}
+        onClick={onClick}
+        className={cn(
+          'h-(--density-control-sm) shrink-0 gap-1 px-1.5 font-mono text-2xs tabular-nums',
+          tone.text
+        )}
+      >
+        <svg className="size-3.5 -rotate-90" viewBox="0 0 16 16" aria-hidden>
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            fill="none"
+            className="stroke-surface-active"
+            strokeWidth="2"
+          />
+          <circle
+            cx="8"
+            cy="8"
+            r="6"
+            fill="none"
+            className={tone.stroke}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={offset}
+          />
+        </svg>
+        <span>{pct}%</span>
+      </Button>
+    </Tip>
+  )
+}
+
 function BuildAgent({ build }: { build: string }): ReactElement {
   const brief = useBriefDialog(build)
   const running = useThread((t) => busy(t.state))
@@ -99,6 +179,7 @@ function BuildAgent({ build }: { build: string }): ReactElement {
     null
   )
   const [rewindPoint, setRewindPoint] = useState<string | undefined>(undefined)
+  const [draftRequest, setDraftRequest] = useState<{ id: number; text: string } | null>(null)
   const [title, setTitle] = useState('')
   const [renaming, setRenaming] = useState(false)
   const id = useThread((t) => t.id)
@@ -169,12 +250,15 @@ function BuildAgent({ build }: { build: string }): ReactElement {
   }
   return (
     <div className="flex h-full min-w-0 flex-col overflow-hidden">
-      <div className="flex h-(--density-control) shrink-0 items-center gap-1 border-b border-border-subtle px-1.5">
+      <div className="flex h-(--density-control) shrink-0 items-center gap-1 border-b border-border-subtle px-2">
         <AgentThreads
           open={panel === 'threads'}
           setOpen={(open) => setPanel(open ? 'threads' : null)}
         />
         <span className="flex-1" />
+        {state.context && (
+          <ContextPill context={state.context} onClick={() => setPanel('context')} />
+        )}
         <McpButton open={panel === 'mcp'} setOpen={(open) => setPanel(open ? 'mcp' : null)} />
         <span className="flex items-center gap-1 max-sm:hidden">
           <IconAction
@@ -207,13 +291,21 @@ function BuildAgent({ build }: { build: string }): ReactElement {
         key={id}
         build={build}
         onBrief={() => void brief.openBrief()}
+        onStarter={(text) => setDraftRequest((prev) => ({ id: (prev?.id ?? 0) + 1, text }))}
         onRewind={(point) => {
           setRewindPoint(point)
           setPanel('rewind')
         }}
       />
-      <AgentComposer onCommand={command} />
-      {panel === 'context' && <ContextDialog context={state.context} onClose={close} />}
+      <AgentComposer onCommand={command} draftRequest={draftRequest} />
+      {panel === 'context' && (
+        <ContextDialog
+          context={state.context}
+          onCompact={ref ? () => command('compact', '') : undefined}
+          compactDisabled={running}
+          onClose={close}
+        />
+      )}
       {panel === 'rewind' && ref && (
         <ActiveRewind
           key={`${ref.id}:${rewindPoint ?? ''}`}
@@ -312,10 +404,12 @@ const workMode = (): AgentMode => 'auto'
 function ActiveTranscript({
   build,
   onBrief,
+  onStarter,
   onRewind
 }: {
   build: string
   onBrief(): void
+  onStarter(text: string): void
   onRewind(point: string): void
 }): ReactElement {
   const id = useThread((t) => t.id)
@@ -441,12 +535,27 @@ function ActiveTranscript({
             size="panel"
             title={`Talk to the agent about ${displayName}`}
             action={
-              <Button variant="outline" disabled={working} onClick={onBrief}>
-                <FileText aria-hidden /> Write a brief
-              </Button>
+              <div className="flex flex-col items-center gap-3">
+                <Button variant="outline" disabled={working} onClick={onBrief}>
+                  <FileText aria-hidden /> Write a brief
+                </Button>
+                <div className="flex max-w-80 flex-wrap justify-center gap-1.5">
+                  {STARTER_PROMPTS.map((starter) => (
+                    <button
+                      key={starter.label}
+                      type="button"
+                      disabled={working}
+                      onClick={() => onStarter(starter.text)}
+                      className="focus-ring cursor-pointer rounded-full border border-border-subtle bg-surface-sunken px-2.5 py-1 text-xs text-fg-secondary transition-colors duration-fast ease-standard can-hover:border-border-default can-hover:bg-surface-hover can-hover:text-fg disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      {starter.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
             }
           >
-            Write a brief, or ask anything below.
+            Write a brief, pick a starter, or ask anything below.
           </EmptyState>
         )
       }

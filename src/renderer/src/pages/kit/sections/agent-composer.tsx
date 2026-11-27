@@ -1,6 +1,8 @@
 import { useState, type ReactElement } from 'react'
-import { Boxes, Images } from 'lucide-react'
+import { Boxes, Compass, FilePen, Images, Shield, Zap } from 'lucide-react'
 import { Composer, type Option } from '@/features/agent-chat/ui/Composer'
+import { McpPopoverContent } from '@/features/agent-chat/ui/AgentMcp'
+import { ModelEffortPicker } from '@/features/agent-chat/ui/ModelEffortPicker'
 import { ContextChip, type Attachment } from '@/features/agent-chat/ui/Messages'
 import { ThreadListItem } from '@/features/agent-chat/ui/ThreadListItem'
 import { ContextDialog, RewindDialog } from '@/features/agent-chat/ui/CommandDialogs'
@@ -11,18 +13,30 @@ import { Cell, Grid, Narrow, Sub, Touch } from '../composites-demo'
 export const meta = { group: 'Agent', title: 'Composer and threads' }
 
 const MODES: Option[] = [
-  { value: 'default', label: 'Manual', description: 'Asks before each edit and command' },
+  {
+    value: 'default',
+    label: 'Manual',
+    description: 'Asks before each edit and command',
+    icon: <Shield aria-hidden className="size-3.5" />
+  },
   {
     value: 'acceptEdits',
     label: 'Accept edits',
-    description: 'Runs edits and commands without asking'
+    description: 'Runs edits and commands without asking',
+    icon: <FilePen aria-hidden className="size-3.5" />
   },
   {
     value: 'auto',
     label: 'Auto',
-    description: 'A classifier approves calls; risky calls still ask'
+    description: 'A classifier approves calls; risky calls still ask',
+    icon: <Zap aria-hidden className="size-3.5 text-warning-text" />
   },
-  { value: 'plan', label: 'Plan', description: 'Plans first and asks before it edits' }
+  {
+    value: 'plan',
+    label: 'Plan',
+    description: 'Plans first and asks before it edits',
+    icon: <Compass aria-hidden className="size-3.5 text-accent-text" />
+  }
 ]
 const MODELS: Option[] = [
   { value: 'opus', label: 'Opus' },
@@ -32,7 +46,9 @@ const MODELS: Option[] = [
 const EFFORTS: Option[] = [
   { value: 'low', label: 'Low' },
   { value: 'medium', label: 'Medium' },
-  { value: 'high', label: 'High' }
+  { value: 'high', label: 'High' },
+  { value: 'xhigh', label: 'Extra high' },
+  { value: 'max', label: 'Max' }
 ]
 const COMMANDS = [
   { name: 'compact', description: 'Summarize the conversation to free context' },
@@ -161,6 +177,7 @@ function CommandDialogsDemo(): ReactElement {
             max: 200_000,
             categories: [{ name: 'Messages', tokens: 36_000 }]
           }}
+          onCompact={close}
           onClose={close}
         />
       )}
@@ -173,6 +190,52 @@ const REFS = [
   { id: 'r2', label: 'Dark oak roof, steep eaves', image: hero },
   { id: 'r3', label: 'https://example.com/keep-reference' }
 ]
+
+function ModelEffortDemo(): ReactElement {
+  const [model, setModel] = useState('sonnet')
+  const [effort, setEffort] = useState('high')
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <ModelEffortPicker
+        models={MODELS}
+        model={model}
+        onModelChange={setModel}
+        efforts={EFFORTS}
+        effort={effort}
+        onEffortChange={setEffort}
+      />
+      <ModelEffortPicker
+        models={[{ value: 'qwen3-coder', label: 'Qwen3 Coder' }]}
+        model="qwen3-coder"
+      />
+    </div>
+  )
+}
+
+function McpPopoverDemo(): ReactElement {
+  const [servers, setServers] = useState([
+    { name: 'studio', status: 'connected', scope: 'sdk', error: null },
+    { name: 'context7', status: 'connected', scope: 'project', error: null },
+    { name: 'filesystem', status: 'disabled', scope: 'project', error: null }
+  ])
+  return (
+    <div className="max-w-96 rounded-lg border border-border-default bg-surface-overlay p-3 shadow-lg">
+      <McpPopoverContent
+        buildName="stone_watchtower"
+        workspace="C:\\Users\\builder\\minecraft-workspace"
+        live
+        canToggle
+        servers={servers}
+        onToggle={(name, on) =>
+          setServers((prev) =>
+            prev.map((s) => (s.name === name ? { ...s, status: on ? 'connected' : 'disabled' } : s))
+          )
+        }
+        onOpenSettings={() => undefined}
+      />
+    </div>
+  )
+}
 
 export default function AgentComposer(): ReactElement {
   return (
@@ -232,6 +295,22 @@ export default function AgentComposer(): ReactElement {
             </Narrow>
           </Cell>
         </Grid>
+      </Sub>
+      <Sub
+        title="Model & Effort picker"
+        note="Popover with clean model list and stepped Reasoning effort slider (5 stops vs. Ollama without effort)."
+      >
+        <Cell label="Interactive triggers">
+          <ModelEffortDemo />
+        </Cell>
+      </Sub>
+      <Sub
+        title="MCP quick-connect popover"
+        note="Single-view popover with build-aware copyable chat prompt, client setup commands, and live embedded server toggles."
+      >
+        <Cell label="Connected thread with custom servers" surface="none">
+          <McpPopoverDemo />
+        </Cell>
       </Sub>
       <Sub
         title="Chat command dialogs"

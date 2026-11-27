@@ -16,7 +16,7 @@ import {
   type SessionRef
 } from '@shared/api'
 import { queryClient, studio } from '@/shared/api/studio'
-import { reduce, type Item } from './transcript'
+import { reduce, reduceLive, type Item } from './transcript'
 
 export type Thread = {
   id: string
@@ -260,7 +260,7 @@ studio.agent.onMsg(({ thread, data }) => {
       }))
     else
       patch(thread, (t) => ({
-        items: reduce(t.items, data),
+        items: reduceLive(t.items, data),
         ...(data.type === 'user' || data.type === 'text' || data.type === 'tool'
           ? { suggestion: null }
           : {})
@@ -327,7 +327,7 @@ export async function openSession(ref: SessionRef, onBuild?: string): Promise<vo
     {
       ...blank(id, build, useAgent.getState().primary),
       session: ref.id,
-      items: msgs.reduce(reduce, [] as Item[])
+      items: msgs.reduce((acc, m) => reduce(acc, m), [] as Item[])
     }
   ])
 }
@@ -351,7 +351,13 @@ export async function send(
       suggestion: null,
       items: [
         ...t.items,
-        { kind: 'user', id: itemId, text, ...(attachments ? { attachments } : {}) }
+        {
+          kind: 'user',
+          id: itemId,
+          text,
+          timestamp: Date.now(),
+          ...(attachments ? { attachments } : {})
+        }
       ]
     }))
   else patch(active, () => ({ suggestion: null }))

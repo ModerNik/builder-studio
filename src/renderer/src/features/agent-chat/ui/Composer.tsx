@@ -1,5 +1,5 @@
-import { useId, useState, type ReactElement, type ReactNode } from 'react'
-import { ChevronDown, Paperclip, Send, Square } from 'lucide-react'
+import { useEffect, useId, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { Paperclip, Send, Square } from 'lucide-react'
 import { Button } from '@/shared/ui/primitives/button'
 import {
   DropdownMenu,
@@ -7,8 +7,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger
@@ -32,19 +30,21 @@ import {
   type ChatCommandResult
 } from '../model/commands'
 import { AttachmentChip, type Attachment } from './Messages'
+import { ModelEffortPicker } from './ModelEffortPicker'
 
 /** A picker choice; `description` is its second line in the open list (not in the trigger). */
-export type Option = { value: string; label: string; description?: string }
+export type Option = { value: string; label: string; description?: string; icon?: ReactNode }
 /** Something from elsewhere the attach menu offers beside files: a board reference, say. */
 export type AttachPick = { id: string; label: string; image?: string; checked: boolean }
 
-/** A compact select for the composer's permission mode picker; the tooltip names it. */
+/** A compact ghost select for the composer's permission mode picker; the tooltip names it. */
 function Picker({
   label,
   value,
   options,
   onChange,
   title,
+  leading,
   triggerValue,
   className
 }: {
@@ -53,6 +53,7 @@ function Picker({
   options: Option[]
   onChange: (value: string) => void
   title?: string
+  leading?: ReactNode
   triggerValue?: ReactNode
   className?: string
 }): ReactElement {
@@ -61,18 +62,36 @@ function Picker({
       <Tip label={title ?? label}>
         <SelectTrigger
           size="sm"
+          variant="ghost"
+          leading={leading}
           aria-label={label}
-          className={cn('w-30 shrink-0 font-mono text-sm @max-[26rem]:w-22', className)}
+          className={cn(
+            'w-auto max-w-36 shrink-0 text-sm font-medium @max-[24rem]:max-w-24',
+            className
+          )}
         >
           <SelectValue>{triggerValue}</SelectValue>
         </SelectTrigger>
       </Tip>
-      <SelectContent>
+      <SelectContent className="w-72 max-w-[calc(100vw-1rem)]">
         {options.map((o) => (
-          <SelectItem key={o.value} value={o.value} description={o.description}>
+          <SelectItem
+            key={o.value}
+            value={o.value}
+            icon={o.icon}
+            description={o.description}
+            className={cn(MODE_TONE[o.value])}
+          >
             {o.label}
           </SelectItem>
         ))}
+        <div
+          aria-hidden
+          className="mt-1 flex items-center justify-between border-t border-border-strong/40 px-2.5 pt-2 pb-1 text-2xs text-fg-muted"
+        >
+          <span>Cycle mode</span>
+          <Kbd>Shift+Tab</Kbd>
+        </div>
       </SelectContent>
     </Select>
   )
@@ -113,6 +132,7 @@ export function Composer({
   onEffortChange,
   suggestion = null,
   onDismissSuggestion,
+  draftRequest = null,
   initialText = '',
   variant = 'default',
   placeholder,
@@ -149,26 +169,43 @@ export function Composer({
   /** Provider-predicted next prompt rendered as ghost text when empty (Tab edits, Enter sends, Escape dismisses). */
   suggestion?: string | null
   onDismissSuggestion?: () => void
+  /** External request to populate the composer text and focus it (e.g. clicking an empty-state starter chip). */
+  draftRequest?: { id: number; text: string } | null
   initialText?: string
   variant?: 'default' | 'compact'
   placeholder?: string
   className?: string
 }): ReactElement {
   const compact = variant === 'compact'
-  const modelLabel = models?.find((option) => option.value === model)?.label ?? model
-  const effortLabel = efforts?.find((option) => option.value === effort)?.label ?? effort
-  const groups = [
-    { label: 'Model', value: model, options: models, onChange: onModelChange },
-    { label: 'Effort', value: effort, options: efforts, onChange: onEffortChange }
-  ].filter((group) => group.options?.length)
-  const selectionLabel = [modelLabel, effortLabel].filter(Boolean).join(', ')
   const [text, setText] = useState(initialText)
   const [hidden, setHidden] = useState(false) // Escape closed the picker until the text changes
   const [active, setActive] = useState(0)
   const [drag, setDrag] = useState(false)
   const [skillPicker, setSkillPicker] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
+  const [appliedDraftId, setAppliedDraftId] = useState<number | null>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const id = useId()
+
+  if (draftRequest && draftRequest.id !== appliedDraftId) {
+    setAppliedDraftId(draftRequest.id)
+    setText(draftRequest.text)
+    setSkillPicker(false)
+    setHidden(false)
+    setActive(0)
+  }
+
+  useEffect(() => {
+    if (appliedDraftId === null) return
+    const frame = requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [appliedDraftId])
+
   const local = onCommand && !skillPicker && text.startsWith('/')
   const offered = skillPicker
     ? commands.filter((c) => c.skill !== false)
@@ -187,6 +224,7 @@ export function Composer({
   const canSend =
     (!!text.trim() && (selected || (!running && !uploading && !disabledReason))) || showGhost
   const sigil = sigils[0]
+  const hasCommands = Boolean(onCommand || commands.length > 0)
 
   const runCommand = ({ name, args }: NonNullable<ReturnType<typeof parseChatCommand>>): void => {
     const result = onCommand?.(name, args)
@@ -214,6 +252,18 @@ export function Composer({
     setText(`${text[0]}${c.name} `)
     setHidden(true)
   }
+  const openSlashMenu = (): void => {
+    setSkillPicker(false)
+    setHidden(false)
+    setActive(0)
+    setText((prev) => (prev.startsWith('/') ? prev : '/'))
+    requestAnimationFrame(() => {
+      const el = textareaRef.current
+      if (!el) return
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+  }
   const attach = (list: FileList | null): void => {
     if (!list?.length || !onAttach) return
     onAttach([...list].slice(0, Math.max(0, maxFiles - attachments.length)))
@@ -226,12 +276,13 @@ export function Composer({
     input.click()
   }
   const current = modes?.find((m) => m.value === mode)
+  const hasChips = !compact && (attachments.length > 0 || Boolean(context))
 
   return (
     <div
       className={cn(
-        'relative flex shrink-0 gap-1.5 border-t border-border-default bg-surface-panel p-2',
-        compact ? 'items-end' : 'flex-col',
+        'relative flex shrink-0 gap-2 border-t border-border-subtle bg-surface-panel p-2.5',
+        compact ? 'items-end gap-1.5 p-2' : 'flex-col',
         !compact && '@container',
         className
       )}
@@ -249,13 +300,27 @@ export function Composer({
       }}
     >
       <DropOverlay active={drag} label={`Drop files to attach (up to ${maxFiles})`} />
+      {hasChips && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {attachments.map((a) => (
+            <AttachmentChip
+              key={a.path}
+              file={a}
+              onRemove={
+                onRemoveAttachment && !a.uploading ? () => onRemoveAttachment(a.path) : undefined
+              }
+            />
+          ))}
+          {context}
+        </div>
+      )}
       <div className={cn('relative', compact && 'min-w-0 flex-1')}>
         {open && (
           <ul
             id={`${id}-list`}
             role="listbox"
             aria-label={local ? 'Chat commands' : 'Skills'}
-            className="absolute inset-x-0 bottom-full z-(--z-dropdown) mb-1 max-h-64 overflow-auto rounded-lg border border-border-default bg-surface-overlay p-1 shadow-md"
+            className="absolute inset-x-0 bottom-full z-(--z-dropdown) mb-1.5 max-h-64 overflow-auto rounded-lg border border-border-default bg-surface-overlay p-1.5 shadow-lg"
           >
             {matches.map((c, i) => (
               <li
@@ -267,7 +332,7 @@ export function Composer({
                 onMouseEnter={() => setActive(i)}
                 onClick={() => insert(c)}
                 className={cn(
-                  'flex min-h-(--density-row) cursor-default items-baseline gap-2 rounded-md px-2 py-1',
+                  'flex min-h-(--density-row) cursor-default items-baseline gap-2 rounded-md px-2.5 py-1 transition-colors duration-fast ease-standard',
                   i === at && 'bg-surface-hover'
                 )}
               >
@@ -288,9 +353,9 @@ export function Composer({
         {showGhost && suggestion && (
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-0 flex items-start justify-between gap-2 overflow-hidden px-3 py-2"
+            className="pointer-events-none absolute inset-0 flex items-start justify-between gap-2 overflow-hidden px-3 py-2.5"
           >
-            <span className="line-clamp-2 min-w-0 flex-1 text-base text-fg-muted">
+            <span className="line-clamp-3 min-w-0 flex-1 text-base text-fg-muted">
               {suggestion}
             </span>
             <span className="flex shrink-0 items-center gap-1 pt-0.5">
@@ -305,6 +370,7 @@ export function Composer({
           </span>
         )}
         <textarea
+          ref={textareaRef}
           value={text}
           aria-label="Message the assistant"
           aria-autocomplete="list"
@@ -375,7 +441,7 @@ export function Composer({
               send()
             }
           }}
-          rows={compact ? 1 : 2}
+          rows={compact ? 1 : 3}
           placeholder={
             showGhost
               ? ''
@@ -387,8 +453,8 @@ export function Composer({
                   `Ask the assistant (Enter sends, Shift Enter for a new line, ${sigil} for skills)`)
           }
           className={cn(
-            'block w-full resize-none rounded-lg border border-border-strong bg-surface-sunken px-3 text-base text-fg [field-sizing:content] placeholder:text-fg-muted focus-visible:border-focus focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
-            compact ? 'max-h-32 min-h-(--density-control) py-1.5' : 'max-h-48 min-h-16 py-2'
+            'block w-full resize-none rounded-lg border border-border-default bg-surface-sunken px-3 text-base text-fg transition-[border-color] duration-fast ease-standard [field-sizing:content] placeholder:text-fg-muted can-hover:border-border-strong focus-visible:border-focus focus-visible:outline-2 focus-visible:-outline-offset-1 focus-visible:outline-focus',
+            compact ? 'max-h-32 min-h-(--density-control) py-1.5' : 'max-h-60 min-h-24 py-2.5'
           )}
         />
       </div>
@@ -410,20 +476,6 @@ export function Composer({
             className="size-(--density-control) text-accent-text hover:text-accent-text"
           />
         ))}
-      {!compact && attachments.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-          {attachments.map((a) => (
-            <AttachmentChip
-              key={a.path}
-              file={a}
-              onRemove={
-                onRemoveAttachment && !a.uploading ? () => onRemoveAttachment(a.path) : undefined
-              }
-            />
-          ))}
-        </div>
-      )}
-      {!compact && context && <div className="flex flex-wrap gap-1.5 pt-1">{context}</div>}
       {disabledReason && (
         <p
           id={`${id}-why`}
@@ -491,6 +543,19 @@ export function Composer({
               />
             )
           )}
+          {hasCommands && (
+            <Tip label="Commands (/)">
+              <Button
+                type="button"
+                variant="ghost"
+                aria-label="Commands"
+                onClick={openSlashMenu}
+                className="size-(--density-control-sm) shrink-0 p-0 font-mono text-sm font-semibold text-fg-secondary hover:text-fg"
+              >
+                /
+              </Button>
+            </Tip>
+          )}
           {modes && mode !== undefined && onModeChange && (
             <Picker
               label={current ? `Permission mode: ${current.label}` : 'Permission mode'}
@@ -498,6 +563,7 @@ export function Composer({
               value={mode}
               options={modes}
               onChange={onModeChange}
+              leading={current?.icon}
               triggerValue={
                 mode === 'acceptEdits' ? (
                   <>
@@ -506,56 +572,20 @@ export function Composer({
                   </>
                 ) : undefined
               }
-              className={cn(MODE_TONE[mode], 'font-sans')}
+              className={cn(MODE_TONE[mode])}
             />
           )}
-          {groups.length > 0 && (
-            <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>
-              <Tip label={selectionLabel}>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={running}
-                    aria-label={selectionLabel}
-                    className="h-(--density-control-sm) w-44 min-w-0 shrink justify-start gap-1.5 px-2 font-normal"
-                  >
-                    <span className="min-w-0 truncate">{modelLabel}</span>
-                    {effortLabel && (
-                      <span className="shrink-0 text-fg-secondary">{effortLabel}</span>
-                    )}
-                    <ChevronDown className="ml-auto shrink-0 text-fg-secondary" aria-hidden />
-                  </Button>
-                </DropdownMenuTrigger>
-              </Tip>
-              <DropdownMenuContent align="end" className="w-64 max-w-[calc(100vw-1rem)]">
-                {groups.map(({ label, value, options, onChange }, index) => (
-                  <div key={label}>
-                    {index > 0 && <DropdownMenuSeparator />}
-                    <DropdownMenuLabel>{label}</DropdownMenuLabel>
-                    <DropdownMenuRadioGroup
-                      aria-label={label}
-                      value={value}
-                      onValueChange={onChange}
-                    >
-                      {options?.map((option) => (
-                        <DropdownMenuRadioItem
-                          key={option.value}
-                          value={option.value}
-                          disabled={!onChange}
-                          check
-                          className="wrap-anywhere"
-                        >
-                          {option.label}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </div>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+          <ModelEffortPicker
+            models={models}
+            model={model}
+            onModelChange={onModelChange}
+            efforts={efforts}
+            effort={effort}
+            onEffortChange={onEffortChange}
+            disabled={running}
+            open={modelOpen}
+            onOpenChange={setModelOpen}
+          />
           {running ? (
             <Button
               size="sm"

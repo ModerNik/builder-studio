@@ -7,36 +7,8 @@ import {
   SettingsRow,
   SettingsSection
 } from '@/entities/settings/ui/Settings'
+import { MCP_CLIENT_SNIPPETS } from '@/shared/lib/mcp-snippets'
 import { MCP_URL } from '@shared/api'
-
-const CLIENTS: { name: string; where: string; snippet: string }[] = [
-  {
-    name: 'Claude Code',
-    where: 'Run in a terminal, from the workspace.',
-    snippet: `claude mcp add --transport http builder-studio ${MCP_URL}`
-  },
-  {
-    name: 'Codex CLI',
-    where: 'Run in a terminal.',
-    snippet: `codex mcp add builder-studio --url ${MCP_URL}`
-  },
-  {
-    name: 'Codex CLI: review timeout',
-    where: 'In ~/.codex/config.toml, so request_review can wait for you.',
-    snippet: `[mcp_servers.builder-studio]\nurl = "${MCP_URL}"\ntool_timeout_sec = 86400`
-  },
-  {
-    name: 'Claude Desktop',
-    where:
-      'In %APPDATA%\\Claude\\claude_desktop_config.json (needs Node), then restart Claude Desktop. It only ' +
-      'launches local servers, so mcp-remote bridges to this one.',
-    snippet: JSON.stringify(
-      { mcpServers: { 'builder-studio': { command: 'npx', args: ['-y', 'mcp-remote', MCP_URL] } } },
-      null,
-      2
-    )
-  }
-]
 
 const code = 'font-mono text-sm'
 
@@ -50,9 +22,9 @@ export function Agents(): ReactElement {
       </SettingsPanel>
       <SettingsSection id="h-clients" title="Connect a client">
         <SettingsPanel>
-          {CLIENTS.map((c) => (
+          {MCP_CLIENT_SNIPPETS.map((c) => (
             <SettingsRow
-              key={c.name}
+              key={c.id}
               title={c.name}
               detail={c.where}
               below={<CopySnippet code={c.snippet} label={c.name} />}
