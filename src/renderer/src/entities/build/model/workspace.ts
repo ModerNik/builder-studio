@@ -90,7 +90,7 @@ export const CHECK_COLORS: Record<string, string> = {
 }
 
 export const CHECK_DESCRIPTIONS: Record<LintRule, string> = {
-  floating: 'Blocks that aren’t connected to the ground or build edges.',
+  floating: 'Gravity-affected blocks not supported from below by a non-gravity block or anchor.',
   unattached:
     'Torches, lanterns, signs, carpets, rails and other blocks with nothing to attach to.',
   gravity: 'Sand, gravel, concrete powder and other gravity blocks over air.',
