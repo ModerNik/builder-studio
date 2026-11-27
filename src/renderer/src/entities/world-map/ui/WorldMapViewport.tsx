@@ -174,7 +174,9 @@ interface Props {
   margin: number
   /** Optional build:// URL of the build's .litematic to preview on the 3D terrain. */
   buildSrc?: string | null
-  onBuildSize?: (size: Vec3) => void
+  /** Optional local build layer ceiling (0..height-1); null shows every layer. */
+  clipY?: number | null
+  onBuildSize?: (size: Vec3 | null) => void
   /** Change `seq` to fly/snap the camera to a world point. */
   flyTo?: FlyTarget | null
   /** Reports ground stats over the active footprint as terrain tiles stream in. */
@@ -201,6 +203,7 @@ export function WorldMapViewport({
   onRotate,
   margin,
   buildSrc = null,
+  clipY = null,
   onBuildSize,
   flyTo = null,
   onGroundStats,
@@ -319,7 +322,7 @@ export function WorldMapViewport({
     const overlay = new PlacementOverlay(scene, {
       onOriginDrag: (next) => propsRef.current.onOriginChange?.(next),
       onBuildLoaded: (size) => {
-        setBuildSize(size)
+        if (size) setBuildSize(size)
         propsRef.current.onBuildSize?.(size)
       }
     })
@@ -468,9 +471,10 @@ export function WorldMapViewport({
       origin,
       rotation,
       margin,
-      groundY: ground?.median ?? null
+      groundY: ground?.median ?? null,
+      clipY
     })
-  }, [mode, areaBox, origin, rotation, margin, buildSize, onGroundStats])
+  }, [mode, areaBox, origin, rotation, margin, buildSize, clipY, onGroundStats])
 
   const setCursorReadout = (hit: WorldCursor | null): void => {
     const el = cursorTextRef.current

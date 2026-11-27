@@ -126,7 +126,7 @@ export class SchematicObject {
       m.needsUpdate = true
     })
   }
-  set clippingPlanes(planes: THREE.Plane[]) {
+  setClipping(planes: THREE.Plane[], capLayer?: number | null): void {
     this.materials.forEach((m) => (m.clippingPlanes = planes))
     // faces culled against the layer above the cut would leave holes: cap the top visible layer
     for (const c of this.caps) {
@@ -134,11 +134,17 @@ export class SchematicObject {
       c.geometry.dispose()
     }
     const top = planes.find((p) => p.normal.y === -1) // keeps y <= constant: the top layer is constant - 0.5
-    this.caps =
-      top && this.mesher
-        ? this.mesher.cap(Math.round(top.constant - 0.5) - this.schematic.min[1], this.materials)
-        : []
+    const ly =
+      capLayer !== undefined
+        ? capLayer
+        : top
+          ? Math.round(top.constant - 0.5) - this.schematic.min[1]
+          : null
+    this.caps = ly !== null && this.mesher ? this.mesher.cap(ly, this.materials) : []
     if (this.caps.length) this.group.add(...this.caps)
+  }
+  set clippingPlanes(planes: THREE.Plane[]) {
+    this.setClipping(planes)
   }
   dispose(): void {
     this.group.traverse((o) => (o as THREE.Mesh).isMesh && (o as THREE.Mesh).geometry.dispose())

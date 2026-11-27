@@ -20,6 +20,7 @@ import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import { useBuild } from '@/entities/build/model/builds'
 import { errorText, versionName } from '@/entities/build/model/workspace'
 import { useMinecraftPack, useSettings } from '@/entities/settings/model/settings'
+import { ClipHeightControl } from '@/entities/viewer/ui/ViewerControls'
 import { ViewerToolbar, ViewerToolbarSeparator } from '@/entities/viewer/ui/ViewerOverlay'
 import { boxDimensions, formatOriginLine, normalizeBox } from '@/entities/world-map/model/placement'
 import type { Box2D, CameraMode, PlacementMode, Vec3 } from '@/entities/world-map/model/types'
@@ -29,6 +30,7 @@ import { CopyButton } from '@/shared/ui/common/CopyButton'
 import { Tip } from '@/shared/ui/common/Tip'
 import { ConfirmDestructive } from '@/shared/ui/feedback/ConfirmDestructive'
 import { EmptyState } from '@/shared/ui/feedback/EmptyState'
+import { LoadingState } from '@/shared/ui/feedback/LoadingState'
 import { Button } from '@/shared/ui/primitives/button'
 import { Field } from '@/shared/ui/primitives/field'
 import { IconButton } from '@/shared/ui/primitives/icon-button'
@@ -104,12 +106,16 @@ function Location({ name }: { name: string }): ReactElement {
     listed.find((w) => w.path === loc.world)?.name ??
     loc.world.split(/[\\/]/).pop() ??
     ''
+  const loadingWorlds = !loc.world && (loc.savedMetaPending || loc.worlds.isPending)
   const noWorlds = loc.worlds.isSuccess && !loc.savedMetaPending && !listed.length && !loc.world
+  const needsWorldChoice =
+    !loc.world && !loc.savedMetaPending && !loc.worlds.isPending && listed.length > 0
   const areaNorm = loc.areaBox ? normalizeBox(loc.areaBox) : null
   const areaDims = areaNorm ? boxDimensions(areaNorm) : null
   const originLine = formatOriginLine(loc.effectiveOrigin)
   const buildSrc =
     loc.mode === 'build' && loc.activeVersionPath ? buildUrl(loc.activeVersionPath) : null
+  const topLayer = Math.max(loc.buildHeight - 1, 0)
 
   const groundBadge = loc.groundStats ? `Y ${loc.groundStats.min}–${loc.groundStats.max}` : null
 
@@ -131,185 +137,204 @@ function Location({ name }: { name: string }): ReactElement {
   const rail = (
     <div className="@container flex h-full min-h-0 flex-col bg-surface-panel">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3.5">
-        {/* Auto-adaptive mode switch: only shown once a .litematic draft exists */}
-        {loc.hasDrafts && (
-          <SegmentedControl
-            size="sm"
-            aria-label="Placement mode"
-            value={loc.mode}
-            onValueChange={(v) => v && loc.setMode(v as PlacementMode)}
-            className="grid w-full grid-cols-2"
-          >
-            <SegmentedControlItem value="area">Terrain area</SegmentedControlItem>
-            <SegmentedControlItem value="build">Place build</SegmentedControlItem>
-          </SegmentedControl>
-        )}
-
-        {/* Dimension & folder picker */}
-        <div className="flex items-center gap-1.5">
-          <Select
-            value={loc.dimension}
-            onValueChange={(v) => loc.setDimension(v as WorldDimension)}
-            disabled={loc.availableDimensions.length <= 1}
-          >
-            <SelectTrigger size="sm" aria-label="Dimension" className="min-w-0 flex-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {loc.availableDimensions.map((d) => (
-                <SelectItem key={d} value={d}>
-                  {DIM_LABELS[d]}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <IconButton
-            size="icon-sm"
-            variant="outline"
-            label="Choose world folder…"
-            onClick={() => void loc.pickWorldFolder()}
-          >
-            <FolderOpen />
-          </IconButton>
-        </div>
-
-        <hr className="border-border-subtle" />
-
-        {loc.mode === 'area' ? (
-          /* ── Scout Terrain controls ── */
-          <div className="flex flex-col gap-3">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium text-fg-secondary">
-                Area{areaDims ? ` · ${areaDims[0]}×${areaDims[1]}` : ''}
-              </span>
-              {groundBadge && (
-                <span className="font-mono text-xs tabular-nums text-fg-muted">{groundBadge}</span>
-              )}
-            </div>
-            {areaNorm && (
-              <div className="grid grid-cols-1 gap-2 @[15rem]:grid-cols-2">
-                {(['x1', 'z1', 'x2', 'z2'] as const).map((key, i) => (
-                  <NumberField
-                    key={key}
-                    aria-label={`Area ${key}`}
-                    className="font-mono"
-                    unit={key}
-                    hideStepper
-                    value={areaNorm[i]}
-                    onValueChange={(v) => updateAreaCorner(i as 0 | 1 | 2 | 3, v)}
-                  />
-                ))}
-              </div>
-            )}
-            <Field label="Margin">
-              <NumberField
-                aria-label="Terrain margin in blocks"
-                className="font-mono"
-                unit="blk"
-                min={0}
-                value={loc.margin}
-                onValueChange={(v) => loc.setMargin(Math.max(0, Math.round(v ?? 0)))}
-              />
-            </Field>
+        {!loc.world ? (
+          <div className="flex flex-1 flex-col items-start justify-center gap-3 text-sm text-fg-secondary">
+            <p>Choose a Minecraft world to inspect terrain and configure placement settings.</p>
+            <Button size="sm" variant="outline" onClick={() => void loc.pickWorldFolder()}>
+              <FolderOpen /> Choose world folder…
+            </Button>
           </div>
         ) : (
-          /* ── Place Build controls ── */
-          <div className="flex flex-col gap-3">
-            {versions.length > 1 && loc.activeVersionPath && (
-              <Select value={loc.activeVersionPath} onValueChange={loc.setActiveVersionPath}>
-                <SelectTrigger size="sm" aria-label="Draft version" className="w-full font-mono">
+          <>
+            {/* Auto-adaptive mode switch: only shown once a .litematic draft exists */}
+            {loc.hasDrafts && (
+              <SegmentedControl
+                size="sm"
+                aria-label="Placement mode"
+                value={loc.mode}
+                onValueChange={(v) => v && loc.setMode(v as PlacementMode)}
+                className="grid w-full grid-cols-2"
+              >
+                <SegmentedControlItem value="area">Terrain area</SegmentedControlItem>
+                <SegmentedControlItem value="build">Place build</SegmentedControlItem>
+              </SegmentedControl>
+            )}
+
+            {/* Dimension & folder picker */}
+            <div className="flex items-center gap-1.5">
+              <Select
+                value={loc.dimension}
+                onValueChange={(v) => loc.setDimension(v as WorldDimension)}
+                disabled={loc.availableDimensions.length <= 1}
+              >
+                <SelectTrigger size="sm" aria-label="Dimension" className="min-w-0 flex-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {versions.map((v) => (
-                    <SelectItem key={v.path} value={v.path} className="font-mono">
-                      {versionName(v.path)}
+                  {loc.availableDimensions.map((d) => (
+                    <SelectItem key={d} value={d}>
+                      {DIM_LABELS[d]}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <IconButton
+                size="icon-sm"
+                variant="outline"
+                label="Choose world folder…"
+                onClick={() => void loc.pickWorldFolder()}
+              >
+                <FolderOpen />
+              </IconButton>
+            </div>
+
+            <hr className="border-border-subtle" />
+
+            {loc.mode === 'area' ? (
+              /* ── Scout Terrain controls ── */
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-fg-secondary">
+                    Area{areaDims ? ` · ${areaDims[0]}×${areaDims[1]}` : ''}
+                  </span>
+                  {groundBadge && (
+                    <span className="font-mono text-xs tabular-nums text-fg-muted">
+                      {groundBadge}
+                    </span>
+                  )}
+                </div>
+                {areaNorm && (
+                  <div className="grid grid-cols-1 gap-2 @[15rem]:grid-cols-2">
+                    {(['x1', 'z1', 'x2', 'z2'] as const).map((key, i) => (
+                      <NumberField
+                        key={key}
+                        aria-label={`Area ${key}`}
+                        className="font-mono"
+                        unit={key}
+                        hideStepper
+                        value={areaNorm[i]}
+                        onValueChange={(v) => updateAreaCorner(i as 0 | 1 | 2 | 3, v)}
+                      />
+                    ))}
+                  </div>
+                )}
+                <Field label="Margin">
+                  <NumberField
+                    aria-label="Terrain margin in blocks"
+                    className="font-mono"
+                    unit="blk"
+                    min={0}
+                    value={loc.margin}
+                    onValueChange={(v) => loc.setMargin(Math.max(0, Math.round(v ?? 0)))}
+                  />
+                </Field>
+              </div>
+            ) : (
+              /* ── Place Build controls ── */
+              <div className="flex flex-col gap-3">
+                {versions.length > 1 && loc.activeVersionPath && (
+                  <Select value={loc.activeVersionPath} onValueChange={loc.setActiveVersionPath}>
+                    <SelectTrigger
+                      size="sm"
+                      aria-label="Draft version"
+                      className="w-full font-mono"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {versions.map((v) => (
+                        <SelectItem key={v.path} value={v.path} className="font-mono">
+                          {versionName(v.path)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-fg-secondary">Position</span>
+                  {groundBadge && (
+                    <span className="font-mono text-xs tabular-nums text-fg-muted">
+                      {groundBadge}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-col gap-2">
+                  {AXES.map(([axis, tone], i) => (
+                    <div key={axis} className="flex items-center gap-2">
+                      <span
+                        aria-hidden="true"
+                        className={`w-4 shrink-0 text-center font-mono text-xs font-semibold ${tone}`}
+                      >
+                        {axis}
+                      </span>
+                      <NumberField
+                        aria-label={`Build ${axis}`}
+                        className="min-w-0 flex-1 font-mono"
+                        value={loc.origin[i]}
+                        onValueChange={(v) => updateOriginAxis(i as 0 | 1 | 2, v)}
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-between gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="flex-1"
+                    onClick={loc.snapToGround}
+                    disabled={!loc.source}
+                  >
+                    <ArrowDownToLine /> Ground
+                  </Button>
+                  <div className="flex items-center gap-0.5">
+                    <IconButton
+                      size="icon-sm"
+                      variant="outline"
+                      label="Rotate counter-clockwise"
+                      shortcut="Shift+R"
+                      onClick={() => loc.rotateBy(-90)}
+                    >
+                      <RotateCcw />
+                    </IconButton>
+                    <span className="w-9 text-center font-mono text-xs tabular-nums text-fg-secondary">
+                      {loc.rotation}°
+                    </span>
+                    <IconButton
+                      size="icon-sm"
+                      variant="outline"
+                      label="Rotate clockwise"
+                      shortcut="R"
+                      onClick={() => loc.rotateBy(90)}
+                    >
+                      <RotateCw />
+                    </IconButton>
+                  </div>
+                </div>
+
+                <Field label="Margin">
+                  <NumberField
+                    aria-label="Terrain margin in blocks"
+                    className="font-mono"
+                    unit="blk"
+                    min={0}
+                    value={loc.margin}
+                    onValueChange={(v) => loc.setMargin(Math.max(0, Math.round(v ?? 0)))}
+                  />
+                </Field>
+              </div>
             )}
 
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-medium text-fg-secondary">Position</span>
-              {groundBadge && (
-                <span className="font-mono text-xs tabular-nums text-fg-muted">{groundBadge}</span>
-              )}
+            {/* Copyable ORIGIN chip */}
+            <div className="flex items-center gap-1 rounded-md border border-border-subtle bg-surface-sunken ps-2.5">
+              <code className="min-w-0 flex-1 truncate font-mono text-xs tabular-nums text-fg">
+                {originLine}
+              </code>
+              <CopyButton text={originLine} label="Copy ORIGIN" />
             </div>
-            <div className="flex flex-col gap-2">
-              {AXES.map(([axis, tone], i) => (
-                <div key={axis} className="flex items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className={`w-4 shrink-0 text-center font-mono text-xs font-semibold ${tone}`}
-                  >
-                    {axis}
-                  </span>
-                  <NumberField
-                    aria-label={`Build ${axis}`}
-                    className="min-w-0 flex-1 font-mono"
-                    value={loc.origin[i]}
-                    onValueChange={(v) => updateOriginAxis(i as 0 | 1 | 2, v)}
-                  />
-                </div>
-              ))}
-            </div>
-
-            <div className="flex items-center justify-between gap-1.5">
-              <Button
-                size="sm"
-                variant="outline"
-                className="flex-1"
-                onClick={loc.snapToGround}
-                disabled={!loc.source}
-              >
-                <ArrowDownToLine /> Ground
-              </Button>
-              <div className="flex items-center gap-0.5">
-                <IconButton
-                  size="icon-sm"
-                  variant="outline"
-                  label="Rotate counter-clockwise"
-                  shortcut="Shift+R"
-                  onClick={() => loc.rotateBy(-90)}
-                >
-                  <RotateCcw />
-                </IconButton>
-                <span className="w-9 text-center font-mono text-xs tabular-nums text-fg-secondary">
-                  {loc.rotation}°
-                </span>
-                <IconButton
-                  size="icon-sm"
-                  variant="outline"
-                  label="Rotate clockwise"
-                  shortcut="R"
-                  onClick={() => loc.rotateBy(90)}
-                >
-                  <RotateCw />
-                </IconButton>
-              </div>
-            </div>
-
-            <Field label="Margin">
-              <NumberField
-                aria-label="Terrain margin in blocks"
-                className="font-mono"
-                unit="blk"
-                min={0}
-                value={loc.margin}
-                onValueChange={(v) => loc.setMargin(Math.max(0, Math.round(v ?? 0)))}
-              />
-            </Field>
-          </div>
+          </>
         )}
-
-        {/* Copyable ORIGIN chip */}
-        <div className="flex items-center gap-1 rounded-md border border-border-subtle bg-surface-sunken ps-2.5">
-          <code className="min-w-0 flex-1 truncate font-mono text-xs tabular-nums text-fg">
-            {originLine}
-          </code>
-          <CopyButton text={originLine} label="Copy ORIGIN" />
-        </div>
       </div>
 
       {/* Pinned Save Footer */}
@@ -329,7 +354,11 @@ function Location({ name }: { name: string }): ReactElement {
     <div className="relative flex h-full min-w-0 flex-1 bg-surface-viewer">
       <h1 className="sr-only">Location</h1>
 
-      {noWorlds ? (
+      {loadingWorlds ? (
+        <div className="grid size-full place-items-center p-6">
+          <LoadingState label="Loading worlds…" />
+        </div>
+      ) : noWorlds ? (
         <div className="grid size-full place-items-center p-6">
           <EmptyState icon={Globe} size="panel" title="No Minecraft worlds found">
             <div className="mt-2 flex flex-wrap justify-center gap-2">
@@ -341,6 +370,32 @@ function Location({ name }: { name: string }): ReactElement {
                 onClick={() => void navigate({ to: '/settings', search: { section: 'minecraft' } })}
               >
                 Settings
+              </Button>
+            </div>
+          </EmptyState>
+        </div>
+      ) : needsWorldChoice ? (
+        <div className="grid size-full place-items-center p-6">
+          <EmptyState icon={Globe} size="panel" title="Choose a Minecraft world">
+            <p className="text-sm text-fg-secondary">
+              Select a world save to explore terrain and place this build. Your choice and settings
+              are remembered automatically.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+              <Select value="" onValueChange={loc.setWorld}>
+                <SelectTrigger size="sm" aria-label="Choose world" className="w-56">
+                  <SelectValue placeholder="Choose world…" />
+                </SelectTrigger>
+                <SelectContent>
+                  {listed.map((w) => (
+                    <SelectItem key={w.path} value={w.path}>
+                      {w.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" onClick={() => void loc.pickWorldFolder()}>
+                <FolderOpen /> Choose world folder…
               </Button>
             </div>
           </EmptyState>
@@ -386,6 +441,7 @@ function Location({ name }: { name: string }): ReactElement {
           onRotate={loc.rotateBy}
           margin={loc.margin}
           buildSrc={buildSrc}
+          clipY={loc.clipY}
           onBuildSize={loc.setBuildSize}
           flyTo={loc.flyTo}
           onGroundStats={loc.setGroundStats}
@@ -548,6 +604,18 @@ function Location({ name }: { name: string }): ReactElement {
               </Toggle>
             </Tip>
           </ViewerToolbar>
+
+          {loc.mode === 'build' && buildSrc && loc.buildHeight > 1 && (
+            <div className="absolute top-[calc(var(--viewer-gizmo-size)+2*var(--viewer-inset))] right-(--viewer-inset) bottom-(--viewer-inset) z-floating flex">
+              <ClipHeightControl
+                orientation="vertical"
+                value={loc.clipY === null ? topLayer : Math.min(loc.clipY, topLayer)}
+                min={0}
+                max={topLayer}
+                onChange={(y) => loc.setClipY(y >= topLayer ? null : y)}
+              />
+            </div>
+          )}
         </WorldMapViewport>
       )}
 
