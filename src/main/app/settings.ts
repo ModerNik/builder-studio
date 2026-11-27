@@ -94,6 +94,11 @@ const detectedJar = (version?: string): string => {
   return jar.path
 }
 
+/** Fast cache-directory lookup without probing jar or Claude paths (used on hot world:// tile fetches). */
+export function cacheDir(): string {
+  return getSettings().cache || join(app.getPath('userData'), 'cache')
+}
+
 /** Installed resources are outside ASAR so Python and the local screenshot server can read them. */
 export function resolved(s = getSettings(), version = s.minecraftVersion): Settings {
   return resolveLocations(

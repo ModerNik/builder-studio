@@ -18,11 +18,20 @@ const TRANSLUCENT = 2
 const LIQUID = 3
 export const UNTEXTURED = 4
 
-export const VERTEX_STRIDE = 11 // x, y, z, nx, ny, nz, u, v, r, g, b
+export type LowresLod = 0 | 1 | 2
 
 export interface MeshBucketBuffer {
-  vertices: Float32Array
+  /** World-space XYZ positions (3 float32 per vertex = 12 B/v). */
+  positions: Float32Array
+  /** Quantized signed normals in [-127, 127] (3 int8 per vertex = 3 B/v, GPU-normalized). */
+  normals: Int8Array
+  /** Atlas UVs (Float32Array) for hires chunks or chunk-mask UVs (Uint8Array normalized) for lowres regions. */
+  uvs: Float32Array | Uint8Array
+  /** Quantized RGB vertex colors in [0, 255] (3 uint8 per vertex = 3 B/v, GPU-normalized). */
+  colors: Uint8Array
   quadCount: number
+  /** Precomputed [minX, minY, minZ, maxX, maxY, maxZ] so main-thread mounting needs 0 vertex loops. */
+  bounds: [number, number, number, number, number, number] | null
 }
 
 export interface LowresMeshResult {
@@ -30,9 +39,10 @@ export interface LowresMeshResult {
   id: number
   rx: number
   rz: number
+  lod: LowresLod
   terrain: MeshBucketBuffer
   water: MeshBucketBuffer
-  /** 256x256 surface heightmap copied back for instant main-thread height queries. */
+  /** Surface heightmap at this LOD's resolution for fast main-thread height queries. */
   surfaceY: Int16Array
   grid: number
   step: number
@@ -61,7 +71,7 @@ export interface WorkerErrorResult {
 
 type WorkerIn =
   | { type: 'init'; colors: Record<string, Rgb>; atlas: BlockAtlasMap | null }
-  | { type: 'lowres'; id: number; buffer: ArrayBuffer }
+  | { type: 'lowres'; id: number; buffer: ArrayBuffer; lod?: LowresLod }
   | { type: 'hires'; id: number; buffer: ArrayBuffer }
 
 let colors: Record<string, Rgb> = { ...FALLBACK_COLORS }
@@ -83,18 +93,80 @@ export function buildQuadIndices(quadCount: number): Uint32Array {
   return indices
 }
 
+function packNorm(v: number): number {
+  const n = Math.round(v * 127)
+  return n < -127 ? -127 : n > 127 ? 127 : n
+}
+
+function packColor(v: number): number {
+  const n = Math.round(v * 255)
+  return n < 0 ? 0 : n > 255 ? 255 : n
+}
+
 class QuadBuf {
-  f: Float32Array
-  n = 0
-  constructor(initialFloats = 4096) {
-    this.f = new Float32Array(initialFloats)
+  pos: Float32Array
+  norm: Int8Array
+  uvF: Float32Array | null
+  uvU8: Uint8Array | null
+  col: Uint8Array
+  verts = 0
+  cap: number
+  private minX = Infinity
+  private minY = Infinity
+  private minZ = Infinity
+  private maxX = -Infinity
+  private maxY = -Infinity
+  private maxZ = -Infinity
+
+  constructor(
+    initialVerts = 1024,
+    private byteUv = false
+  ) {
+    this.cap = Math.max(16, initialVerts)
+    this.pos = new Float32Array(this.cap * 3)
+    this.norm = new Int8Array(this.cap * 3)
+    this.uvF = byteUv ? null : new Float32Array(this.cap * 2)
+    this.uvU8 = byteUv ? new Uint8Array(this.cap * 2) : null
+    this.col = new Uint8Array(this.cap * 3)
   }
-  private ensure(extra: number): void {
-    if (this.n + extra <= this.f.length) return
-    const next = new Float32Array(Math.max(this.f.length * 2, this.n + extra))
-    next.set(this.f.subarray(0, this.n))
-    this.f = next
+
+  private ensure(extraVerts: number): void {
+    if (this.verts + extraVerts <= this.cap) return
+    const nextCap = Math.max(this.cap * 2, this.verts + extraVerts)
+    const nextPos = new Float32Array(nextCap * 3)
+    nextPos.set(this.pos.subarray(0, this.verts * 3))
+    this.pos = nextPos
+
+    const nextNorm = new Int8Array(nextCap * 3)
+    nextNorm.set(this.norm.subarray(0, this.verts * 3))
+    this.norm = nextNorm
+
+    if (this.byteUv) {
+      const nextUv = new Uint8Array(nextCap * 2)
+      nextUv.set(this.uvU8!.subarray(0, this.verts * 2))
+      this.uvU8 = nextUv
+    } else {
+      const nextUv = new Float32Array(nextCap * 2)
+      nextUv.set(this.uvF!.subarray(0, this.verts * 2))
+      this.uvF = nextUv
+    }
+
+    const nextCol = new Uint8Array(nextCap * 3)
+    nextCol.set(this.col.subarray(0, this.verts * 3))
+    this.col = nextCol
+
+    this.cap = nextCap
   }
+
+  private expandBounds(x: number, y: number, z: number): void {
+    if (x < this.minX) this.minX = x
+    if (x > this.maxX) this.maxX = x
+    if (y < this.minY) this.minY = y
+    if (y > this.maxY) this.maxY = y
+    if (z < this.minZ) this.minZ = z
+    if (z > this.maxZ) this.maxZ = z
+  }
+
   pushQuad(
     x0: number,
     y0: number,
@@ -124,112 +196,189 @@ class QuadBuf {
     ao3 = 1,
     flip = false
   ): void {
-    this.ensure(4 * VERTEX_STRIDE)
-    const f = this.f
-    let p = this.n
+    this.ensure(4)
+    this.expandBounds(x0, y0, z0)
+    this.expandBounds(x1, y1, z1)
+    this.expandBounds(x2, y2, z2)
+    this.expandBounds(x3, y3, z3)
+
+    const pnx = packNorm(nx)
+    const pny = packNorm(ny)
+    const pnz = packNorm(nz)
+
+    const c0r = packColor(r * ao0)
+    const c0g = packColor(g * ao0)
+    const c0b = packColor(b * ao0)
+    const c1r = packColor(r * ao1)
+    const c1g = packColor(g * ao1)
+    const c1b = packColor(b * ao1)
+    const c2r = packColor(r * ao2)
+    const c2g = packColor(g * ao2)
+    const c2b = packColor(b * ao2)
+    const c3r = packColor(r * ao3)
+    const c3g = packColor(g * ao3)
+    const c3b = packColor(b * ao3)
+
+    const pos = this.pos
+    const norm = this.norm
+    const col = this.col
+    let p3 = this.verts * 3
+    let p2 = this.verts * 2
+
+    // Fill shared face normal for all 4 vertices
+    norm[p3] = pnx
+    norm[p3 + 1] = pny
+    norm[p3 + 2] = pnz
+    norm[p3 + 3] = pnx
+    norm[p3 + 4] = pny
+    norm[p3 + 5] = pnz
+    norm[p3 + 6] = pnx
+    norm[p3 + 7] = pny
+    norm[p3 + 8] = pnz
+    norm[p3 + 9] = pnx
+    norm[p3 + 10] = pny
+    norm[p3 + 11] = pnz
+
     if (!flip) {
-      f[p++] = x0
-      f[p++] = y0
-      f[p++] = z0
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u0
-      f[p++] = v0t
-      f[p++] = r * ao0
-      f[p++] = g * ao0
-      f[p++] = b * ao0
+      pos[p3] = x0
+      pos[p3 + 1] = y0
+      pos[p3 + 2] = z0
+      col[p3] = c0r
+      col[p3 + 1] = c0g
+      col[p3 + 2] = c0b
+      p3 += 3
 
-      f[p++] = x1
-      f[p++] = y1
-      f[p++] = z1
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u1
-      f[p++] = v0t
-      f[p++] = r * ao1
-      f[p++] = g * ao1
-      f[p++] = b * ao1
+      pos[p3] = x1
+      pos[p3 + 1] = y1
+      pos[p3 + 2] = z1
+      col[p3] = c1r
+      col[p3 + 1] = c1g
+      col[p3 + 2] = c1b
+      p3 += 3
 
-      f[p++] = x2
-      f[p++] = y2
-      f[p++] = z2
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u1
-      f[p++] = v1t
-      f[p++] = r * ao2
-      f[p++] = g * ao2
-      f[p++] = b * ao2
+      pos[p3] = x2
+      pos[p3 + 1] = y2
+      pos[p3 + 2] = z2
+      col[p3] = c2r
+      col[p3 + 1] = c2g
+      col[p3 + 2] = c2b
+      p3 += 3
 
-      f[p++] = x3
-      f[p++] = y3
-      f[p++] = z3
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u0
-      f[p++] = v1t
-      f[p++] = r * ao3
-      f[p++] = g * ao3
-      f[p++] = b * ao3
+      pos[p3] = x3
+      pos[p3 + 1] = y3
+      pos[p3 + 2] = z3
+      col[p3] = c3r
+      col[p3 + 1] = c3g
+      col[p3 + 2] = c3b
+
+      if (this.byteUv) {
+        const uv = this.uvU8!
+        const bu0 = packColor(u0)
+        const bv0 = packColor(v0t)
+        const bu1 = packColor(u1)
+        const bv1 = packColor(v1t)
+        uv[p2++] = bu0
+        uv[p2++] = bv0
+        uv[p2++] = bu1
+        uv[p2++] = bv0
+        uv[p2++] = bu1
+        uv[p2++] = bv1
+        uv[p2++] = bu0
+        uv[p2] = bv1
+      } else {
+        const uv = this.uvF!
+        uv[p2++] = u0
+        uv[p2++] = v0t
+        uv[p2++] = u1
+        uv[p2++] = v0t
+        uv[p2++] = u1
+        uv[p2++] = v1t
+        uv[p2++] = u0
+        uv[p2] = v1t
+      }
     } else {
-      f[p++] = x1
-      f[p++] = y1
-      f[p++] = z1
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u1
-      f[p++] = v0t
-      f[p++] = r * ao1
-      f[p++] = g * ao1
-      f[p++] = b * ao1
+      pos[p3] = x1
+      pos[p3 + 1] = y1
+      pos[p3 + 2] = z1
+      col[p3] = c1r
+      col[p3 + 1] = c1g
+      col[p3 + 2] = c1b
+      p3 += 3
 
-      f[p++] = x2
-      f[p++] = y2
-      f[p++] = z2
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u1
-      f[p++] = v1t
-      f[p++] = r * ao2
-      f[p++] = g * ao2
-      f[p++] = b * ao2
+      pos[p3] = x2
+      pos[p3 + 1] = y2
+      pos[p3 + 2] = z2
+      col[p3] = c2r
+      col[p3 + 1] = c2g
+      col[p3 + 2] = c2b
+      p3 += 3
 
-      f[p++] = x3
-      f[p++] = y3
-      f[p++] = z3
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u0
-      f[p++] = v1t
-      f[p++] = r * ao3
-      f[p++] = g * ao3
-      f[p++] = b * ao3
+      pos[p3] = x3
+      pos[p3 + 1] = y3
+      pos[p3 + 2] = z3
+      col[p3] = c3r
+      col[p3 + 1] = c3g
+      col[p3 + 2] = c3b
+      p3 += 3
 
-      f[p++] = x0
-      f[p++] = y0
-      f[p++] = z0
-      f[p++] = nx
-      f[p++] = ny
-      f[p++] = nz
-      f[p++] = u0
-      f[p++] = v0t
-      f[p++] = r * ao0
-      f[p++] = g * ao0
-      f[p++] = b * ao0
+      pos[p3] = x0
+      pos[p3 + 1] = y0
+      pos[p3 + 2] = z0
+      col[p3] = c0r
+      col[p3 + 1] = c0g
+      col[p3 + 2] = c0b
+
+      if (this.byteUv) {
+        const uv = this.uvU8!
+        const bu0 = packColor(u0)
+        const bv0 = packColor(v0t)
+        const bu1 = packColor(u1)
+        const bv1 = packColor(v1t)
+        uv[p2++] = bu1
+        uv[p2++] = bv0
+        uv[p2++] = bu1
+        uv[p2++] = bv1
+        uv[p2++] = bu0
+        uv[p2++] = bv1
+        uv[p2++] = bu0
+        uv[p2] = bv0
+      } else {
+        const uv = this.uvF!
+        uv[p2++] = u1
+        uv[p2++] = v0t
+        uv[p2++] = u1
+        uv[p2++] = v1t
+        uv[p2++] = u0
+        uv[p2++] = v1t
+        uv[p2++] = u0
+        uv[p2] = v0t
+      }
     }
-    this.n = p
+
+    this.verts += 4
   }
+
   finish(): MeshBucketBuffer {
-    const vertices = this.f.slice(0, this.n)
-    const quadCount = this.n / (4 * VERTEX_STRIDE)
-    return { vertices, quadCount }
+    const v = this.verts
+    const quadCount = v / 4
+    return {
+      positions: this.pos.slice(0, v * 3),
+      normals: this.norm.slice(0, v * 3),
+      uvs: this.byteUv ? this.uvU8!.slice(0, v * 2) : this.uvF!.slice(0, v * 2),
+      colors: this.col.slice(0, v * 3),
+      quadCount,
+      bounds:
+        quadCount > 0
+          ? [
+              Math.fround(this.minX),
+              Math.fround(this.minY),
+              Math.fround(this.minZ),
+              Math.fround(this.maxX),
+              Math.fround(this.maxY),
+              Math.fround(this.maxZ)
+            ]
+          : null
+    }
   }
 }
 
@@ -265,13 +414,71 @@ function packSurfaceKey(y: number, rgb6: number): number {
   return (((y + 256) & 0x3ff) << 18) | rgb6
 }
 
-/** Build a greedy-merged volumetric 3D lowres terrain + translucent water mesh from a 256x256 region tile. */
-export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
+/** Build a greedy-merged volumetric 3D lowres terrain + translucent water mesh from a 256x256 region tile,
+ *  optionally downsampled in-memory to Voxy-style coarser distance LODs (lod 0=step 2, lod 1=step 4, lod 2=step 8). */
+export function meshLowres(id: number, buffer: ArrayBuffer, lod: LowresLod = 0): LowresMeshResult {
   const tile = decodeLowresTile(buffer)
-  const { rx, rz, grid, step, palette, surfaceY, oceanFloorY, topBlock, flags } = tile
+  const { rx, rz, palette } = tile
+  const factor =
+    lod > 0 && tile.grid >= 32 * (1 << lod) && tile.grid % (1 << lod) === 0 ? 1 << lod : 1
+  const effectiveLod: LowresLod = factor === 4 ? 2 : factor === 2 ? 1 : 0
+  const grid = tile.grid / factor
+  const step = tile.step * factor
   const cells = grid * grid
-  const terrainBuf = new QuadBuf(32768)
-  const waterBuf = new QuadBuf(8192)
+
+  let surfaceY: Int16Array
+  let oceanFloorY: Int16Array
+  let topBlock: Uint16Array
+  let flags: Uint8Array
+
+  if (factor === 1) {
+    surfaceY = tile.surfaceY
+    oceanFloorY = tile.oceanFloorY
+    topBlock = tile.topBlock
+    flags = tile.flags
+  } else {
+    surfaceY = new Int16Array(cells).fill(NO_HEIGHT)
+    oceanFloorY = new Int16Array(cells).fill(NO_HEIGHT)
+    topBlock = new Uint16Array(cells)
+    flags = new Uint8Array(cells)
+    const srcGrid = tile.grid
+    const srcSy = tile.surfaceY
+    const srcOf = tile.oceanFloorY
+    const srcTop = tile.topBlock
+    const srcFl = tile.flags
+
+    // Pick the highest valid surface sample in each factor x factor block so peaks/coastlines stay crisp
+    for (let gz = 0; gz < grid; gz++) {
+      const sz0 = gz * factor
+      const dstRow = gz * grid
+      for (let gx = 0; gx < grid; gx++) {
+        const sx0 = gx * factor
+        let bestY = NO_HEIGHT
+        let bestIdx = -1
+        for (let dz = 0; dz < factor; dz++) {
+          const sRow = (sz0 + dz) * srcGrid + sx0
+          for (let dx = 0; dx < factor; dx++) {
+            const si = sRow + dx
+            const y = srcSy[si]
+            if (y !== NO_HEIGHT && (bestIdx < 0 || y > bestY)) {
+              bestY = y
+              bestIdx = si
+            }
+          }
+        }
+        if (bestIdx >= 0) {
+          const di = dstRow + gx
+          surfaceY[di] = bestY
+          oceanFloorY[di] = srcOf[bestIdx]
+          topBlock[di] = srcTop[bestIdx]
+          flags[di] = srcFl[bestIdx]
+        }
+      }
+    }
+  }
+
+  const terrainBuf = new QuadBuf(Math.max(1024, cells >> 2), true)
+  const waterBuf = new QuadBuf(Math.max(256, cells >> 4), true)
   const ox = rx * 512
   const oz = rz * 512
 
@@ -313,7 +520,10 @@ export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         const biome = BIOME_TINTS[(fl >>> 4) & 0x0f] ?? BIOME_TINTS[0]
         const [wr, wg, wb] = biome.water
         const depthTint = Math.max(0.72, 1.04 - depth * 0.015)
-        waterKeyArr[idx] = packSurfaceKey(sy, packRgb6(wr * depthTint, wg * depthTint, wb * depthTint))
+        waterKeyArr[idx] = packSurfaceKey(
+          sy,
+          packRgb6(wr * depthTint, wg * depthTint, wb * depthTint)
+        )
       }
 
       baseRgbArr[idx] = packRgb6(r, g, b)
@@ -485,7 +695,7 @@ export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         const rowOff = gz * grid + gxBase
 
         // +Z (south)
-        for (let lx = 0; lx < chunkCells; ) {
+        for (let lx = 0; lx < chunkCells;) {
           const idx = rowOff + lx
           const gY = groundYArr[idx]
           if (gY === NO_HEIGHT) {
@@ -543,7 +753,7 @@ export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         }
 
         // -Z (north)
-        for (let lx = 0; lx < chunkCells; ) {
+        for (let lx = 0; lx < chunkCells;) {
           const idx = rowOff + lx
           const gY = groundYArr[idx]
           if (gY === NO_HEIGHT) {
@@ -608,7 +818,7 @@ export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         const wx1 = wx0 + step
 
         // +X (east)
-        for (let lz = 0; lz < chunkCells; ) {
+        for (let lz = 0; lz < chunkCells;) {
           const gz = gzBase + lz
           const idx = gz * grid + gx
           const gY = groundYArr[idx]
@@ -667,7 +877,7 @@ export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
         }
 
         // -X (west)
-        for (let lz = 0; lz < chunkCells; ) {
+        for (let lz = 0; lz < chunkCells;) {
           const gz = gzBase + lz
           const idx = gz * grid + gx
           const gY = groundYArr[idx]
@@ -733,9 +943,10 @@ export function meshLowres(id: number, buffer: ArrayBuffer): LowresMeshResult {
     id,
     rx,
     rz,
+    lod: effectiveLod,
     terrain: terrainBuf.finish(),
     water: waterBuf.finish(),
-    surfaceY: new Int16Array(surfaceY),
+    surfaceY: factor === 1 ? new Int16Array(surfaceY) : surfaceY,
     grid,
     step
   }
@@ -782,11 +993,11 @@ export function meshHires(
   const { cx, cz, minY, height, palette, surfaceY, blocks } = chunk
   const activeAtlas = atlasOverride !== undefined ? atlasOverride : atlas
   const bufs: [QuadBuf, QuadBuf, QuadBuf, QuadBuf, QuadBuf] = [
-    new QuadBuf(16384),
-    new QuadBuf(4096),
-    new QuadBuf(1024),
-    new QuadBuf(4096),
-    new QuadBuf(1024)
+    new QuadBuf(2048, false),
+    new QuadBuf(512, false),
+    new QuadBuf(128, false),
+    new QuadBuf(512, false),
+    new QuadBuf(128, false)
   ]
 
   const meta: PaletteMeta[] = palette.map((raw, i) => {
@@ -1289,6 +1500,10 @@ export function meshHires(
   }
 }
 
+function pushBucketTransfers(transfers: Transferable[], b: MeshBucketBuffer): void {
+  transfers.push(b.positions.buffer, b.normals.buffer, b.uvs.buffer, b.colors.buffer)
+}
+
 if (typeof self !== 'undefined') {
   const workerScope = self as unknown as {
     onmessage: ((e: MessageEvent<WorkerIn>) => void) | null
@@ -1304,12 +1519,10 @@ if (typeof self !== 'undefined') {
     }
     try {
       if (msg.type === 'lowres') {
-        const res = meshLowres(msg.id, msg.buffer)
-        const transfers: Transferable[] = [
-          res.terrain.vertices.buffer,
-          res.water.vertices.buffer,
-          res.surfaceY.buffer
-        ]
+        const res = meshLowres(msg.id, msg.buffer, msg.lod ?? 0)
+        const transfers: Transferable[] = [res.surfaceY.buffer]
+        pushBucketTransfers(transfers, res.terrain)
+        pushBucketTransfers(transfers, res.water)
         workerScope.postMessage(res, transfers)
         return
       }
@@ -1317,7 +1530,7 @@ if (typeof self !== 'undefined') {
         const res = meshHires(msg.id, msg.buffer)
         const transfers: Transferable[] = [res.surfaceY.buffer]
         for (const b of res.buckets) {
-          transfers.push(b.vertices.buffer)
+          pushBucketTransfers(transfers, b)
         }
         workerScope.postMessage(res, transfers)
       }
