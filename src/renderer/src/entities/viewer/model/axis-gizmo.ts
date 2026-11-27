@@ -3,6 +3,9 @@ import type { ViewName } from './look'
 
 export type Orientation = [number, number, number, number]
 
+export const GIZMO_SIZE = 96 // SVG units; the SVG is 6rem, so one unit is one pixel at the default root size
+export const GIZMO_TURN = Math.PI / (3 * GIZMO_SIZE) // radians of orbit per pixel dragged: across the gizmo is 60°
+
 export const CAMERA_VIEWS: { view: ViewName; label: string; group: string }[] = [
   { view: 'iso_se', label: 'Southeast', group: 'Corners' },
   { view: 'iso_ne', label: 'Northeast', group: 'Corners' },
