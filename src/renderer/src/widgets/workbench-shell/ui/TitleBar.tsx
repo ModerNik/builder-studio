@@ -23,11 +23,9 @@ export interface Crumb {
 }
 
 function CrumbItem({ crumb, last }: { crumb: Crumb; last: boolean }): ReactElement {
-  const cls = cn(
-    chromeButton,
-    'h-[max(2rem,var(--density-control-sm))] min-w-0 max-w-full shrink px-2 text-sm',
-    last && 'font-medium text-fg'
-  )
+  const layout =
+    'inline-flex h-[max(2rem,var(--density-control-sm))] min-w-0 max-w-full shrink items-center px-2 text-sm font-medium'
+  const cls = cn(chromeButton, layout, last && 'text-fg')
   if (crumb.menu)
     return (
       <DropdownMenu.Root>
@@ -77,11 +75,8 @@ function CrumbItem({ crumb, last }: { crumb: Crumb; last: boolean }): ReactEleme
       <span className="truncate">{crumb.label}</span>
     </button>
   ) : (
-    <span
-      className="truncate px-1 text-sm font-medium text-fg-secondary"
-      aria-current={last ? 'page' : undefined}
-    >
-      {crumb.label}
+    <span className={cn(layout, 'text-fg-secondary')} aria-current={last ? 'page' : undefined}>
+      <span className="truncate">{crumb.label}</span>
     </span>
   )
 }

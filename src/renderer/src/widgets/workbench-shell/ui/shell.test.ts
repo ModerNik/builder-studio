@@ -119,6 +119,53 @@ describe('TitleBar', () => {
     expect(homeButtonMatch?.[0]).toBeTruthy()
     expect(homeButtonMatch?.[0]).toContain('Builder Studio')
   })
+
+  it('keeps crumb layout consistent whether or not it has a next step', () => {
+    const singleHtml = renderToStaticMarkup(
+      wrapWorkbench(
+        'desktop',
+        [],
+        React.createElement(TitleBar, {
+          crumbs: [{ label: 'Settings' }],
+          onHome: () => {}
+        })
+      )
+    )
+    const nestedHtml = renderToStaticMarkup(
+      wrapWorkbench(
+        'desktop',
+        [],
+        React.createElement(TitleBar, {
+          crumbs: [{ label: 'Settings', onSelect: () => {} }, { label: 'Documentation' }],
+          onHome: () => {}
+        })
+      )
+    )
+
+    const staticCrumb = singleHtml.match(/<span\b[^>]*aria-current="page"[^>]*>/)?.[0]
+    const buttonCrumb = nestedHtml.match(
+      /<nav\b[^>]*aria-label="Breadcrumb"[\s\S]*?<button\b[^>]*>/
+    )?.[0]
+    expect(staticCrumb).toBeTruthy()
+    expect(buttonCrumb).toBeTruthy()
+
+    const staticClasses = (staticCrumb?.match(/class="([^"]*)"/)?.[1] ?? '').split(/\s+/)
+    const buttonClasses = (buttonCrumb?.match(/<button\b[^>]*class="([^"]*)"/)?.[1] ?? '').split(
+      /\s+/
+    )
+
+    for (const token of [
+      'inline-flex',
+      'h-[max(2rem,var(--density-control-sm))]',
+      'items-center',
+      'px-2',
+      'text-sm',
+      'font-medium'
+    ]) {
+      expect(staticClasses).toContain(token)
+      expect(buttonClasses).toContain(token)
+    }
+  })
 })
 
 describe('WindowControls', () => {
