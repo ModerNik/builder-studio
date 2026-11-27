@@ -542,7 +542,7 @@ function createWindow(): void {
   state.win.on('restore', emitWindowState)
   state.win.webContents.on('before-input-event', zoomKeys)
   perfMark('window-created')
-  state.win.webContents.once('did-finish-load', () => perfMark('did-finish-load'))
+  state.win.webContents.on('did-finish-load', () => perfMark('did-finish-load')) // perfMark keeps the first
   state.win.on('ready-to-show', () => {
     perfMark('ready-to-show')
     state.win?.show()
