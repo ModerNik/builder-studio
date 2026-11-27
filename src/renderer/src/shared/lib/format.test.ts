@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_LINT_RULES, LINT_RULES, type LintRuleToggles } from '@shared/api'
+import { type LintRuleToggles } from '@shared/api'
+import { DEFAULT_LINT_RULES, LINT_RULES } from '@shared/constants'
 import { hasEnabledLintRule, isLintRuleEnabled, lintProblems } from './format'
 
 const allOff = (): LintRuleToggles =>

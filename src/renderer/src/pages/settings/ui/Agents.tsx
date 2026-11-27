@@ -8,7 +8,7 @@ import {
   SettingsSection
 } from '@/entities/settings/ui/Settings'
 import { MCP_CLIENT_SNIPPETS } from '@/shared/lib/mcp-snippets'
-import { MCP_URL } from '@shared/api'
+import { MCP_URL } from '@shared/constants'
 
 const code = 'font-mono text-sm'
 

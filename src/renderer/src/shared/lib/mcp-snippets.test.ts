@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MCP_URL } from '@shared/api'
+import { MCP_URL } from '@shared/constants'
 import { buildAgentChatPrompt, MCP_CLIENT_SNIPPETS, workspaceMcpPath } from './mcp-snippets'
 
 describe('mcp-snippets', () => {

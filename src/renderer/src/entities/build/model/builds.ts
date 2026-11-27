@@ -1,4 +1,5 @@
 // The build list as a query that follows the workspace watcher, and what the agent asked to show.
+import { useEffect } from 'react'
 import { useQuery, type UseQueryResult } from '@tanstack/react-query'
 import { create } from 'zustand'
 import type { BuildSummary } from '@shared/api'
@@ -11,8 +12,17 @@ studio.builds.onChanged(() => {
   void queryClient.invalidateQueries({ queryKey: ['refs'] })
 })
 
-export const useBuilds = (): UseQueryResult<BuildSummary[]> =>
-  useQuery({ queryKey: ['builds'], queryFn: () => studio.builds.list() })
+export const buildsQuery = { queryKey: ['builds'], queryFn: () => studio.builds.list() }
+export const useBuilds = (): UseQueryResult<BuildSummary[]> => useQuery(buildsQuery)
+
+/** At boot: loads the list alongside settings, not after them (the gallery's first frame waits for both).
+ *  `setupUnfinished`: setup picks the workspace, so a list fetched before then is dropped. */
+export function usePrefetchBuilds(setupUnfinished: boolean): void {
+  useEffect(() => void queryClient.prefetchQuery(buildsQuery), [])
+  useEffect(() => {
+    if (setupUnfinished) queryClient.removeQueries({ queryKey: buildsQuery.queryKey })
+  }, [setupUnfinished])
+}
 export const useBuild = (
   name: string
 ): Omit<UseQueryResult<BuildSummary[]>, 'data'> & { data: BuildSummary | undefined } => {

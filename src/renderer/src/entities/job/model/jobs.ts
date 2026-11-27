@@ -1,6 +1,7 @@
 // The job stream from the main process as a zustand store.
 import { create } from 'zustand'
-import { MAX_JOB_LOG, type Job, type JobUpdate, type McbEvent } from '@shared/api'
+import { type Job, type JobUpdate, type McbEvent } from '@shared/api'
+import { MAX_JOB_LOG, MAX_JOBS } from '@shared/constants'
 import { queryClient, studio } from '@/shared/api/studio'
 
 interface JobStore {
@@ -15,7 +16,8 @@ export const useJobs = create<JobStore>((set) => ({
   logs: {},
   apply: (u) =>
     set(({ jobs, logs }) => {
-      if (u.kind === 'start') return { jobs: [u.job, ...jobs.filter((j) => j.id !== u.id)] }
+      if (u.kind === 'start')
+        return { jobs: [u.job, ...jobs.filter((j) => j.id !== u.id)].slice(0, MAX_JOBS) }
       if (u.kind === 'log') {
         const log = logs[u.id] ?? jobs.find((j) => j.id === u.id)?.log ?? []
         return { logs: { ...logs, [u.id]: [...log, ...u.lines].slice(-MAX_JOB_LOG) } }

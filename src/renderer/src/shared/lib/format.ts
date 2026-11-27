@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { DEFAULT_LINT_RULES, LINT_RULES, type LintRule, type LintRuleToggles } from '@shared/api'
+import { type LintRule, type LintRuleToggles } from '@shared/api'
+import { DEFAULT_LINT_RULES, LINT_RULES } from '@shared/constants'
 
 // palette is a count of distinct states, not a problem
 export const INFO = new Set(['palette'])

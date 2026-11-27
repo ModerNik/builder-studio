@@ -398,7 +398,9 @@ export function BuildViewer({
       setReady(true)
       // dev-only handles for measuring frame cost from DevTools
       const dev = window as unknown as { __viewer?: Renderer; __viewers?: Set<Renderer> }
-      if (import.meta.env.DEV) (dev.__viewers ??= new Set()).add((dev.__viewer = renderer))
+      // `||` not `??=`: React Compiler can't compile `??=` and would skip the whole viewer
+      if (import.meta.env.DEV)
+        (dev.__viewers = dev.__viewers || new Set()).add((dev.__viewer = renderer))
       const ro = new ResizeObserver(() => {
         if (!canvas.parentElement!.clientWidth) return // hidden: a 0x0 size would make the camera NaN
         renderer.resize()
@@ -1127,7 +1129,7 @@ export function BuildViewer({
       if (stroke !== null) {
         if (e.pointerId !== stroke) return
         moved = e
-        frame ??= requestAnimationFrame(strokeMove)
+        if (frame === null) frame = requestAnimationFrame(strokeMove)
         return
       }
       if (!latest.current.onHover || frame !== null) return

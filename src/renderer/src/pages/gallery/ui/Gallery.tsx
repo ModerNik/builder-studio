@@ -62,7 +62,8 @@ import {
   type BuildState,
   type Sort
 } from '@/entities/build/model/gallery'
-import { PROJECT_NAME_MAX_LENGTH, type BuildSummary } from '@shared/api'
+import { type BuildSummary } from '@shared/api'
+import { PROJECT_NAME_MAX_LENGTH } from '@shared/constants'
 import { plain } from '@/shared/lib/format'
 import { ImportDialog } from '@/features/import-projects/ui/ImportProjects'
 import { SchematicFileField } from '@/features/import-schematic/ui/ImportSchematic'

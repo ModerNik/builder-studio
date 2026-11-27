@@ -148,12 +148,11 @@ export function ScreenTabs({
         ? DIVIDER_EXTRA_COMPACT
         : DIVIDER_EXTRA
       : 0
-  const fit =
-    useFit(box, measure, {
-      moreWidth: iconsOnly ? MORE_ICON_WIDTH : MORE_WIDTH,
-      keepIndex: currentIndex >= 0 ? currentIndex : undefined,
-      keepExtra
-    }) ?? screens.length
+  // options computed first: React Compiler can't compile a ternary inside the `??` test
+  const moreWidth = iconsOnly ? MORE_ICON_WIDTH : MORE_WIDTH
+  const keepIndex = currentIndex >= 0 ? currentIndex : undefined
+  const fitted = useFit(box, measure, { moreWidth, keepIndex, keepExtra })
+  const fit = fitted ?? screens.length
 
   if (mode === 'menu') {
     const CurrentIcon = current?.icon

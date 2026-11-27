@@ -9,34 +9,17 @@ import { DropdownMenu } from 'radix-ui'
 import {
   BookOpen,
   Box,
-  Boxes,
-  Camera,
-  Download,
-  FlaskConical,
   GitBranch,
   Images,
   Map as MapIcon,
   MessageCircle,
-  Play,
-  Plus,
   Rocket,
   ScanEye,
-  ScanSearch,
   ScrollText,
   Settings as SettingsIcon,
-  Square,
   type LucideIcon
 } from 'lucide-react'
 import { Toaster } from '@/shared/ui/primitives/sonner'
-import {
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandShortcut
-} from '@/shared/ui/primitives/command'
 import { WorkbenchShell } from '@/widgets/workbench-shell/ui/WorkbenchShell'
 import { TitleBar, type Crumb } from '@/widgets/workbench-shell/ui/TitleBar'
 import { IconButton } from '@/shared/ui/common/parts'
@@ -44,26 +27,31 @@ import { menuItem } from '@/shared/ui/common/styles'
 import { useWorkbench } from '@/widgets/workbench-shell/model/context'
 import type { WorkbenchPanel } from '@/widgets/workbench-shell/ui/Dock'
 import { useBuilds } from '@/entities/build/model/builds'
-import { cancelJob, useJobs } from '@/entities/job/model/jobs'
 import { useReview } from '@/entities/review/model/review'
 import { useVariants } from '@/features/agent-chat/model/variants'
 import { useAgent, useAgentPrefs } from '@/features/agent-chat/model/agent'
-import { STATE_LABEL, buildState, useGalleryDialog } from '@/entities/build/model/gallery'
 import { useShortcuts } from '@/shared/lib/shortcuts'
 import { useScreenPanels } from '@/widgets/workbench-shell/model/screenPanels'
-import { runJob, useRunOptions } from '@/entities/job/model/run'
-import { AgentPanel } from '@/features/agent-chat/ui/Agent'
 import { SetupChip, SetupMenuItem } from '@/entities/availability/ui/SetupChip'
 import { useSetupNotices } from '@/entities/availability/model/setupFix'
 import { useAppSubscriptions } from '../model/subscriptions'
 import { BUILD_ROUTE, BUILD_SCREENS, hasChatDock, type ScreenId } from '../model/screens'
 import { RenderStudioPortal } from '@/features/render-studio/ui/RenderStudioPortal'
-import { SheetViewerHost } from '@/features/render-studio/ui/SheetViewerLightbox'
 import { recordCommit } from '@/widgets/perf-hud/model/perf'
+import { useSheetViewer } from '@/features/render-studio/model/store'
 
 // dev only: production builds drop the HUD chunk with the dead branch
 const PerfHud = import.meta.env.DEV ? lazy(() => import('@/widgets/perf-hud/ui/PerfHud')) : null
-import { openRenderStudio } from '@/features/render-studio/model/store'
+// Not needed for the first screen: the chat dock (and its markdown stack), the sheet zoom viewer, the palette
+const AgentPanel = lazy(() =>
+  import('@/features/agent-chat/ui/Agent').then((m) => ({ default: m.AgentPanel }))
+)
+const SheetViewerHost = lazy(() =>
+  import('@/features/render-studio/ui/SheetViewerLightbox').then((m) => ({
+    default: m.SheetViewerHost
+  }))
+)
+const Palette = lazy(() => import('./Palette'))
 
 const SCREEN_ICONS: Record<ScreenId, LucideIcon> = {
   workspace: Box,
@@ -77,7 +65,9 @@ const SCREEN_ICONS: Record<ScreenId, LucideIcon> = {
 
 export function Shell(): ReactElement {
   useEffect(() => void performance.mark('bs:shell-mounted'), [])
-  const [palette, setPalette] = useState(false)
+  // null until first opened: the palette's chunk loads then
+  const [palette, setPalette] = useState<boolean | null>(null)
+  const sheetOpen = useSheetViewer((s) => !!s.item)
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
   const match = BUILD_ROUTE.exec(pathname)
@@ -154,7 +144,11 @@ export function Shell(): ReactElement {
     badge: needsYou || undefined,
     badgeLabel: `${needsYou} ${needsYou === 1 ? 'ask needs' : 'asks need'} you`,
     badgeTone: 'attention',
-    content: <AgentPanel />
+    content: (
+      <Suspense fallback={null}>
+        <AgentPanel />
+      </Suspense>
+    )
   }
   const chatEnabled = hasChatDock(current, screen)
   const panels: WorkbenchPanel[] = page
@@ -249,9 +243,17 @@ export function Shell(): ReactElement {
           <Outlet />
         )}
       </WorkbenchShell>
-      <Palette open={palette} setOpen={setPalette} current={current} />
+      {palette !== null && (
+        <Suspense fallback={null}>
+          <Palette open={palette} setOpen={setPalette} current={current} />
+        </Suspense>
+      )}
       <RenderStudioPortal />
-      <SheetViewerHost />
+      {sheetOpen && (
+        <Suspense fallback={null}>
+          <SheetViewerHost />
+        </Suspense>
+      )}
       <Toaster position="bottom-right" />
       {PerfHud && (
         <Suspense fallback={null}>
@@ -272,125 +274,4 @@ function AssistantBridge({ enabled }: { enabled: boolean }): null {
     useAgentPrefs.setState({ open: false })
   }, [asked, enabled, dock])
   return null
-}
-
-function Palette({
-  open,
-  setOpen,
-  current
-}: {
-  open: boolean
-  setOpen: (o: boolean) => void
-  current: string | null
-}): ReactElement {
-  const navigate = useNavigate()
-  const builds = useBuilds().data ?? []
-  const jobs = useJobs((s) => s.jobs)
-  const drafts = useReview((s) => s.drafts)
-  const opts = useRunOptions((s) => (current ? s.byBuild[current] : undefined)) ?? {}
-  const go = (f: () => void) => () => {
-    setOpen(false)
-    f()
-  }
-  const running = jobs.filter((j) => j.state === 'running')
-  const busy = new Set(running.map((j) => j.spec.build))
-  const reviews = new Set(
-    Object.entries(drafts)
-      .filter(([, d]) => d.requestId)
-      .map(([b]) => b)
-  )
-  const labelOf = (id: string): string => builds.find((b) => b.name === id)?.displayName ?? id
-  const currentLabel = current ? labelOf(current) : null
-  const gallery = (open: 'new' | 'import'): void => {
-    void navigate({ to: '/' })
-    useGalleryDialog.setState({ open })
-  }
-  return (
-    <CommandDialog open={open} onOpenChange={setOpen}>
-      <CommandInput placeholder="Search builds or run a command" />
-      <CommandList>
-        <CommandEmpty>Nothing found.</CommandEmpty>
-        {current && (
-          <CommandGroup heading={currentLabel ?? current}>
-            {(['proto', 'check'] as const).map((part) => {
-              const Icon = part === 'proto' ? Play : ScanSearch
-              return (
-                <CommandItem key={part} onSelect={go(() => runJob(current, part, opts))}>
-                  <Icon aria-hidden="true" />
-                  {{ proto: 'Generate draft', check: 'Check build' }[part]}: {currentLabel}
-                  {part === 'proto' && <CommandShortcut>Ctrl Enter</CommandShortcut>}
-                </CommandItem>
-              )
-            })}
-            <CommandItem
-              onSelect={go(
-                () => void navigate({ to: '/build/$name/ship', params: { name: current } })
-              )}
-            >
-              <Rocket aria-hidden="true" />
-              Export: {currentLabel}
-            </CommandItem>
-            <CommandItem onSelect={go(() => openRenderStudio({ build: current }))}>
-              <Camera aria-hidden="true" />
-              Render images: {currentLabel}
-              <CommandShortcut>Ctrl Shift E</CommandShortcut>
-            </CommandItem>
-          </CommandGroup>
-        )}
-        {running.length > 0 && (
-          <CommandGroup heading="Running">
-            {running.map((j) => (
-              <CommandItem key={j.id} onSelect={go(() => cancelJob(j.id))}>
-                <Square aria-hidden="true" />
-                Stop build activity: {labelOf(j.spec.build)}
-              </CommandItem>
-            ))}
-          </CommandGroup>
-        )}
-        <CommandGroup heading="Builds">
-          {builds.map((b) => {
-            const state = STATE_LABEL[buildState(b, busy, reviews)]
-            const display = b.displayName || b.name
-            return (
-              <CommandItem
-                key={b.name}
-                value={`${display} ${b.name} ${state} ${b.status[0] ?? ''}`}
-                onSelect={go(() => void navigate({ to: '/build/$name', params: { name: b.name } }))}
-              >
-                <span className="truncate font-medium">{display}</span>
-                <span className="shrink-0 text-fg-muted">· {state}</span>
-              </CommandItem>
-            )
-          })}
-        </CommandGroup>
-        <CommandGroup heading="Commands">
-          <CommandItem onSelect={go(() => gallery('new'))}>
-            <Plus aria-hidden="true" />
-            New build…
-          </CommandItem>
-          <CommandItem onSelect={go(() => gallery('import'))}>
-            <Download aria-hidden="true" />
-            Import builds…
-          </CommandItem>
-          <CommandItem onSelect={go(() => void navigate({ to: '/settings' }))}>
-            <SettingsIcon aria-hidden="true" />
-            Open Settings
-            <CommandShortcut>Ctrl ,</CommandShortcut>
-          </CommandItem>
-          <CommandItem onSelect={go(() => void navigate({ to: '/' }))}>
-            <Boxes aria-hidden="true" />
-            All builds
-          </CommandItem>
-          <CommandItem onSelect={go(() => void navigate({ to: '/labs' }))}>
-            <FlaskConical aria-hidden="true" />
-            Labs: palette, kit catalog, prefabs
-          </CommandItem>
-          <CommandItem onSelect={go(() => void navigate({ to: '/docs' }))}>
-            <BookOpen aria-hidden="true" />
-            Documentation
-          </CommandItem>
-        </CommandGroup>
-      </CommandList>
-    </CommandDialog>
-  )
 }

@@ -1,5 +1,6 @@
 // The Export screen's pure logic: lint formatting, DESIGN.md result rows, and job waiting.
-import { DEFAULT_LINT_RULES, type Job, type LintRuleToggles } from '@shared/api'
+import { type Job, type LintRuleToggles } from '@shared/api'
+import { DEFAULT_LINT_RULES } from '@shared/constants'
 import { EXPORT_FORMAT_INFO, type ExportFormat } from '@shared/minecraft'
 import { useJobs } from '@/entities/job/model/jobs'
 import { isLintRuleEnabled, LINT_LABELS } from '@/shared/lib/format'

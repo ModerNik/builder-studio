@@ -1,6 +1,6 @@
 // Shared companion MCP connection snippets and chat prompts, reused by Settings › External agents
 // and the Agent panel's MCP popover so commands never drift out of sync.
-import { MCP_URL } from '@shared/api'
+import { MCP_URL } from '@shared/constants'
 
 export type McpClientId = 'claude' | 'codex' | 'codex-timeout' | 'desktop'
 

@@ -1,20 +1,56 @@
 // The one contract between main, preload and renderer. Main checks every input with these zod schemas.
 import { z } from 'zod'
 import { EXPORT_FORMATS, isMinecraftVersion } from './minecraft'
+import { buildFolderIssue, projectNameIssue } from './project-name'
 import {
-  BuildFolderNameSchema,
+  CAPABILITIES,
+  DEFAULT_LINT_RULES,
+  DEFAULT_LINTER_SETTINGS,
+  EFFORTS,
+  LINT_RULES,
+  MAX_JOB_LOG,
+  MAX_JOBS,
+  MCP_PORT,
+  MCP_URL,
+  MODES,
   PROJECT_NAME_MAX_LENGTH,
-  ProjectMetaSchema,
-  ProjectNameSchema
-} from './project-name'
+  PROVIDERS,
+  SETUP_STEPS,
+  UI_SCALES
+} from './constants'
 
-export { BuildFolderNameSchema, PROJECT_NAME_MAX_LENGTH, ProjectMetaSchema, ProjectNameSchema }
+export { PROJECT_NAME_MAX_LENGTH }
 
-/** The companion MCP server for external agents (src/main/agent/mcp.ts), loopback only. */
-export const MCP_PORT = 7341
-export const MCP_URL = `http://127.0.0.1:${MCP_PORT}/mcp`
+/** Wraps a plain `issue(value)` rule (from ./project-name) as a zod check. */
+const rule =
+  (issue: (s: string) => string) =>
+  (s: string, ctx: z.RefinementCtx): void => {
+    const message = issue(s)
+    if (message) ctx.addIssue({ code: 'custom', message })
+  }
+/** User-facing project display name, trimmed. */
+export const ProjectNameSchema = z.string().trim().superRefine(rule(projectNameIssue))
+/** On-disk folder name under builds/ passed to the Python engine (tools.new_build). */
+export const BuildFolderNameSchema = z.string().superRefine(rule(buildFolderIssue))
+export const ProjectMetaSchema = z.object({ name: ProjectNameSchema })
+export type ProjectMeta = z.infer<typeof ProjectMetaSchema>
+// plain constants live in ./constants so the renderer can use them without loading zod
+export {
+  CAPABILITIES,
+  DEFAULT_LINT_RULES,
+  DEFAULT_LINTER_SETTINGS,
+  EFFORTS,
+  LINT_RULES,
+  MAX_JOB_LOG,
+  MAX_JOBS,
+  MCP_PORT,
+  MCP_URL,
+  MODES,
+  PROVIDERS,
+  SETUP_STEPS,
+  UI_SCALES
+}
 
-export const PROVIDERS = ['claude', 'codex', 'ollama'] as const
 export const ProviderSchema = z.enum(PROVIDERS)
 export type Provider = z.infer<typeof ProviderSchema>
 export const SessionRefSchema = z.object({ provider: ProviderSchema, id: z.uuid() })
@@ -28,37 +64,12 @@ export interface AgentCapabilities {
   mcpToggle: boolean // MCP servers switch on and off in a live session
   modes: readonly AgentMode[] // the permission modes the composer offers
 }
-const CLAUDE = {
-  variants: true,
-  fork: true,
-  compact: true,
-  cost: true,
-  effort: true,
-  mcpToggle: true,
-  modes: ['default', 'acceptEdits', 'auto', 'plan'] as const
-}
-// no acceptEdits: Codex's workspace-write sandbox never asks for edits inside the workspace anyway
-const CODEX = {
-  variants: true,
-  fork: true,
-  compact: true,
-  cost: false,
-  effort: true,
-  mcpToggle: true,
-  modes: ['default', 'auto', 'plan'] as const
-}
-export const CAPABILITIES: Record<Provider, AgentCapabilities> = {
-  claude: CLAUDE,
-  codex: CODEX,
-  ollama: { ...CODEX, effort: false }
-}
 export interface ProviderDiagnostic {
   provider: Provider
   ok: boolean
   detail: string
 }
 
-export const SETUP_STEPS = ['welcome', 'workspace', 'runtime', 'minecraft', 'ai', 'verify'] as const
 export const SetupProgressSchema = z.object({
   step: z.enum(SETUP_STEPS).default('welcome'),
   completed: z.boolean().default(false)
@@ -93,36 +104,8 @@ export interface Availability {
   features: Record<Feature, FeatureAvailability>
 }
 
-/** UI scale steps for Ctrl - and Ctrl +, as in browsers. */
-export const UI_SCALES = [0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2] as const
-
-export const LINT_RULES = [
-  'floating',
-  'unattached',
-  'gravity',
-  'halves',
-  'fire',
-  'leaves',
-  'invalid',
-  'dark',
-  'see_through',
-  'groove'
-] as const
 export type LintRule = (typeof LINT_RULES)[number]
 export type LintRuleToggles = Record<LintRule, boolean>
-
-export const DEFAULT_LINT_RULES: LintRuleToggles = {
-  floating: false,
-  unattached: true,
-  gravity: true,
-  halves: true,
-  fire: true,
-  leaves: true,
-  invalid: true,
-  dark: true,
-  see_through: true,
-  groove: true
-}
 
 export const LinterSettingsSchema = z.object({
   enabled: z.boolean().default(true),
@@ -142,10 +125,6 @@ export const LinterSettingsSchema = z.object({
     .default(DEFAULT_LINT_RULES)
 })
 export type LinterSettings = z.infer<typeof LinterSettingsSchema>
-export const DEFAULT_LINTER_SETTINGS: LinterSettings = {
-  enabled: true,
-  rules: { ...DEFAULT_LINT_RULES }
-}
 
 export const MinecraftVersionSchema = z
   .string()
@@ -417,8 +396,6 @@ export interface Job {
   log: string[] // human lines, stdout and stderr
 }
 
-export const MAX_JOB_LOG = 5000 // lines a job keeps: the tail, where a failure's traceback is
-
 export type JobUpdate =
   | { id: number; kind: 'start'; job: Job }
   | { id: number; kind: 'log'; lines: string[] }
@@ -689,7 +666,6 @@ export const RefUpdateSchema = z.object({
 })
 export type RefUpdate = z.infer<typeof RefUpdateSchema>
 
-export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
 export type Effort = (typeof EFFORTS)[number]
 
 export type AgentModel = {
@@ -699,8 +675,6 @@ export type AgentModel = {
   efforts?: Effort[]
   defaultEffort?: Effort
 }
-// the Claude SDK's PermissionMode names: Manual, Accept edits, Auto (a classifier approves), Plan
-export const MODES = ['default', 'acceptEdits', 'auto', 'plan'] as const
 export type AgentMode = (typeof MODES)[number]
 
 /** One user turn for the embedded agent. A different build or session than the live one restarts the query. */

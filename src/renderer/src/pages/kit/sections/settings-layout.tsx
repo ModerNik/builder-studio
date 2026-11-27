@@ -10,7 +10,7 @@ import {
   SettingsSection
 } from '@/entities/settings/ui/Settings'
 import { StatusBadge } from '@/shared/ui/status/StatusBadge'
-import { MCP_URL } from '@shared/api'
+import { MCP_URL } from '@shared/constants'
 import { MinecraftVersionSelect } from '@/entities/settings/ui/MinecraftVersionSelect'
 import { Cell, Narrow, Sub, Touch } from '../composites-demo'
 
