@@ -1,7 +1,7 @@
-// Dual-LOD BlueMap-style world tile & chunk streamer backed by a Web Worker pool.
-// Streams LOD-1 lowres regions across the horizon (up to 11x11 regions = 5632x5632 blocks)
-// and LOD-0 textured 3D voxel chunks around the camera, using a shared quad index buffer and
-// frame-budgeted GPU mounting to keep frame times smooth.
+// Dual-LOD BlueMap/Voxy-inspired world tile & chunk streamer backed by a Web Worker pool.
+// Streams distance-scaled LOD-1..3 lowres regions across the horizon (up to 11x11 regions = 5632x5632 blocks)
+// and LOD-0 textured 3D voxel chunks around the camera, using shared unmasked Early-Z materials,
+// compact packed vertices, O(1) worker-computed bounds, stale-request cancellation, and paced GPU mounting.
 import * as THREE from 'three'
 import { NO_HEIGHT } from '@shared/world-tiles'
 import {
@@ -21,8 +21,8 @@ import {
 import {
   buildQuadIndices,
   UNTEXTURED,
-  VERTEX_STRIDE,
   type HiresMeshResult,
+  type LowresLod,
   type LowresMeshResult,
   type MeshBucketBuffer,
   type WorkerErrorResult
@@ -30,7 +30,8 @@ import {
 import type { Box2D, CameraMode, StreamStats, WorldDataSource } from '../model/types'
 
 export interface WorkerLike {
-  onmessage: ((e: MessageEvent<LowresMeshResult | HiresMeshResult | WorkerErrorResult>) => void) | null
+  onmessage:
+    ((e: MessageEvent<LowresMeshResult | HiresMeshResult | WorkerErrorResult>) => void) | null
   onerror: ((e: ErrorEvent) => void) | null
   onmessageerror: ((e: MessageEvent) => void) | null
   postMessage(message: unknown, transfer?: Transferable[]): void
@@ -50,25 +51,61 @@ interface PendingJob {
   reject: (err: Error) => void
 }
 
+interface InflightLowres {
+  ctrl: AbortController
+  rx: number
+  rz: number
+  lod: LowresLod
+}
+
+interface InflightHires {
+  ctrl: AbortController
+  cx: number
+  cz: number
+}
+
 type QueuedMount =
-  | { kind: 'lowres'; key: string; gen: number; res: LowresMeshResult }
-  | { kind: 'hires'; key: string; gen: number; hGen: number; res: HiresMeshResult }
+  | {
+      kind: 'lowres'
+      key: string
+      rx: number
+      rz: number
+      lod: LowresLod
+      gen: number
+      res: LowresMeshResult
+    }
+  | {
+      kind: 'hires'
+      key: string
+      cx: number
+      cz: number
+      gen: number
+      hGen: number
+      res: HiresMeshResult
+    }
 
 export const MAX_LOWRES_REGIONS = 121 // up to 11x11 regions = 5632 x 5632 blocks
-export const MAX_HIRES_CHUNKS = 289 // up to 17x17 chunks = 272 x 272 blocks in full 3D
-const MAX_INFLIGHT_LOWRES = 6
-const MAX_INFLIGHT_HIRES = 16
-const INITIAL_SHARED_QUADS = 65536
+export const MAX_HIRES_CHUNKS = 121 // up to 11x11 chunks = 176 x 176 blocks in full 3D
+const MAX_INFLIGHT_LOWRES = 2
+const MAX_INFLIGHT_HIRES = 4
+const MAX_MOUNT_QUEUE = 6
+const MAX_EVICT_CHUNKS_PER_SWEEP = 4
+const MAX_EVICT_REGIONS_PER_SWEEP = 2
+const INITIAL_SHARED_QUADS = 131072
 
 interface RegionEntry {
   key: string
   rx: number
   rz: number
+  lod: LowresLod
   group: THREE.Group
-  terrainMat: THREE.MeshLambertMaterial
-  waterMat: THREE.MeshLambertMaterial
-  maskData: Uint8Array
-  maskTex: THREE.DataTexture
+  terrainMesh: THREE.Mesh | null
+  waterMesh: THREE.Mesh | null
+  hiresCount: number
+  maskedTerrainMat: THREE.MeshLambertMaterial | null
+  maskedWaterMat: THREE.MeshLambertMaterial | null
+  maskData: Uint8Array | null
+  maskTex: THREE.DataTexture | null
   surfaceY: Int16Array
   grid: number
   step: number
@@ -84,7 +121,7 @@ interface ChunkEntry {
   lastUsed: number
 }
 
-/** Compute desired LOD-1 region radius around target from camera distance and mode. */
+/** Compute desired lowres region radius around target from camera distance and mode. */
 export function lowresRadiusFor(camDist: number, camMode: CameraMode): number {
   if (camMode === 'top') {
     return Math.min(5, Math.max(2, Math.ceil(camDist / 380)))
@@ -93,6 +130,19 @@ export function lowresRadiusFor(camDist: number, camMode: CameraMode): number {
   if (camDist >= 950) return 4
   if (camDist >= 450) return 3
   return 2
+}
+
+/** Choose Voxy-style power-of-2 detail level for a region by Chebyshev distance from the focus region. */
+export function lowresLodFor(
+  rx: number,
+  rz: number,
+  centerRx: number,
+  centerRz: number
+): LowresLod {
+  const cheb = Math.max(Math.abs(rx - centerRx), Math.abs(rz - centerRz))
+  if (cheb <= 1) return 0 // 256x256 (step 2) — crisp near terrain
+  if (cheb <= 3) return 1 // 128x128 (step 4) — 4x fewer quads
+  return 2 // 64x64 (step 8) — 16x fewer quads on far horizon
 }
 
 /** Patch a MeshLambertMaterial to discard fragments whose chunk (in region UV 0..1) is loaded at LOD-0. */
@@ -133,16 +183,26 @@ export class WorldStreamer {
   private emptyChunks = new Set<string>()
   private failedRegions = new Set<string>()
   private failedChunks = new Set<string>()
-  private inflightLowres = new Map<string, AbortController>()
-  private inflightHires = new Map<string, AbortController>()
+  private inflightLowres = new Map<string, InflightLowres>()
+  private inflightHires = new Map<string, InflightHires>()
   private queuedLowres = new Set<string>()
   private queuedHires = new Set<string>()
   private mountQueue: QueuedMount[] = []
   private deferredMounts = false
   private pumpRequested = false
+  private lastFlushWasHeavy = false
 
   private sharedIndex: THREE.BufferAttribute | null = null
   private sharedIndexQuads = 0
+
+  // Shared unmasked Early-Z materials used by all regions with zero hires chunks (~96-99% of the map)
+  private sharedLowresTerrainMat = new THREE.MeshLambertMaterial({ vertexColors: true })
+  private sharedLowresWaterMat = new THREE.MeshLambertMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.78,
+    depthWrite: false
+  })
 
   private hiresMaterials: THREE.MeshLambertMaterial[]
   private resources: Resources | null = null
@@ -153,16 +213,22 @@ export class WorldStreamer {
   private tick = 0
   private lastError: string | null = null
   private lastStats: StreamStats | null = null
+  private statsListeners = new Set<(stats: StreamStats) => void>()
   private onTerrainBounds?: (bounds: Box2D) => void
   private disposed = false
 
   constructor(
     private onInvalidate: () => void,
-    private onStats?: (stats: StreamStats) => void,
+    onStats?: (stats: StreamStats) => void,
     options?: WorldStreamerOptions
   ) {
     this.lowresGroup.name = 'world-lowres'
+    this.lowresGroup.matrixAutoUpdate = false
+    this.lowresGroup.updateMatrix()
     this.hiresGroup.name = 'world-hires'
+    this.hiresGroup.matrixAutoUpdate = false
+    this.hiresGroup.updateMatrix()
+    if (onStats) this.statsListeners.add(onStats)
     this.onTerrainBounds = options?.onTerrainBounds
     this.hiresMaterials = this.createHiresMaterials(null)
     this.spawnWorkers(options)
@@ -181,6 +247,15 @@ export class WorldStreamer {
       })
   }
 
+  /** Subscribe to stream stats updates without forcing parent React re-renders. */
+  subscribeStats(listener: (stats: StreamStats) => void): () => void {
+    this.statsListeners.add(listener)
+    if (this.lastStats) listener(this.lastStats)
+    return () => {
+      this.statsListeners.delete(listener)
+    }
+  }
+
   /** Enable frame-budgeted mounting driven by WorldScene's rAF loop. */
   setDeferredMounts(enabled: boolean): void {
     this.deferredMounts = enabled
@@ -195,11 +270,18 @@ export class WorldStreamer {
     return this.pumpRequested
   }
 
-  /** Drain queued worker meshes within a per-frame time budget to prevent GPU upload hitches. */
-  flushMounts(budgetMs = 4): boolean {
+  /** Whether the most recent flushMounts call uploaded a full-detail LOD-0 region mesh. */
+  lastFlushHeavy(): boolean {
+    return this.lastFlushWasHeavy
+  }
+
+  /** Drain queued worker meshes within a per-frame time and count budget to prevent GPU upload hitches. */
+  flushMounts(budgetMs = 2, maxItems = 2): boolean {
+    this.lastFlushWasHeavy = false
     if (!this.mountQueue.length) return false
     const start = performance.now()
     let mountedAny = false
+    let mountedCount = 0
     let mountedRegions = 0
 
     while (this.mountQueue.length > 0) {
@@ -208,21 +290,34 @@ export class WorldStreamer {
       else this.queuedHires.delete(item.key)
       if (this.disposed || item.gen !== this.generation) continue
       if (item.kind === 'lowres') {
+        const existing = this.regions.get(item.key)
+        // Skip stale coarser LOD if a finer LOD is already mounted
+        if (existing && existing.lod <= item.lod) continue
         this.mountLowres(item.key, item.res)
         mountedAny = true
         mountedRegions++
+        mountedCount++
+        if (item.lod === 0) this.lastFlushWasHeavy = true
       } else {
         if (item.hGen !== this.hiresGen) continue
         this.mountHires(item.key, item.res)
         mountedAny = true
+        mountedCount++
       }
-      // At most one large lowres region per frame when frame-budgeted, or stop once budget expires
-      if (Number.isFinite(budgetMs) && (mountedRegions >= 1 || performance.now() - start >= budgetMs)) {
+      // At most one lowres region or maxItems hires chunks per frame when frame-budgeted
+      if (
+        Number.isFinite(budgetMs) &&
+        (mountedRegions >= 1 || mountedCount >= maxItems || performance.now() - start >= budgetMs)
+      ) {
         break
       }
     }
 
-    if (mountedAny) this.emitStats()
+    if (mountedAny) {
+      // Request a pump if mountQueue dropped below backpressure cap so streaming continues smoothly
+      if (this.mountQueue.length < MAX_MOUNT_QUEUE) this.pumpRequested = true
+      this.emitStats()
+    }
     return mountedAny
   }
 
@@ -249,17 +344,25 @@ export class WorldStreamer {
   }
 
   private buildGeometry(buf: MeshBucketBuffer): THREE.BufferGeometry | null {
-    if (!buf.quadCount || !buf.vertices.length) return null
-    const ib = new THREE.InterleavedBuffer(buf.vertices, VERTEX_STRIDE)
+    if (!buf.quadCount || !buf.positions.length) return null
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.InterleavedBufferAttribute(ib, 3, 0))
-    g.setAttribute('normal', new THREE.InterleavedBufferAttribute(ib, 3, 3))
-    g.setAttribute('uv', new THREE.InterleavedBufferAttribute(ib, 2, 6))
-    g.setAttribute('color', new THREE.InterleavedBufferAttribute(ib, 3, 8))
+    g.setAttribute('position', new THREE.BufferAttribute(buf.positions, 3, false))
+    g.setAttribute('normal', new THREE.BufferAttribute(buf.normals, 3, true))
+    g.setAttribute('uv', new THREE.BufferAttribute(buf.uvs, 2, buf.uvs instanceof Uint8Array))
+    g.setAttribute('color', new THREE.BufferAttribute(buf.colors, 3, true))
     g.setIndex(this.ensureSharedIndex(buf.quadCount))
     g.setDrawRange(0, buf.quadCount * 6)
-    g.computeBoundingBox()
-    g.computeBoundingSphere()
+    if (buf.bounds) {
+      const [minX, minY, minZ, maxX, maxY, maxZ] = buf.bounds
+      g.boundingBox = new THREE.Box3(
+        new THREE.Vector3(minX, minY, minZ),
+        new THREE.Vector3(maxX, maxY, maxZ)
+      )
+      g.boundingSphere = g.boundingBox.getBoundingSphere(new THREE.Sphere())
+    } else {
+      g.computeBoundingBox()
+      g.computeBoundingSphere()
+    }
     return g
   }
 
@@ -295,8 +398,9 @@ export class WorldStreamer {
       })
     const create = options?.createWorker ?? (typeof Worker !== 'undefined' ? defaultCreate : null)
     if (!create) return
-    const hw = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 2 : 2
-    const count = options?.workerCount ?? Math.max(2, Math.min(4, hw))
+    const hw = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4
+    // Keep mesher worker count gentle (<= 2) so Chromium's UI/compositor threads stay responsive
+    const count = options?.workerCount ?? Math.max(1, Math.min(2, Math.floor(hw / 2)))
     for (let i = 0; i < count; i++) {
       const w = create()
       w.onmessage = (e: MessageEvent<LowresMeshResult | HiresMeshResult | WorkerErrorResult>) => {
@@ -384,55 +488,66 @@ export class WorldStreamer {
     const fx = fwdLen > 1e-4 ? fwdX / fwdLen : 0
     const fz = fwdLen > 1e-4 ? fwdZ / fwdLen : 0
 
-    // 1. Stream LOD-1 regions in an adaptive radius up to 5 regions (11x11 = 5632x5632 blocks)
+    // 1. Stream distance-scaled lowres regions in an adaptive radius up to 5 regions (11x11 = 5632x5632 blocks)
     const centerRx = Math.floor(targetX / 512)
     const centerRz = Math.floor(targetZ / 512)
     const lowRadius = lowresRadiusFor(camDist, camMode)
 
-    const desiredRegions: { rx: number; rz: number; score: number; key: string }[] = []
+    const wantsHires = camMode !== 'top' ? camDist < 260 : camDist < 140
+    const hiresRadius = !wantsHires
+      ? 0
+      : camMode === '3d'
+        ? camDist < 120
+          ? 5
+          : 4
+        : camMode === 'iso'
+          ? 4
+          : 3
+
+    // Abort out-of-range inflight requests and prune stale mountQueue entries so fast panning never builds backlog
+    this.cancelStaleRequests(targetX, targetZ, centerRx, centerRz, lowRadius, hiresRadius)
+
+    const desiredRegions: { rx: number; rz: number; lod: LowresLod; score: number; key: string }[] =
+      []
     for (let rz = centerRz - lowRadius; rz <= centerRz + lowRadius; rz++) {
       for (let rx = centerRx - lowRadius; rx <= centerRx + lowRadius; rx++) {
         const key = `${rx},${rz}`
         if (this.availableRegions && !this.availableRegions.has(key)) continue
+        const desiredLod = lowresLodFor(rx, rz, centerRx, centerRz)
         const existing = this.regions.get(key)
         if (existing) {
           existing.lastUsed = this.tick
-          continue
+          // Keep existing mesh if it is already at or finer than desiredLod; otherwise upgrade in-place
+          if (existing.lod <= desiredLod) continue
         }
         if (
           this.emptyRegions.has(key) ||
           this.failedRegions.has(key) ||
           this.inflightLowres.has(key) ||
           this.queuedLowres.has(key)
-        )
+        ) {
           continue
+        }
         const dx = (rx + 0.5) * 512 - targetX
         const dz = (rz + 0.5) * 512 - targetZ
         const d = Math.hypot(dx, dz)
         const align = d > 1 && fwdLen > 1e-4 ? (dx * fx + dz * fz) / d : 0
-        // Prioritize regions in front of the camera while still keeping immediate neighbors first
-        const score = d * (1 - 0.35 * align)
-        desiredRegions.push({ rx, rz, score, key })
+        // Prioritize missing regions ahead of the camera; upgrades of already-visible regions sort slightly after missing ones
+        const upgradePenalty = existing ? 900 : 0
+        const score = d * (1 - 0.35 * align) + upgradePenalty
+        desiredRegions.push({ rx, rz, lod: desiredLod, score, key })
       }
     }
-    desiredRegions.sort((a, b) => a.score - b.score)
-    for (const r of desiredRegions) {
-      if (this.inflightLowres.size >= MAX_INFLIGHT_LOWRES) break
-      this.startLowres(r.rx, r.rz, r.key, gen)
+
+    if (this.mountQueue.length < MAX_MOUNT_QUEUE) {
+      desiredRegions.sort((a, b) => a.score - b.score)
+      for (const r of desiredRegions) {
+        if (this.inflightLowres.size >= MAX_INFLIGHT_LOWRES) break
+        this.startLowres(r.rx, r.rz, r.lod, r.key, gen)
+      }
     }
 
     // 2. Stream LOD-0 hires voxel chunks when close enough to appreciate full 3D blocks
-    const wantsHires = camMode !== 'top' ? camDist < 380 : camDist < 180
-    const hiresRadius = !wantsHires
-      ? 0
-      : camMode === '3d'
-        ? camDist < 150
-          ? 8
-          : 6
-        : camMode === 'iso'
-          ? 6
-          : 4
-
     if (hiresRadius > 0) {
       const centerCx = Math.floor(targetX / 16)
       const centerCz = Math.floor(targetZ / 16)
@@ -457,22 +572,73 @@ export class WorldStreamer {
             this.failedChunks.has(key) ||
             this.inflightHires.has(key) ||
             this.queuedHires.has(key)
-          )
+          ) {
             continue
+          }
           const align = d > 1 && fwdLen > 1e-4 ? (dx * fx + dz * fz) / d : 0
           const score = d * (1 - 0.3 * align)
           desiredChunks.push({ cx, cz, score, key })
         }
       }
-      desiredChunks.sort((a, b) => a.score - b.score)
-      for (const c of desiredChunks) {
-        if (this.inflightHires.size >= MAX_INFLIGHT_HIRES) break
-        this.startHires(c.cx, c.cz, c.key, gen, hGen)
+      if (this.mountQueue.length < MAX_MOUNT_QUEUE) {
+        desiredChunks.sort((a, b) => a.score - b.score)
+        for (const c of desiredChunks) {
+          if (this.inflightHires.size >= MAX_INFLIGHT_HIRES) break
+          this.startHires(c.cx, c.cz, c.key, gen, hGen)
+        }
       }
     }
 
     this.evictLru(targetX, targetZ)
     this.emitStats()
+  }
+
+  private cancelStaleRequests(
+    targetX: number,
+    targetZ: number,
+    centerRx: number,
+    centerRz: number,
+    lowRadius: number,
+    hiresRadius: number
+  ): void {
+    const maxLowCheb = lowRadius + 1
+    for (const [key, entry] of this.inflightLowres) {
+      if (Math.max(Math.abs(entry.rx - centerRx), Math.abs(entry.rz - centerRz)) > maxLowCheb) {
+        this.inflightLowres.delete(key)
+        entry.ctrl.abort()
+      }
+    }
+
+    const maxHiresDist = hiresRadius > 0 ? (hiresRadius + 1.5) * 16 : -1
+    for (const [key, entry] of this.inflightHires) {
+      if (
+        maxHiresDist < 0 ||
+        Math.hypot((entry.cx + 0.5) * 16 - targetX, (entry.cz + 0.5) * 16 - targetZ) > maxHiresDist
+      ) {
+        this.inflightHires.delete(key)
+        entry.ctrl.abort()
+      }
+    }
+
+    if (this.mountQueue.length > 0) {
+      const kept: QueuedMount[] = []
+      for (const item of this.mountQueue) {
+        if (item.kind === 'lowres') {
+          if (Math.max(Math.abs(item.rx - centerRx), Math.abs(item.rz - centerRz)) > maxLowCheb) {
+            this.queuedLowres.delete(item.key)
+            continue
+          }
+        } else if (
+          maxHiresDist < 0 ||
+          Math.hypot((item.cx + 0.5) * 16 - targetX, (item.cz + 0.5) * 16 - targetZ) > maxHiresDist
+        ) {
+          this.queuedHires.delete(item.key)
+          continue
+        }
+        kept.push(item)
+      }
+      this.mountQueue = kept
+    }
   }
 
   /** Fast top-block Y lookup at world (x, z): checks hires chunks first (1-block exact), then lowres regions. */
@@ -502,7 +668,8 @@ export class WorldStreamer {
 
   private runWorker<T extends LowresMeshResult | HiresMeshResult>(
     type: 'lowres' | 'hires',
-    buffer: ArrayBuffer
+    buffer: ArrayBuffer,
+    lod?: LowresLod
   ): Promise<T> {
     if (!this.workers.length) {
       return Promise.reject(new Error('World mesher worker unavailable'))
@@ -515,7 +682,8 @@ export class WorldStreamer {
         resolve: resolve as (msg: LowresMeshResult | HiresMeshResult) => void,
         reject
       })
-      worker.postMessage({ type, id, buffer }, [buffer])
+      const payload = type === 'lowres' ? { type, id, buffer, lod: lod ?? 0 } : { type, id, buffer }
+      worker.postMessage(payload, [buffer])
     })
   }
 
@@ -528,24 +696,25 @@ export class WorldStreamer {
     this.lastError = message || `Could not load world ${kind}`
   }
 
-  private startLowres(rx: number, rz: number, key: string, gen: number): void {
+  private startLowres(rx: number, rz: number, lod: LowresLod, key: string, gen: number): void {
     const src = this.source
     if (!src) return
     const ctrl = new AbortController()
-    this.inflightLowres.set(key, ctrl)
+    const entry: InflightLowres = { ctrl, rx, rz, lod }
+    this.inflightLowres.set(key, entry)
     void src
       .fetchLowres(rx, rz, ctrl.signal)
       .then(async (buf) => {
-        if (this.disposed || gen !== this.generation) return
+        if (this.disposed || gen !== this.generation || ctrl.signal.aborted) return
         if (!buf) {
           this.emptyRegions.add(key)
           return
         }
-        const mesh = await this.runWorker<LowresMeshResult>('lowres', buf)
-        if (this.disposed || gen !== this.generation) return
+        const mesh = await this.runWorker<LowresMeshResult>('lowres', buf, lod)
+        if (this.disposed || gen !== this.generation || ctrl.signal.aborted) return
         if (this.deferredMounts) {
           this.queuedLowres.add(key)
-          this.mountQueue.push({ kind: 'lowres', key, gen, res: mesh })
+          this.mountQueue.push({ kind: 'lowres', key, rx, rz, lod: mesh.lod, gen, res: mesh })
           this.onInvalidate()
         } else {
           this.mountLowres(key, mesh)
@@ -556,7 +725,7 @@ export class WorldStreamer {
         this.recordFailure('region', key, err, gen)
       })
       .finally(() => {
-        if (this.inflightLowres.get(key) === ctrl) this.inflightLowres.delete(key)
+        if (this.inflightLowres.get(key) === entry) this.inflightLowres.delete(key)
         if (!this.disposed && gen === this.generation) {
           this.pumpRequested = true
           this.onInvalidate()
@@ -569,20 +738,33 @@ export class WorldStreamer {
     const src = this.source
     if (!src) return
     const ctrl = new AbortController()
-    this.inflightHires.set(key, ctrl)
+    const entry: InflightHires = { ctrl, cx, cz }
+    this.inflightHires.set(key, entry)
     void src
       .fetchHires(cx, cz, ctrl.signal)
       .then(async (buf) => {
-        if (this.disposed || gen !== this.generation || hGen !== this.hiresGen) return
+        if (
+          this.disposed ||
+          gen !== this.generation ||
+          hGen !== this.hiresGen ||
+          ctrl.signal.aborted
+        )
+          return
         if (!buf) {
           this.emptyChunks.add(key)
           return
         }
         const mesh = await this.runWorker<HiresMeshResult>('hires', buf)
-        if (this.disposed || gen !== this.generation || hGen !== this.hiresGen) return
+        if (
+          this.disposed ||
+          gen !== this.generation ||
+          hGen !== this.hiresGen ||
+          ctrl.signal.aborted
+        )
+          return
         if (this.deferredMounts) {
           this.queuedHires.add(key)
-          this.mountQueue.push({ kind: 'hires', key, gen, hGen, res: mesh })
+          this.mountQueue.push({ kind: 'hires', key, cx, cz, gen, hGen, res: mesh })
           this.onInvalidate()
         } else {
           this.mountHires(key, mesh)
@@ -594,7 +776,7 @@ export class WorldStreamer {
         this.recordFailure('chunk', key, err, gen)
       })
       .finally(() => {
-        if (this.inflightHires.get(key) === ctrl) this.inflightHires.delete(key)
+        if (this.inflightHires.get(key) === entry) this.inflightHires.delete(key)
         if (!this.disposed && gen === this.generation && hGen === this.hiresGen) {
           this.pumpRequested = true
           this.onInvalidate()
@@ -603,66 +785,111 @@ export class WorldStreamer {
       })
   }
 
-  private mountLowres(key: string, res: LowresMeshResult): void {
-    const existing = this.regions.get(key)
-    if (existing) this.disposeRegion(existing)
-
+  private enableRegionMask(reg: RegionEntry): void {
+    if (reg.maskData) return
     const maskData = new Uint8Array(32 * 32 * 4)
-    // Mark any already-loaded hires chunks inside this region
-    const baseCx = res.rx * 32
-    const baseCz = res.rz * 32
-    for (let lcz = 0; lcz < 32; lcz++) {
-      for (let lcx = 0; lcx < 32; lcx++) {
-        if (this.chunks.has(`${baseCx + lcx},${baseCz + lcz}`)) {
-          maskData[(lcz * 32 + lcx) * 4] = 255
-        }
-      }
-    }
     const maskTex = new THREE.DataTexture(maskData, 32, 32, THREE.RGBAFormat)
     maskTex.magFilter = THREE.NearestFilter
     maskTex.minFilter = THREE.NearestFilter
     maskTex.generateMipmaps = false
     maskTex.needsUpdate = true
 
-    const terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true })
-    attachChunkMask(terrainMat, maskTex)
-    const waterMat = new THREE.MeshLambertMaterial({
+    const maskedTerrainMat = new THREE.MeshLambertMaterial({ vertexColors: true })
+    attachChunkMask(maskedTerrainMat, maskTex)
+    const maskedWaterMat = new THREE.MeshLambertMaterial({
       vertexColors: true,
       transparent: true,
       opacity: 0.78,
       depthWrite: false
     })
-    attachChunkMask(waterMat, maskTex)
+    attachChunkMask(maskedWaterMat, maskTex)
+
+    reg.maskData = maskData
+    reg.maskTex = maskTex
+    reg.maskedTerrainMat = maskedTerrainMat
+    reg.maskedWaterMat = maskedWaterMat
+    if (reg.terrainMesh) reg.terrainMesh.material = maskedTerrainMat
+    if (reg.waterMesh) reg.waterMesh.material = maskedWaterMat
+  }
+
+  private disableRegionMask(reg: RegionEntry): void {
+    if (!reg.maskData) return
+    if (reg.terrainMesh) reg.terrainMesh.material = this.sharedLowresTerrainMat
+    if (reg.waterMesh) reg.waterMesh.material = this.sharedLowresWaterMat
+    reg.maskedTerrainMat?.dispose()
+    reg.maskedWaterMat?.dispose()
+    reg.maskTex?.dispose()
+    reg.maskedTerrainMat = null
+    reg.maskedWaterMat = null
+    reg.maskTex = null
+    reg.maskData = null
+  }
+
+  private mountLowres(key: string, res: LowresMeshResult): void {
+    const existing = this.regions.get(key)
+    if (existing) this.disposeRegion(existing)
 
     const group = new THREE.Group()
     group.name = `r.${res.rx}.${res.rz}`
+    group.matrixAutoUpdate = false
+    group.updateMatrix()
+
+    let terrainMesh: THREE.Mesh | null = null
     const tGeo = this.buildGeometry(res.terrain)
     if (tGeo) {
-      const m = new THREE.Mesh(tGeo, terrainMat)
-      m.userData.isTerrain = true
-      group.add(m)
+      terrainMesh = new THREE.Mesh(tGeo, this.sharedLowresTerrainMat)
+      terrainMesh.userData.isTerrain = true
+      terrainMesh.matrixAutoUpdate = false
+      terrainMesh.updateMatrix()
+      group.add(terrainMesh)
     }
+
+    let waterMesh: THREE.Mesh | null = null
     const wGeo = this.buildGeometry(res.water)
     if (wGeo) {
-      const m = new THREE.Mesh(wGeo, waterMat)
-      m.renderOrder = 1
-      group.add(m)
+      waterMesh = new THREE.Mesh(wGeo, this.sharedLowresWaterMat)
+      waterMesh.renderOrder = 1
+      waterMesh.matrixAutoUpdate = false
+      waterMesh.updateMatrix()
+      group.add(waterMesh)
     }
-    this.lowresGroup.add(group)
-    this.regions.set(key, {
+
+    const entry: RegionEntry = {
       key,
       rx: res.rx,
       rz: res.rz,
+      lod: res.lod,
       group,
-      terrainMat,
-      waterMat,
-      maskData,
-      maskTex,
+      terrainMesh,
+      waterMesh,
+      hiresCount: 0,
+      maskedTerrainMat: null,
+      maskedWaterMat: null,
+      maskData: null,
+      maskTex: null,
       surfaceY: res.surfaceY,
       grid: res.grid,
       step: res.step,
       lastUsed: this.tick
-    })
+    }
+
+    // Only allocate a masked discard shader + texture if hires chunks already exist inside this region
+    if (this.chunks.size > 0) {
+      const baseCx = res.rx * 32
+      const baseCz = res.rz * 32
+      for (let lcz = 0; lcz < 32; lcz++) {
+        for (let lcx = 0; lcx < 32; lcx++) {
+          if (!this.chunks.has(`${baseCx + lcx},${baseCz + lcz}`)) continue
+          if (!entry.maskData) this.enableRegionMask(entry)
+          entry.maskData![(lcz * 32 + lcx) * 4] = 255
+          entry.hiresCount++
+        }
+      }
+      if (entry.maskTex) entry.maskTex.needsUpdate = true
+    }
+
+    this.lowresGroup.add(group)
+    this.regions.set(key, entry)
     this.lastError = null
     this.onInvalidate()
     const ox = res.rx * 512
@@ -676,12 +903,16 @@ export class WorldStreamer {
 
     const group = new THREE.Group()
     group.name = `c.${res.cx}.${res.cz}`
+    group.matrixAutoUpdate = false
+    group.updateMatrix()
     for (let b = 0; b < res.buckets.length; b++) {
       const geo = this.buildGeometry(res.buckets[b])
       if (!geo) continue
       const mesh = new THREE.Mesh(geo, this.hiresMaterials[b])
       if (b === OPAQUE || b === CUTOUT || b === UNTEXTURED) mesh.userData.isTerrain = true
       if (b === LIQUID || b === TRANSLUCENT) mesh.renderOrder = 2
+      mesh.matrixAutoUpdate = false
+      mesh.updateMatrix()
       group.add(mesh)
     }
     this.hiresGroup.add(group)
@@ -708,29 +939,47 @@ export class WorldStreamer {
     if (!reg) return
     const lcx = cx & 31
     const lcz = cz & 31
-    reg.maskData[(lcz * 32 + lcx) * 4] = value
-    reg.maskTex.needsUpdate = true
+    const off = (lcz * 32 + lcx) * 4
+
+    if (value > 0) {
+      if (!reg.maskData) this.enableRegionMask(reg)
+      if (reg.maskData![off] === 0) {
+        reg.maskData![off] = 255
+        reg.hiresCount++
+        reg.maskTex!.needsUpdate = true
+      }
+    } else if (reg.maskData && reg.maskData[off] !== 0) {
+      reg.maskData[off] = 0
+      reg.hiresCount = Math.max(0, reg.hiresCount - 1)
+      if (reg.hiresCount === 0) {
+        this.disableRegionMask(reg)
+      } else {
+        reg.maskTex!.needsUpdate = true
+      }
+    }
   }
 
   private evictLru(targetX: number, targetZ: number): void {
     if (this.chunks.size > MAX_HIRES_CHUNKS) {
+      const toEvict = Math.min(MAX_EVICT_CHUNKS_PER_SWEEP, this.chunks.size - MAX_HIRES_CHUNKS)
       const sorted = [...this.chunks.values()].sort((a, b) => {
         const da = Math.hypot((a.cx + 0.5) * 16 - targetX, (a.cz + 0.5) * 16 - targetZ)
         const db = Math.hypot((b.cx + 0.5) * 16 - targetX, (b.cz + 0.5) * 16 - targetZ)
         return db - da
       })
-      for (const c of sorted.slice(0, this.chunks.size - MAX_HIRES_CHUNKS)) {
+      for (const c of sorted.slice(0, toEvict)) {
         this.chunks.delete(c.key)
         this.disposeChunk(c)
       }
     }
     if (this.regions.size > MAX_LOWRES_REGIONS) {
+      const toEvict = Math.min(MAX_EVICT_REGIONS_PER_SWEEP, this.regions.size - MAX_LOWRES_REGIONS)
       const sorted = [...this.regions.values()].sort((a, b) => {
         const da = Math.hypot((a.rx + 0.5) * 512 - targetX, (a.rz + 0.5) * 512 - targetZ)
         const db = Math.hypot((b.rx + 0.5) * 512 - targetX, (b.rz + 0.5) * 512 - targetZ)
         return db - da
       })
-      for (const r of sorted.slice(0, this.regions.size - MAX_LOWRES_REGIONS)) {
+      for (const r of sorted.slice(0, toEvict)) {
         this.regions.delete(r.key)
         this.disposeRegion(r)
       }
@@ -746,9 +995,9 @@ export class WorldStreamer {
       }
     })
     r.group.removeFromParent()
-    r.terrainMat.dispose()
-    r.waterMat.dispose()
-    r.maskTex.dispose()
+    r.maskedTerrainMat?.dispose()
+    r.maskedWaterMat?.dispose()
+    r.maskTex?.dispose()
   }
 
   private disposeChunk(c: ChunkEntry): void {
@@ -764,7 +1013,7 @@ export class WorldStreamer {
 
   private clearHires(): void {
     this.hiresGen++
-    for (const ctrl of this.inflightHires.values()) ctrl.abort()
+    for (const entry of this.inflightHires.values()) entry.ctrl.abort()
     this.inflightHires.clear()
     this.queuedHires.clear()
     this.mountQueue = this.mountQueue.filter((item) => item.kind !== 'hires')
@@ -773,7 +1022,7 @@ export class WorldStreamer {
   }
 
   private clearLowres(): void {
-    for (const ctrl of this.inflightLowres.values()) ctrl.abort()
+    for (const entry of this.inflightLowres.values()) entry.ctrl.abort()
     this.inflightLowres.clear()
     this.queuedLowres.clear()
     this.mountQueue = this.mountQueue.filter((item) => item.kind !== 'lowres')
@@ -782,8 +1031,8 @@ export class WorldStreamer {
   }
 
   private abortAll(): void {
-    for (const ctrl of this.inflightLowres.values()) ctrl.abort()
-    for (const ctrl of this.inflightHires.values()) ctrl.abort()
+    for (const entry of this.inflightLowres.values()) entry.ctrl.abort()
+    for (const entry of this.inflightHires.values()) entry.ctrl.abort()
     this.inflightLowres.clear()
     this.inflightHires.clear()
   }
@@ -805,7 +1054,7 @@ export class WorldStreamer {
       return
     }
     this.lastStats = next
-    this.onStats?.(next)
+    for (const listener of this.statsListeners) listener(next)
   }
 
   dispose(): void {
@@ -816,9 +1065,12 @@ export class WorldStreamer {
     this.clearLowres()
     this.sharedIndex = null
     this.sharedIndexQuads = 0
+    this.sharedLowresTerrainMat.dispose()
+    this.sharedLowresWaterMat.dispose()
     this.hiresMaterials.forEach((m) => m.dispose())
     this.workers.forEach((w) => w.terminate())
     this.workers = []
+    this.statsListeners.clear()
     const err = new Error('WorldStreamer disposed')
     err.name = 'AbortError'
     for (const job of this.pendingJobs.values()) job.reject(err)

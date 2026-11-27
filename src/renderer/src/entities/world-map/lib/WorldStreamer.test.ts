@@ -1,3 +1,4 @@
+import * as THREE from 'three'
 import { describe, expect, it, vi } from 'vitest'
 import {
   encodeHiresChunk,
@@ -8,8 +9,13 @@ import {
   NO_HEIGHT
 } from '@shared/world-tiles'
 import type { StreamStats, WorldDataSource } from '../model/types'
-import { meshHires, meshLowres, type WorkerErrorResult } from './world-mesher.worker'
-import { lowresRadiusFor, WorldStreamer, type WorkerLike } from './WorldStreamer'
+import {
+  meshHires,
+  meshLowres,
+  type LowresLod,
+  type WorkerErrorResult
+} from './world-mesher.worker'
+import { lowresLodFor, lowresRadiusFor, WorldStreamer, type WorkerLike } from './WorldStreamer'
 
 function makeFakeWorker(mode: 'ok' | 'error-reply' | 'worker-crash' = 'ok'): WorkerLike {
   const worker: WorkerLike = {
@@ -17,7 +23,7 @@ function makeFakeWorker(mode: 'ok' | 'error-reply' | 'worker-crash' = 'ok'): Wor
     onerror: null,
     onmessageerror: null,
     postMessage(msg: unknown) {
-      const m = msg as { type: string; id?: number; buffer?: ArrayBuffer }
+      const m = msg as { type: string; id?: number; buffer?: ArrayBuffer; lod?: LowresLod }
       if (m.type === 'init') return
       queueMicrotask(() => {
         if (mode === 'worker-crash') {
@@ -34,7 +40,10 @@ function makeFakeWorker(mode: 'ok' | 'error-reply' | 'worker-crash' = 'ok'): Wor
           return
         }
         if (m.type === 'lowres' && m.buffer) {
-          const res = meshLowres(m.id!, m.buffer)
+          const res = meshLowres(m.id!, m.buffer, m.lod ?? 0)
+          worker.onmessage?.({ data: res } as MessageEvent)
+        } else if (m.type === 'hires' && m.buffer) {
+          const res = meshHires(m.id!, m.buffer)
           worker.onmessage?.({ data: res } as MessageEvent)
         }
       })
@@ -264,15 +273,11 @@ describe('WorldStreamer resilience and stats deduplication', () => {
     expect(lowresRadiusFor(2000, 'top')).toBe(5)
 
     const requested: Array<[number, number]> = []
-    const streamer = new WorldStreamer(
-      () => {},
-      undefined,
-      {
-        createWorker: () => makeFakeWorker('ok'),
-        workerCount: 1,
-        loadColors: async () => ({})
-      }
-    )
+    const streamer = new WorldStreamer(() => {}, undefined, {
+      createWorker: () => makeFakeWorker('ok'),
+      workerCount: 1,
+      loadColors: async () => ({})
+    })
     streamer.setSource({
       key: 'worldFrustum::overworld',
       dimension: 'overworld',
@@ -320,16 +325,12 @@ describe('WorldStreamer resilience and stats deduplication', () => {
         })
       ).buffer
     })
-    const streamer = new WorldStreamer(
-      () => {},
-      undefined,
-      {
-        createWorker: () => makeFakeWorker('ok'),
-        workerCount: 1,
-        loadColors: async () => ({}),
-        onTerrainBounds: (b) => mountedBounds.push(b)
-      }
-    )
+    const streamer = new WorldStreamer(() => {}, undefined, {
+      createWorker: () => makeFakeWorker('ok'),
+      workerCount: 1,
+      loadColors: async () => ({}),
+      onTerrainBounds: (b) => mountedBounds.push(b)
+    })
     streamer.setDeferredMounts(true)
     streamer.setSource({
       key: 'worldDeferred::overworld',
@@ -361,6 +362,167 @@ describe('WorldStreamer resilience and stats deduplication', () => {
     expect(streamer.lowresGroup.children.length).toBe(2)
     expect(streamer.hasPendingMounts()).toBe(false)
     expect(mountedBounds).toHaveLength(2)
+
+    streamer.dispose()
+  })
+
+  it('uses shared unmasked Early-Z materials on regions without hires chunks and lazily masks/unmasks on hires mount/clear', async () => {
+    const blocks = new Uint16Array(16 * 2 * 16)
+    blocks[0] = 1
+    const hiSurfaceY = new Int16Array(256).fill(NO_HEIGHT)
+    hiSurfaceY[0] = 64
+    const makeHiBuf = (): ArrayBuffer =>
+      new Uint8Array(
+        encodeHiresChunk({
+          cx: 0,
+          cz: 0,
+          minY: 64,
+          height: 2,
+          palette: ['minecraft:air', 'minecraft:stone'],
+          surfaceY: hiSurfaceY,
+          blocks
+        })
+      ).buffer
+
+    const makeReg = (rx: number, rz: number): ArrayBuffer => {
+      const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+      const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+      const topBlock = new Uint16Array(LOWRES_CELLS)
+      const flags = new Uint8Array(LOWRES_CELLS)
+      surfaceY[0] = 64
+      oceanFloorY[0] = 64
+      topBlock[0] = 1
+      return new Uint8Array(
+        encodeLowresTile({
+          rx,
+          rz,
+          step: LOWRES_STEP,
+          grid: LOWRES_GRID,
+          palette: ['minecraft:air', 'minecraft:stone'],
+          surfaceY,
+          oceanFloorY,
+          topBlock,
+          flags
+        })
+      ).buffer
+    }
+
+    const streamer = new WorldStreamer(() => {}, undefined, {
+      createWorker: () => makeFakeWorker('ok'),
+      workerCount: 1,
+      loadColors: async () => ({})
+    })
+    streamer.setSource({
+      key: 'worldEarlyZ::overworld',
+      dimension: 'overworld',
+      regions: [
+        [0, 0],
+        [1, 0]
+      ],
+      fetchLowres: async (rx, rz) => makeReg(rx, rz),
+      fetchHires: async (cx, cz) => (cx === 0 && cz === 0 ? makeHiBuf() : null)
+    })
+
+    // Far enough that no hires chunks stream: both regions should share the exact same unmasked material
+    streamer.update(256, 256, 500, '3d')
+    await flush()
+
+    const r0 = streamer.lowresGroup.getObjectByName('r.0.0')!
+    const r1 = streamer.lowresGroup.getObjectByName('r.1.0')!
+    const m0 = r0.children[0] as THREE.Mesh
+    const m1 = r1.children[0] as THREE.Mesh
+    expect(m0.matrixAutoUpdate).toBe(false)
+    expect(m0.geometry.boundingBox).not.toBeNull()
+    expect(m0.geometry.boundingSphere).not.toBeNull()
+    expect(m0.material).toBe(m1.material)
+    expect((m0.material as THREE.MeshLambertMaterial).userData.maskTex).toBeUndefined()
+
+    // Zoom in so chunk (0, 0) loads inside r.0.0: r.0.0 acquires a mask, r.1.0 stays on shared unmasked Early-Z mat
+    streamer.update(8, 8, 80, '3d')
+    await flush()
+    expect((m0.material as THREE.MeshLambertMaterial).userData.maskTex).toBeDefined()
+    expect(m0.material).not.toBe(m1.material)
+    expect((m1.material as THREE.MeshLambertMaterial).userData.maskTex).toBeUndefined()
+
+    // Clearing hires chunks reverts r.0.0 back to the shared unmasked Early-Z material
+    streamer.setResources(null)
+    expect(m0.material).toBe(m1.material)
+
+    streamer.dispose()
+  })
+
+  it('streams far regions at coarser LODs, upgrades in-place on approach, and aborts out-of-range inflight fetches', async () => {
+    expect(lowresLodFor(0, 0, 0, 0)).toBe(0)
+    expect(lowresLodFor(1, -1, 0, 0)).toBe(0)
+    expect(lowresLodFor(2, 0, 0, 0)).toBe(1)
+    expect(lowresLodFor(3, -2, 0, 0)).toBe(1)
+    expect(lowresLodFor(4, 0, 0, 0)).toBe(2)
+
+    const abortedSignals: AbortSignal[] = []
+    const fetchLowres = vi.fn(async (rx: number, rz: number, signal: AbortSignal) => {
+      if (rx === -5 && rz === 0) {
+        abortedSignals.push(signal)
+        return await new Promise<ArrayBuffer | null>((_, reject) => {
+          signal.addEventListener('abort', () => {
+            const err = new Error('aborted')
+            err.name = 'AbortError'
+            reject(err)
+          })
+        })
+      }
+      const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+      const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+      const topBlock = new Uint16Array(LOWRES_CELLS)
+      const flags = new Uint8Array(LOWRES_CELLS)
+      surfaceY[0] = 64
+      oceanFloorY[0] = 64
+      topBlock[0] = 1
+      return new Uint8Array(
+        encodeLowresTile({
+          rx,
+          rz,
+          step: LOWRES_STEP,
+          grid: LOWRES_GRID,
+          palette: ['minecraft:air', 'minecraft:stone'],
+          surfaceY,
+          oceanFloorY,
+          topBlock,
+          flags
+        })
+      ).buffer
+    })
+
+    const streamer = new WorldStreamer(() => {}, undefined, {
+      createWorker: () => makeFakeWorker('ok'),
+      workerCount: 1,
+      loadColors: async () => ({})
+    })
+    streamer.setSource({
+      key: 'worldLodAbort::overworld',
+      dimension: 'overworld',
+      regions: [
+        [-5, 0],
+        [4, 0]
+      ],
+      fetchLowres,
+      fetchHires: async () => null
+    })
+
+    // Standing at region (0, 0) zoomed out (radius 5): both (-5, 0) and (4, 0) start fetching at LOD 2
+    streamer.update(256, 256, 2000, '3d')
+    await flush()
+    expect(abortedSignals).toHaveLength(1)
+    expect(abortedSignals[0].aborted).toBe(false)
+    expect(streamer.lowresGroup.getObjectByName('r.4.0')).toBeDefined()
+
+    // Move camera far east to region (4, 0): inflight (-5, 0) is now out of range and must abort immediately,
+    // and region (4, 0) upgrades in-place from LOD 2 -> LOD 0
+    const callsBeforeMove = fetchLowres.mock.calls.length
+    streamer.update(4 * 512 + 256, 256, 500, '3d')
+    await flush()
+    expect(abortedSignals[0].aborted).toBe(true)
+    expect(fetchLowres.mock.calls.length).toBeGreaterThan(callsBeforeMove)
+    expect(streamer.heightAt(4 * 512, 0)).toBe(64)
 
     streamer.dispose()
   })

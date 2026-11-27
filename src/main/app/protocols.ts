@@ -8,7 +8,7 @@ import { WorldDimensionSchema } from '@shared/api'
 import { servedFile } from '../workspace/paths'
 import createWorldWorker from '../world/world-worker?nodeWorker'
 import { WorldWorkerPool } from '../world/world-worker-pool'
-import { resolved } from './settings'
+import { cacheDir, resolved } from './settings'
 import { isMinecraftVersion } from '@shared/minecraft'
 import { fileRevision } from './locations'
 
@@ -57,6 +57,31 @@ async function serve(file: string | null): Promise<Response> {
 }
 
 const INT_PARAM_RE = /^-?\d+$/
+const WORLD_VALID_TTL_MS = 10_000
+const validWorldCache = new Map<string, number>()
+
+function hasValidLevelDat(worldPath: string): boolean {
+  const now = Date.now()
+  const cachedUntil = validWorldCache.get(worldPath)
+  if (cachedUntil !== undefined && now < cachedUntil) return true
+  if (!existsSync(join(worldPath, 'level.dat'))) {
+    validWorldCache.delete(worldPath)
+    return false
+  }
+  validWorldCache.set(worldPath, now + WORLD_VALID_TTL_MS)
+  return true
+}
+
+function toResponseBody(bytes: Uint8Array): BodyInit {
+  if (
+    bytes.buffer instanceof ArrayBuffer &&
+    bytes.byteOffset === 0 &&
+    bytes.byteLength === bytes.buffer.byteLength
+  ) {
+    return bytes.buffer
+  }
+  return new Uint8Array(bytes)
+}
 
 function parseIntParam(raw: string | null): number | null {
   if (raw === null || !INT_PARAM_RE.test(raw)) return null
@@ -88,27 +113,20 @@ export function handleProtocols(): void {
       if (url.host !== 'tile') return new Response('not found', { status: 404, headers: cors })
       const world = url.searchParams.get('world') ?? ''
       const dimRes = WorldDimensionSchema.safeParse(url.searchParams.get('dim') ?? 'overworld')
-      if (!world || !dimRes.success || !existsSync(join(world, 'level.dat'))) {
+      if (!world || !dimRes.success || !hasValidLevelDat(world)) {
         return new Response('forbidden', { status: 403, headers: cors })
       }
       if (req.signal?.aborted) return new Response(null, { status: 499, headers: cors })
-      const { cache } = resolved()
+      const cache = cacheDir()
       if (url.pathname === '/lowres') {
         const rx = parseIntParam(url.searchParams.get('rx'))
         const rz = parseIntParam(url.searchParams.get('rz'))
         if (rx === null || rz === null) {
           return new Response('bad params', { status: 400, headers: cors })
         }
-        const bytes = await getWorldPool().readLowres(
-          world,
-          dimRes.data,
-          rx,
-          rz,
-          cache,
-          req.signal
-        )
+        const bytes = await getWorldPool().readLowres(world, dimRes.data, rx, rz, cache, req.signal)
         if (!bytes) return new Response(null, { status: 204, headers: cors })
-        return new Response(new Uint8Array(bytes), {
+        return new Response(toResponseBody(bytes), {
           status: 200,
           headers: { ...cors, 'Content-Type': 'application/octet-stream' }
         })
@@ -119,16 +137,9 @@ export function handleProtocols(): void {
         if (cx === null || cz === null) {
           return new Response('bad params', { status: 400, headers: cors })
         }
-        const bytes = await getWorldPool().readHires(
-          world,
-          dimRes.data,
-          cx,
-          cz,
-          cache,
-          req.signal
-        )
+        const bytes = await getWorldPool().readHires(world, dimRes.data, cx, cz, cache, req.signal)
         if (!bytes) return new Response(null, { status: 204, headers: cors })
-        return new Response(new Uint8Array(bytes), {
+        return new Response(toResponseBody(bytes), {
           status: 200,
           headers: { ...cors, 'Content-Type': 'application/octet-stream' }
         })

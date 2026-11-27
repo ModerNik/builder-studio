@@ -1,6 +1,9 @@
 // Interactive BlueMap-style 3D World Map viewport: dual-LOD streaming, smooth 3D/Iso/2D camera,
-// AxisGizmo, Scout Terrain area selection, and Place Build live 3D schematic placement.
+// isolated AxisGizmo & stream status overlays (0 parent re-renders while moving), Scout Terrain
+// area selection, and Place Build live 3D schematic placement.
 import {
+  memo,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -57,6 +60,88 @@ export interface FlyTarget {
 }
 
 const DEFAULT_ORIENTATION: Orientation = [0, 0, 0, 1]
+
+interface MiniEmitter<T> {
+  current: T
+  listeners: Set<(val: T) => void>
+  emit(val: T): void
+  subscribe(fn: (val: T) => void): () => void
+}
+
+function createEmitter<T>(initial: T): MiniEmitter<T> {
+  const listeners = new Set<(val: T) => void>()
+  const emitter: MiniEmitter<T> = {
+    current: initial,
+    listeners,
+    emit(val: T) {
+      emitter.current = val
+      for (const fn of listeners) fn(val)
+    },
+    subscribe(fn: (val: T) => void) {
+      listeners.add(fn)
+      fn(emitter.current)
+      return () => {
+        listeners.delete(fn)
+      }
+    }
+  }
+  return emitter
+}
+
+interface StreamBadgeState {
+  loading: boolean
+  error: string | null
+}
+
+/** Isolated AxisGizmo leaf: orbiting the camera only re-renders this tiny 96x96 SVG, never the viewport or toolbar. */
+const WorldAxisGizmo = memo(function WorldAxisGizmo({
+  emitter,
+  onViewChange,
+  onOrbit,
+  onAnnounce
+}: {
+  emitter: MiniEmitter<Orientation>
+  onViewChange: (view: ViewName) => void
+  onOrbit: (yaw: number, pitch: number) => void
+  onAnnounce: (msg: string) => void
+}): ReactElement {
+  const [orientation, setOrientation] = useState<Orientation>(emitter.current)
+  useEffect(() => emitter.subscribe(setOrientation), [emitter])
+  return (
+    <AxisGizmo
+      orientation={orientation}
+      onViewChange={onViewChange}
+      onOrbit={onOrbit}
+      onAnnounce={onAnnounce}
+      className="absolute top-(--viewer-inset) right-(--viewer-inset) z-floating"
+    />
+  )
+})
+
+/** Isolated stream status indicator: tile fetches/mounts never trigger parent WorldMapViewport re-renders. */
+const StreamStatusBadge = memo(function StreamStatusBadge({
+  emitter
+}: {
+  emitter: MiniEmitter<StreamBadgeState>
+}): ReactElement | null {
+  const [status, setStatus] = useState<StreamBadgeState>(emitter.current)
+  useEffect(() => emitter.subscribe(setStatus), [emitter])
+  if (status.loading) {
+    return (
+      <span className="text-fg-muted" aria-live="polite">
+        Loading…
+      </span>
+    )
+  }
+  if (status.error) {
+    return (
+      <span className="text-danger" role="alert">
+        {status.error}
+      </span>
+    )
+  }
+  return null
+})
 
 function boxesOverlap(a: Box2D, b: Box2D): boolean {
   const [ax1, az1, ax2, az2] = normalizeBox(a)
@@ -134,24 +219,27 @@ export function WorldMapViewport({
   const lastGroundRef = useRef<GroundStats | null>(null)
   const hoverRafRef = useRef(0)
   const hoverPtRef = useRef<{ x: number; y: number } | null>(null)
+  const dragBoxRafRef = useRef(0)
+  const pendingDragBoxRef = useRef<Box2D | null>(null)
+  const groundTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const [orientation, setOrientation] = useState<Orientation>(DEFAULT_ORIENTATION)
-  const [streamStats, setStreamStats] = useState<StreamStats>({
-    lowresLoaded: 0,
-    hiresLoaded: 0,
-    pending: 0
-  })
+  const [orientationEmitter] = useState(() => createEmitter<Orientation>(DEFAULT_ORIENTATION))
+  const [statusEmitter] = useState(() =>
+    createEmitter<StreamBadgeState>({ loading: false, error: null })
+  )
   const [toast, setToast] = useState<{ msg: string; at: number }>({ msg: '', at: 0 })
   const [buildSize, setBuildSize] = useState<Vec3>([16, 16, 16])
 
   // Latest prop refs for pointer/worker callbacks without tearing down WebGL context
   const propsRef = useRef({
+    cameraMode,
     mode,
     areaBox,
     origin,
     rotation,
     margin,
     buildSize,
+    onCameraModeChange,
     onAreaBoxChange,
     onOriginChange,
     onBuildSize,
@@ -159,12 +247,14 @@ export function WorldMapViewport({
   })
   useEffect(() => {
     propsRef.current = {
+      cameraMode,
       mode,
       areaBox,
       origin,
       rotation,
       margin,
       buildSize,
+      onCameraModeChange,
       onAreaBoxChange,
       onOriginChange,
       onBuildSize,
@@ -207,16 +297,25 @@ export function WorldMapViewport({
       }, 150)
     }
 
+    const handleStreamStats = (s: StreamStats): void => {
+      const nextLoading = s.pending > 0
+      const nextError =
+        !nextLoading && s.error && s.lowresLoaded === 0 && s.hiresLoaded === 0 ? s.error : null
+      const cur = statusEmitter.current
+      if (cur.loading === nextLoading && cur.error === nextError) return
+      statusEmitter.emit({ loading: nextLoading, error: nextError })
+    }
+
     const streamer = new WorldStreamer(
       () => {
         scene?.invalidate()
       },
-      (s) => setStreamStats(s),
+      handleStreamStats,
       {
         onTerrainBounds: (bounds) => scheduleStats(bounds)
       }
     )
-    scene = new WorldScene(el, streamer, (ori) => setOrientation(ori))
+    scene = new WorldScene(el, streamer, (ori) => orientationEmitter.emit(ori))
     const overlay = new PlacementOverlay(scene, {
       onOriginDrag: (next) => propsRef.current.onOriginChange?.(next),
       onBuildLoaded: (size) => {
@@ -246,8 +345,12 @@ export function WorldMapViewport({
 
     return () => {
       if (statsTimer !== null) clearTimeout(statsTimer)
+      if (groundTimerRef.current !== null) clearTimeout(groundTimerRef.current)
+      groundTimerRef.current = null
       if (hoverRafRef.current) cancelAnimationFrame(hoverRafRef.current)
       hoverRafRef.current = 0
+      if (dragBoxRafRef.current) cancelAnimationFrame(dragBoxRafRef.current)
+      dragBoxRafRef.current = 0
       onHeightLookup?.(() => null)
       ro.disconnect()
       overlay.dispose()
@@ -325,16 +428,40 @@ export function WorldMapViewport({
     void overlayRef.current?.setBuildSrc(mode === 'build' ? buildSrc : null)
   }, [mode, buildSrc])
 
-  // Sync placement overlay geometry & ground stats
+  // Sync placement overlay geometry & ground stats (debounce expensive ground sampling during box drags)
   useEffect(() => {
     const streamer = streamerRef.current
     const statsBox = mode === 'build' ? buildBoxFromOrigin(origin, buildSize, rotation) : areaBox
-    const ground =
-      statsBox && streamer ? computeGroundStats(statsBox, (x, z) => streamer.heightAt(x, z)) : null
-    if (!sameGroundStats(lastGroundRef.current, ground)) {
-      lastGroundRef.current = ground
-      onGroundStats?.(ground)
+    const draggingBox = dragRef.current?.kind === 'draw' || dragRef.current?.kind === 'corner'
+
+    let ground = lastGroundRef.current
+    if (!draggingBox) {
+      if (groundTimerRef.current !== null) {
+        clearTimeout(groundTimerRef.current)
+        groundTimerRef.current = null
+      }
+      ground =
+        statsBox && streamer
+          ? computeGroundStats(statsBox, (x, z) => streamer.heightAt(x, z))
+          : null
+      if (!sameGroundStats(lastGroundRef.current, ground)) {
+        lastGroundRef.current = ground
+        onGroundStats?.(ground)
+      }
+    } else if (groundTimerRef.current === null && statsBox && streamer) {
+      groundTimerRef.current = setTimeout(() => {
+        groundTimerRef.current = null
+        const p = propsRef.current
+        const box =
+          p.mode === 'build' ? buildBoxFromOrigin(p.origin, p.buildSize, p.rotation) : p.areaBox
+        const next = box ? computeGroundStats(box, (x, z) => streamer.heightAt(x, z)) : null
+        if (!sameGroundStats(lastGroundRef.current, next)) {
+          lastGroundRef.current = next
+          p.onGroundStats?.(next)
+        }
+      }, 150)
     }
+
     overlayRef.current?.update({
       mode,
       box: areaBox,
@@ -352,23 +479,27 @@ export function WorldMapViewport({
     if (el.textContent !== next) el.textContent = next
   }
 
-  const announce = (msg: string): void => setToast({ msg, at: Date.now() })
+  const announce = useCallback((msg: string): void => setToast({ msg, at: Date.now() }), [])
 
-  const handleGizmoView = (view: ViewName): void => {
+  const handleGizmoOrbit = useCallback((yaw: number, pitch: number): void => {
+    sceneRef.current?.orbitBy(yaw, pitch)
+  }, [])
+
+  const handleGizmoView = useCallback((view: ViewName): void => {
     const scene = sceneRef.current
     if (!scene || view === 'orbit') return
     if (view === 'top') {
-      onCameraModeChange?.('top')
+      propsRef.current.onCameraModeChange?.('top')
       scene.setCameraMode('top')
       overlayRef.current?.syncCamera()
       return
     }
-    if (cameraMode === 'top') onCameraModeChange?.('3d')
+    if (propsRef.current.cameraMode === 'top') propsRef.current.onCameraModeChange?.('3d')
     const { pitch, yaw } = viewAngles(view)
     const p = (pitch * Math.PI) / 180
     const y = (yaw * Math.PI) / 180
     scene.lookFrom([Math.sin(y) * Math.cos(p), Math.sin(p), Math.cos(y) * Math.cos(p)])
-  }
+  }, [])
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>): void => {
     if (e.button !== 0 || overlayRef.current?.isDragging) return
@@ -427,10 +558,16 @@ export function WorldMapViewport({
       const hit = scene.pickTerrain(e.clientX, e.clientY, false)
       setCursorReadout(hit)
       if (!hit) return
-      if (drag.kind === 'draw') {
-        onAreaBoxChange?.(normalizeBox([drag.anchorX, drag.anchorZ, hit.x, hit.z]))
-      } else {
-        onAreaBoxChange?.(normalizeBox([drag.fixedX, drag.fixedZ, hit.x, hit.z]))
+      pendingDragBoxRef.current =
+        drag.kind === 'draw'
+          ? normalizeBox([drag.anchorX, drag.anchorZ, hit.x, hit.z])
+          : normalizeBox([drag.fixedX, drag.fixedZ, hit.x, hit.z])
+      if (!dragBoxRafRef.current) {
+        dragBoxRafRef.current = requestAnimationFrame(() => {
+          dragBoxRafRef.current = 0
+          const next = pendingDragBoxRef.current
+          if (next) propsRef.current.onAreaBoxChange?.(next)
+        })
       }
       return
     }
@@ -456,6 +593,28 @@ export function WorldMapViewport({
     const drag = dragRef.current
     dragRef.current = null
     if (scene && !overlayRef.current?.isDragging) scene.controls.enabled = true
+
+    if (drag?.kind === 'draw' || drag?.kind === 'corner') {
+      if (dragBoxRafRef.current) {
+        cancelAnimationFrame(dragBoxRafRef.current)
+        dragBoxRafRef.current = 0
+      }
+      const pending = pendingDragBoxRef.current
+      pendingDragBoxRef.current = null
+      if (pending) propsRef.current.onAreaBoxChange?.(pending)
+      // Flush final ground stats once drag completes
+      const streamer = streamerRef.current
+      const box = pending ?? propsRef.current.areaBox
+      if (box && streamer) {
+        const next = computeGroundStats(box, (x, z) => streamer.heightAt(x, z))
+        if (!sameGroundStats(lastGroundRef.current, next)) {
+          lastGroundRef.current = next
+          propsRef.current.onGroundStats?.(next)
+        }
+      }
+      return
+    }
+
     if (!drag || drag.kind !== 'click' || drag.travel >= 5 || !scene) return
     if (overlayRef.current?.isDragging) return
 
@@ -539,6 +698,7 @@ export function WorldMapViewport({
         onPointerUp={onPointerUp}
         onPointerCancel={() => {
           dragRef.current = null
+          pendingDragBoxRef.current = null
           if (sceneRef.current) sceneRef.current.controls.enabled = true
         }}
         onPointerLeave={() => {
@@ -555,13 +715,12 @@ export function WorldMapViewport({
 
       {children}
 
-      {/* Top-end Axis Gizmo */}
-      <AxisGizmo
-        orientation={orientation}
+      {/* Top-end Axis Gizmo (isolated leaf component) */}
+      <WorldAxisGizmo
+        emitter={orientationEmitter}
         onViewChange={handleGizmoView}
-        onOrbit={(yaw, pitch) => sceneRef.current?.orbitBy(yaw, pitch)}
+        onOrbit={handleGizmoOrbit}
         onAnnounce={announce}
-        className="absolute top-(--viewer-inset) right-(--viewer-inset) z-floating"
       />
 
       {/* Bottom-start live coordinate readout */}
@@ -569,19 +728,7 @@ export function WorldMapViewport({
         <span ref={cursorTextRef} className="text-fg-secondary">
           —
         </span>
-        {streamStats.pending > 0 ? (
-          <span className="text-fg-muted" aria-live="polite">
-            Loading…
-          </span>
-        ) : (
-          streamStats.error &&
-          streamStats.lowresLoaded === 0 &&
-          streamStats.hiresLoaded === 0 && (
-            <span className="text-danger" role="alert">
-              {streamStats.error}
-            </span>
-          )
-        )}
+        <StreamStatusBadge emitter={statusEmitter} />
       </ViewerOverlay>
 
       <ViewerStatusToast message={toast.msg || null} at={toast.at} />
