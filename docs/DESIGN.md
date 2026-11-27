@@ -378,6 +378,7 @@ The kit lives in `src/renderer/src/shared/ui/` (plus the presentational `ui/` co
 - [x] Model and Effort picker popover (`ModelEffortPicker`) with stepped Effort slider (Agent panel)
 - [x] MCP header status button and single-view quick-connect popover with copyable chat prompt and CLI snippets (Agent panel)
 - [x] Header context usage meter pill and floating Scroll-to-bottom transcript button (Agent panel)
+- [x] Performance HUD (`widgets/perf-hud`), development only: a 288px overlay card (`surface-overlay`, `shadow-md`, `z-tooltip`) pinned bottom-left, toggled with Ctrl+Shift+P. Grouped label/value rows in mono `text-xs` with tabular numbers; a value over its threshold turns `warning-text` or `danger-text`. Groups: Renderer (fps, worst frame, long tasks, React commits, JS heap, DOM nodes), Processes (CPU and RAM per Electron process type, from main), WebGL (per live viewer and the world map), Boot (main and renderer milestones). Production builds leave it out.
 
 ### Workbench usability
 

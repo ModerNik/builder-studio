@@ -42,6 +42,7 @@ import { registerVariants } from './ipc/variants'
 import { registerRefs } from './ipc/refs'
 import { registerEditor } from './ipc/editor'
 import { registerRender } from './ipc/render'
+import { perfMark } from './app/perf'
 
 registerSchemes()
 
@@ -540,7 +541,12 @@ function createWindow(): void {
   state.win.on('unmaximize', emitWindowState)
   state.win.on('restore', emitWindowState)
   state.win.webContents.on('before-input-event', zoomKeys)
-  state.win.on('ready-to-show', () => state.win?.show())
+  perfMark('window-created')
+  state.win.webContents.once('did-finish-load', () => perfMark('did-finish-load'))
+  state.win.on('ready-to-show', () => {
+    perfMark('ready-to-show')
+    state.win?.show()
+  })
   state.win.on('closed', () => (state.win = null))
   state.win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url)
@@ -556,6 +562,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(() => {
+  perfMark('app-ready')
   electronApp.setAppUserModelId('dev.builder-studio')
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
   handleProtocols()

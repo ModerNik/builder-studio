@@ -208,6 +208,9 @@ const studio: StudioApi = {
       }
     },
     log: () => invoke('bridge:log')
+  },
+  perf: {
+    sample: () => invoke('perf:sample')
   }
 }
 

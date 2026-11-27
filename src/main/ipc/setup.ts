@@ -18,6 +18,7 @@ import { bootstrapWorkspace, validateWorkspace } from '../workspace/workspace'
 import { prepareFolders, prepareTools } from '../runtime/setup'
 import type { IpcContext } from '../index'
 import type { Handle } from './guard'
+import { perfEnabled, perfSample } from '../app/perf'
 
 /** First-run setup, the managed runtime, settings, updates and Minecraft game files. */
 export function registerSetup(ctx: IpcContext, handle: Handle): void {
@@ -42,6 +43,7 @@ export function registerSetup(ctx: IpcContext, handle: Handle): void {
     else state.win.maximize()
   })
   handle('window:close', none, () => void state.win?.close())
+  if (perfEnabled) handle('perf:sample', none, perfSample)
   handle('setup:suggestion', none, () => join(app.getPath('userData'), 'workspace'))
   handle('runtime:delivery', none, () => source.delivery())
   handle('setup:prepare', none, () => {

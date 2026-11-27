@@ -3,7 +3,7 @@
 // title bar with no tabs and no docks.
 // The app-wide listeners (review requests, show / show_sheet, the MCP status report, toasts) are in
 // ../model/subscriptions.
-import { useEffect, useState, type ReactElement } from 'react'
+import { lazy, Profiler, Suspense, useEffect, useState, type ReactElement } from 'react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { DropdownMenu } from 'radix-ui'
 import {
@@ -59,6 +59,10 @@ import { useAppSubscriptions } from '../model/subscriptions'
 import { BUILD_ROUTE, BUILD_SCREENS, hasChatDock, type ScreenId } from '../model/screens'
 import { RenderStudioPortal } from '@/features/render-studio/ui/RenderStudioPortal'
 import { SheetViewerHost } from '@/features/render-studio/ui/SheetViewerLightbox'
+import { recordCommit } from '@/widgets/perf-hud/model/perf'
+
+// dev only: production builds drop the HUD chunk with the dead branch
+const PerfHud = import.meta.env.DEV ? lazy(() => import('@/widgets/perf-hud/ui/PerfHud')) : null
 import { openRenderStudio } from '@/features/render-studio/model/store'
 
 const SCREEN_ICONS: Record<ScreenId, LucideIcon> = {
@@ -72,6 +76,7 @@ const SCREEN_ICONS: Record<ScreenId, LucideIcon> = {
 }
 
 export function Shell(): ReactElement {
+  useEffect(() => void performance.mark('bs:shell-mounted'), [])
   const [palette, setPalette] = useState(false)
   const navigate = useNavigate()
   const pathname = useRouterState({ select: (s) => s.location.pathname })
@@ -236,12 +241,23 @@ export function Shell(): ReactElement {
         skipLabel="Skip to the page"
       >
         <AssistantBridge enabled={chatEnabled} />
-        <Outlet />
+        {import.meta.env.DEV ? (
+          <Profiler id="screen" onRender={recordCommit}>
+            <Outlet />
+          </Profiler>
+        ) : (
+          <Outlet />
+        )}
       </WorkbenchShell>
       <Palette open={palette} setOpen={setPalette} current={current} />
       <RenderStudioPortal />
       <SheetViewerHost />
       <Toaster position="bottom-right" />
+      {PerfHud && (
+        <Suspense fallback={null}>
+          <PerfHud />
+        </Suspense>
+      )}
     </>
   )
 }
