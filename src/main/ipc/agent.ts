@@ -14,14 +14,14 @@ export function registerAgent(ctx: IpcContext, handle: Handle): void {
   const thread = z.uuid()
   handle('agent:send', ThreadSendSchema, (a) => agent.send(a.thread, a.send))
   handle('agent:diagnose', none, async () => {
-    availability.invalidate()
+    availability.invalidateAi()
     return agent.diagnose()
   })
   handle('agent:login', none, async () => {
     try {
       await agent.login()
     } finally {
-      availability.invalidate()
+      availability.invalidateAi()
     }
   })
   handle('agent:cancelLogin', none, () => agent.cancelLogin())
@@ -29,7 +29,7 @@ export function registerAgent(ctx: IpcContext, handle: Handle): void {
   // an empty key removes it; the key itself never travels back to the renderer
   handle('agent:setApiKey', z.string().max(1000), (key) => {
     apiKey.set(key)
-    availability.invalidate()
+    availability.invalidateAi()
   })
   handle('agent:interrupt', thread, (t) => agent.interrupt(t))
   handle('agent:close', thread, (t) => agent.close(t))

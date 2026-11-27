@@ -46,8 +46,8 @@ function createFakeThread(): FakeThread {
 describe('WorldWorkerPool', () => {
   it('routes lowres regions and hires chunks in the same region to the exact same worker shard', () => {
     const rShard = regionShard('/saves/world', 'overworld', -2, 3, 4)
-    expect(regionShard('/saves/world', 'overworld', (-64) >> 5, 96 >> 5, 4)).toBe(rShard)
-    expect(regionShard('/saves/world', 'overworld', (-33) >> 5, 127 >> 5, 4)).toBe(rShard)
+    expect(regionShard('/saves/world', 'overworld', -64 >> 5, 96 >> 5, 4)).toBe(rShard)
+    expect(regionShard('/saves/world', 'overworld', -33 >> 5, 127 >> 5, 4)).toBe(rShard)
   })
 
   it('dispatches tasks off-thread, cancels queued tasks on AbortSignal, and respawns after worker crash', async () => {
@@ -92,5 +92,44 @@ describe('WorldWorkerPool', () => {
 
     pool.dispose()
     expect(threads[1].terminated).toBe(true)
+  })
+})
+
+describe('WorldWorkerPool lifecycle', () => {
+  it('keeps a slot busy until a cancelled request replies, and stops idle workers', async () => {
+    vi.useFakeTimers()
+    const threads: FakeThread[] = []
+    const pool = new WorldWorkerPool({
+      createWorker: () => {
+        const t = createFakeThread()
+        threads.push(t)
+        return t
+      },
+      poolSize: 1,
+      idleMs: 1000
+    })
+    const ac = new AbortController()
+    const p1 = pool.readLowres('/saves/w', 'overworld', 0, 0, '/cache', ac.signal)
+    const p2 = pool.readLowres('/saves/w', 'overworld', 1, 0, '/cache')
+    ac.abort()
+    await expect(p1).rejects.toThrow(/aborted/i)
+    expect(threads[0].requests).toHaveLength(1) // p2 waits for the cancelled read to finish
+    threads[0].emitMessage({ id: threads[0].requests[0].id, ok: true, buffer: null })
+    expect(threads[0].requests).toHaveLength(2)
+    threads[0].emitMessage({ id: threads[0].requests[1].id, ok: true, buffer: null })
+    expect(await p2).toBeNull()
+
+    vi.advanceTimersByTime(999)
+    expect(threads[0].terminated).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(threads[0].terminated).toBe(true)
+    threads[0].emitExit(1) // the retired worker's exit is not a crash
+
+    const p3 = pool.readLowres('/saves/w', 'overworld', 2, 0, '/cache')
+    expect(threads).toHaveLength(2)
+    threads[1].emitMessage({ id: threads[1].requests[0].id, ok: true, buffer: null })
+    expect(await p3).toBeNull()
+    pool.dispose()
+    vi.useRealTimers()
   })
 })

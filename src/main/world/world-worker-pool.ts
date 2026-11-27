@@ -17,7 +17,11 @@ export interface WorldWorkerPoolOptions {
   createWorker: () => WorkerThreadLike
   poolSize?: number
   maxPerWorker?: number
+  idleMs?: number
 }
+
+// an idle worker holds its cached .mca regions (hundreds of MB): stop it, a new one starts on the next tile
+const IDLE_MS = 60_000
 
 interface PendingTask {
   req: WorldWorkerRequest
@@ -32,6 +36,7 @@ interface ShardSlot {
   worker: WorkerThreadLike | null
   inflight: Map<number, PendingTask>
   queue: PendingTask[]
+  idle?: NodeJS.Timeout
 }
 
 function abortError(): Error {
@@ -65,6 +70,8 @@ export class WorldWorkerPool {
   private readonly maxPerWorker: number
   private readonly createWorker: () => WorkerThreadLike
   private readonly slots: ShardSlot[]
+  private readonly idleMs: number
+  private readonly retired = new WeakSet<WorkerThreadLike>()
   private nextId = 1
   private disposed = false
 
@@ -74,6 +81,7 @@ export class WorldWorkerPool {
     const defaultSize = Math.max(1, Math.min(2, Math.floor((cpus().length || 4) / 4)))
     this.poolSize = Math.max(1, options.poolSize ?? defaultSize)
     this.maxPerWorker = Math.max(1, options.maxPerWorker ?? 1)
+    this.idleMs = options.idleMs ?? IDLE_MS
     this.slots = Array.from({ length: this.poolSize }, () => ({
       worker: null,
       inflight: new Map(),
@@ -131,10 +139,9 @@ export class WorldWorkerPool {
             if (idx >= 0) slot.queue.splice(idx, 1)
             task.reject(abortError())
           } else {
-            // Reject caller immediately; ignore late worker reply for this id
-            slot.inflight.delete(id)
+            // Reject the caller now; the slot stays busy until the worker replies, so cancelled reads
+            // never pile up in the worker's own message queue
             task.reject(abortError())
-            this.pump(shard)
           }
         }
         task.onAbort = onAbort
@@ -167,6 +174,7 @@ export class WorldWorkerPool {
       }
       slot.inflight.delete(msg.id)
       this.cleanupAbort(task)
+      // an aborted task is already rejected: settling it again does nothing
       if (msg.ok) {
         task.resolve(msg.buffer ? new Uint8Array(msg.buffer) : null)
       } else {
@@ -176,6 +184,7 @@ export class WorldWorkerPool {
     })
 
     const handleCrash = (err: Error): void => {
+      if (this.retired.has(w)) return
       if (slot.worker === w) slot.worker = null
       for (const task of slot.inflight.values()) {
         this.cleanupAbort(task)
@@ -199,6 +208,7 @@ export class WorldWorkerPool {
   private pump(shard: number): void {
     if (this.disposed) return
     const slot = this.slots[shard]
+    clearTimeout(slot.idle)
     while (slot.inflight.size < this.maxPerWorker && slot.queue.length > 0) {
       const next = slot.queue.shift()!
       if (next.signal?.aborted) {
@@ -211,6 +221,16 @@ export class WorldWorkerPool {
       slot.inflight.set(next.req.id, next)
       worker.postMessage(next.req)
     }
+    if (slot.worker && slot.inflight.size === 0 && slot.queue.length === 0)
+      slot.idle = setTimeout(() => this.retire(slot), this.idleMs)
+  }
+
+  private retire(slot: ShardSlot): void {
+    const w = slot.worker
+    if (!w || slot.inflight.size || slot.queue.length) return
+    this.retired.add(w)
+    slot.worker = null
+    void w.terminate()
   }
 
   dispose(): void {
@@ -218,6 +238,7 @@ export class WorldWorkerPool {
     this.disposed = true
     const err = abortError()
     for (const slot of this.slots) {
+      clearTimeout(slot.idle)
       for (const task of slot.queue) {
         this.cleanupAbort(task)
         task.reject(err)

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi, type Mock } from 'vitest'
 import { SettingsSchema, type Requirement, type Settings } from '@shared/api'
 import { jobFeature } from '@shared/availability'
-import { AvailabilityService } from './availability'
+import { AvailabilityService, type Passes } from './availability'
 import { jobArgs } from '../engine/jobs'
 
 vi.mock('../app/settings', () => ({}))
@@ -144,4 +144,58 @@ it('dispatches no-preview proto to the existing engine flag and requires renderi
   expect(jobFeature({ ...proto, noRender: false })).toBe('render')
   expect(jobFeature({ build: 'starter', part: 'full' })).toBe('render')
   expect(jobFeature({ build: 'starter', part: 'full', noRender: true })).toBe('engine')
+})
+
+it('ignores UI-only settings and reuses a passed slow check once on the next launch', async () => {
+  const f = fixture()
+  f.missing.delete('engine')
+  const engineProbes = (): number => f.probe.mock.calls.filter(([name]) => name === 'engine').length
+  await f.service.get()
+  f.update({ appearance: { theme: 'light', scale: 1.25 }, variantCap: 5 })
+  await f.service.get()
+  expect(engineProbes()).toBe(1)
+
+  let disk: Passes = {}
+  const store = { read: () => disk, write: (p: Passes) => void (disk = structuredClone(p)) }
+  let stamp = 'python 1'
+  const launch = (): AvailabilityService =>
+    new AvailabilityService({
+      settings: () =>
+        SettingsSchema.parse({
+          workspace: 'w',
+          python: '',
+          jar: '',
+          pack: '',
+          schematics: '',
+          claude: ''
+        }),
+      probe: f.probe,
+      changed: vi.fn(),
+      fingerprint: (r) => (r === 'engine' ? stamp : undefined),
+      store
+    })
+  await launch().get()
+  expect(engineProbes()).toBe(2)
+  expect(Object.keys(disk)).toEqual(['engine'])
+  const second = launch()
+  await second.get()
+  expect(engineProbes()).toBe(2) // restored from the last launch
+  await second.get(true)
+  expect(engineProbes()).toBe(3) // an explicit re-check still probes
+  stamp = 'python 2'
+  await launch().get()
+  expect(engineProbes()).toBe(4) // the interpreter changed on disk
+  f.missing.add('engine')
+  await launch().get(true)
+  expect(disk).toEqual({}) // a failure forgets the pass
+})
+
+it('sign-in changes re-check only the AI provider', async () => {
+  const f = fixture()
+  await f.service.get()
+  f.probe.mockClear()
+  f.service.invalidateAi()
+  await f.service.get()
+  expect(f.probe.mock.calls.map(([name]) => name)).toEqual(['ai'])
+  expect(f.changed).toHaveBeenCalledOnce()
 })

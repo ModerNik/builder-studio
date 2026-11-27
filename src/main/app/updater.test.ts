@@ -15,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 const events = new EventEmitter()
 vi.mock('electron', () => ({ app: mocks.app }))
 vi.mock('electron-updater', () => ({
-  autoUpdater: Object.assign(mocks.updater, { on: events.on.bind(events) })
+  default: { autoUpdater: Object.assign(mocks.updater, { on: events.on.bind(events) }) }
 }))
 const feed = { provider: 'github', owner: 'ModerNik', repo: 'builder-studio' }
 const httpError = (statusCode: number): Error => Object.assign(new Error('HTTP'), { statusCode })
@@ -28,12 +28,21 @@ beforeEach(() => {
   mocks.updater.disableDifferentialDownload = false
   mocks.updater.checkForUpdates.mockResolvedValue(null)
   vi.stubEnv('GH_TOKEN', 'unrelated-cli-token')
+  vi.useFakeTimers()
 })
-afterEach(() => vi.unstubAllEnvs())
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.useRealTimers()
+})
 
 it('checks the public feed without a token and installs the download', async () => {
-  const { startUpdater, updateState, installUpdate } = await import('./updater')
+  const { startUpdater, updateState, installUpdate, FIRST_CHECK_MS } = await import('./updater')
   startUpdater(vi.fn())
+  await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS - 1)
+  expect(mocks.updater.checkForUpdates).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1)
+  // electron-updater is imported on first use, so the check starts a few microtasks later
+  await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalledOnce())
   expect(mocks.updater.logger).toBeNull()
   expect(mocks.updater.allowPrerelease).toBe(false)
   expect(mocks.updater.disableDifferentialDownload).toBe(false)
@@ -45,15 +54,17 @@ it('checks the public feed without a token and installs the download', async () 
   expect(updateState()).toEqual({ s: 'downloading', version: '1.0.4', percent: 35 })
   events.emit('update-downloaded', { version: '1.0.4' })
   installUpdate()
-  expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(true, true)
+  await vi.waitFor(() => expect(mocks.updater.quitAndInstall).toHaveBeenCalledWith(true, true))
 })
 
 it('reports check, download and install failures without forwarding raw errors and allows retry', async () => {
-  const { startUpdater, updateState, checkForUpdate, installUpdate } = await import('./updater')
+  const { startUpdater, updateState, checkForUpdate, installUpdate, FIRST_CHECK_MS } =
+    await import('./updater')
   const send = vi.fn()
   const failure = new Error('raw transport failure')
   mocks.updater.checkForUpdates.mockRejectedValueOnce(httpError(404))
   startUpdater(send)
+  await vi.advanceTimersByTimeAsync(FIRST_CHECK_MS)
   await vi.waitFor(() => expect(updateState()).toEqual({ s: 'error' }))
   send.mockClear()
 
@@ -68,14 +79,14 @@ it('reports check, download and install failures without forwarding raw errors a
     return { downloadPromise: Promise.reject(failure) }
   })
   checkForUpdate()
-  await vi.waitFor(() => expect(updateState()).toEqual({ s: 'error' }))
-  expect(send.mock.calls).toEqual([[{ s: 'checking' }], [{ s: 'error' }]])
+  await vi.waitFor(() => expect(send.mock.calls).toEqual([[{ s: 'checking' }], [{ s: 'error' }]]))
 
   events.emit('update-downloaded', { version: '1.0.4' })
   mocks.updater.quitAndInstall.mockImplementationOnce(() => {
     throw failure
   })
   installUpdate()
+  await vi.waitFor(() => expect(mocks.updater.quitAndInstall).toHaveBeenCalled())
   expect(send).toHaveBeenLastCalledWith({ s: 'error' })
 })
 
@@ -86,4 +97,13 @@ it('leaves updates disabled in development', async () => {
   checkForUpdate()
   expect(updateState().s).toBe('off')
   expect(mocks.updater.setFeedURL).not.toHaveBeenCalled()
+})
+
+it('a manual check before the first automatic one still reports progress', async () => {
+  const { startUpdater, updateState, checkForUpdate } = await import('./updater')
+  startUpdater(vi.fn())
+  checkForUpdate()
+  await vi.waitFor(() => expect(mocks.updater.checkForUpdates).toHaveBeenCalledOnce())
+  events.emit('update-available', { version: '1.0.4' })
+  expect(updateState()).toEqual({ s: 'downloading', version: '1.0.4', percent: 0 })
 })

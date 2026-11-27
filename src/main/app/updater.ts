@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { autoUpdater } from 'electron-updater'
+import type { AppUpdater } from 'electron-updater'
 import type { UpdateState } from '@shared/api'
 
 let state: UpdateState = app.isPackaged
@@ -13,6 +13,14 @@ const set = (s: UpdateState): void => {
 
 export const updateState = (): UpdateState => state
 
+let loading: Promise<AppUpdater> | undefined
+// loaded on first use: only packaged builds check for updates. `autoUpdater` is a lazy getter that Node can't
+// list as a named export, so it is only reachable through the CommonJS `default`.
+const updater = (): Promise<AppUpdater> =>
+  (loading ??= import('electron-updater').then((m) => listen(m.default.autoUpdater)))
+/** The first automatic check waits until the window is up and idle; a manual check runs at once. */
+export const FIRST_CHECK_MS = 10_000
+
 function fail(): void {
   if (state.s !== 'error') set({ s: 'error' })
 }
@@ -20,6 +28,10 @@ function fail(): void {
 export function startUpdater(onState: (s: UpdateState) => void): void {
   emit = onState
   if (!app.isPackaged) return
+  setTimeout(checkForUpdate, FIRST_CHECK_MS)
+}
+
+function listen(autoUpdater: AppUpdater): AppUpdater {
   autoUpdater.logger = null
   // Failures arrive through the promises in check(); this listener only stops EventEmitter throwing on 'error'.
   autoUpdater.on('error', () => {})
@@ -34,7 +46,7 @@ export function startUpdater(onState: (s: UpdateState) => void): void {
     set({ s: 'downloading', version, percent: Math.round(p.percent) })
   )
   autoUpdater.on('update-downloaded', (i) => set({ s: 'ready', version: i.version }))
-  checkForUpdate()
+  return autoUpdater
 }
 
 export function checkForUpdate(): void {
@@ -42,6 +54,10 @@ export function checkForUpdate(): void {
 }
 
 function check(): void {
+  void updater().then(checkWith, fail)
+}
+
+function checkWith(autoUpdater: AppUpdater): void {
   try {
     autoUpdater.setFeedURL({
       provider: 'github',
@@ -57,9 +73,14 @@ function check(): void {
 
 export function installUpdate(): void {
   if (state.s !== 'ready') return
-  try {
-    autoUpdater.quitAndInstall(true, true)
-  } catch {
-    set({ s: 'error' })
-  }
+  void updater().then(
+    (autoUpdater) => {
+      try {
+        autoUpdater.quitAndInstall(true, true)
+      } catch {
+        set({ s: 'error' })
+      }
+    },
+    () => set({ s: 'error' })
+  )
 }
