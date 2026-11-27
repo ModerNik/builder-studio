@@ -1190,6 +1190,32 @@ export interface StudioApi {
     ): Promise<BridgeMethods[M]['result']>
     log(): Promise<string[]>
   }
+  /** Dev performance numbers; main answers only in development or with BS_PERF=1, otherwise it rejects. */
+  perf: {
+    sample(): Promise<PerfSample>
+  }
+}
+
+export interface PerfProcess {
+  /** Electron's process type: Browser (main), Tab (renderer), GPU, Utility, ... */
+  type: string
+  name?: string
+  pid: number
+  /** CPU % since the previous sample (one core = 100). */
+  cpu: number
+  /** Working set and private bytes, KB. */
+  workingSetKB: number
+  privateKB?: number
+}
+
+export interface PerfSample {
+  /** ms since the main process started. */
+  uptime: number
+  /** Boot milestones, ms since the main process started. */
+  marks: Record<string, number>
+  processes: PerfProcess[]
+  /** Main process heap, bytes. */
+  mainHeapUsed: number
 }
 
 /** Invoke channels: `${group}:${name}`. */
@@ -1305,6 +1331,7 @@ export const CHANNELS = [
   'variants:close',
   'variants:state',
   'variants:pending',
-  'variants:permit'
+  'variants:permit',
+  'perf:sample'
 ] as const
 export type Channel = (typeof CHANNELS)[number]

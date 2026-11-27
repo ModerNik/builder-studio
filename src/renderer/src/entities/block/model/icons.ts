@@ -62,7 +62,8 @@ class Painter {
   private res: Resources | null = null
   private materials: THREE.Material[] = []
   private frame: number | null = null
-  version = 0
+  /** The lookup hooks hand out: a new function after each drawn batch, so memoized callers ask again. */
+  lookup = (state: string): string | undefined => this.get(state)
 
   attach(res: Resources): void {
     if (this.res === res) return
@@ -107,7 +108,7 @@ class Painter {
         }
         this.urls.set(state, url)
       }
-      this.version++
+      this.lookup = (state) => this.get(state)
       this.listeners.forEach((cb) => cb())
       this.schedule()
     })
@@ -115,7 +116,7 @@ class Painter {
 }
 
 const painters = new Map<string, Painter>()
-const NONE = { version: 0, subscribe: () => () => {}, get: () => undefined }
+const NONE = { subscribe: () => () => {}, lookup: (): undefined => undefined }
 
 /** A lookup of block icons drawn with the texture pack at `pack` (an mcpack:// URL); undefined while one is
  *  being drawn or without a pack, '' for a block that draws nothing. */
@@ -142,6 +143,5 @@ export function useBlockIcons(
     }
   }, [pack, painter])
   const p = painter ?? NONE
-  useSyncExternalStore(p.subscribe, () => p.version)
-  return (state) => p.get(state)
+  return useSyncExternalStore(p.subscribe, () => p.lookup)
 }

@@ -103,7 +103,8 @@ export function createHandle(ctx: IpcContext): Handle {
           'variants:pending',
           'review:pending',
           'updater:get',
-          'bridge:log'
+          'bridge:log',
+          'perf:sample'
         ].includes(channel)
       )
         throw new Error('Wait for the workspace operation to finish, or cancel the import')

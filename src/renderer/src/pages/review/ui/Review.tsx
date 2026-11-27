@@ -78,7 +78,8 @@ export function Review(): ReactElement {
   const navigate = useNavigate()
   const { tier } = useWorkbench()
   const phone = tier === 'phone'
-  useResolvedTheme() // re-render so the pin colour follows the theme
+  // read per theme: the compiler caches a value only on what it reads
+  const pinFill = useResolvedTheme() && cssColor('--pin-open-fill')
   const [view, setView] = useState<ViewName>('iso_se')
   const [tab, setTab] = useState<Tab>('3d')
   const [page, setPage] = useState(0)
@@ -129,7 +130,7 @@ export function Review(): ReactElement {
   const markers = (path: string): Marker[] =>
     d.pins.flatMap((p) =>
       'block' in p && p.file === stem(path)
-        ? [{ cell: p.block, color: cssColor('--pin-open-fill'), label: String(p.n) }]
+        ? [{ cell: p.block, color: pinFill, label: String(p.n) }]
         : []
     )
   const discard = (): void => {
