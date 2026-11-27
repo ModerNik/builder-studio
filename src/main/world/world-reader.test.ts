@@ -1,5 +1,5 @@
 import { deflateSync, gzipSync } from 'zlib'
-import { mkdir, readFile, rm, writeFile } from 'fs/promises'
+import { mkdir, readdir, readFile, rm, writeFile } from 'fs/promises'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -200,6 +200,49 @@ describe('world-reader & site-meta', () => {
     // Original save files remain byte-for-byte untouched
     expect(await readFile(join(world, 'region', 'r.0.0.mca'))).toEqual(Buffer.from(regionBytes))
     expect(await readFile(join(world, 'level.dat'))).toEqual(Buffer.from(levelBytes))
+  })
+
+  it('keeps only the lowres tile of the current region stamp in the cache', async () => {
+    const root = join(tmpdir(), `bs-world-test-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    dirs.push(root)
+    const world = join(root, 'save')
+    const cache = join(root, 'cache')
+    await mkdir(join(world, 'region'), { recursive: true })
+    await writeFile(join(world, 'level.dat'), makeLevelDat())
+    await writeFile(join(world, 'region', 'r.0.0.mca'), makeRegionFile(makeTestNbtChunk('minecraft:stone', 66)))
+
+    const tiles = async (): Promise<string[]> => {
+      const out: string[] = []
+      const walk = async (d: string): Promise<void> => {
+        for (const e of await readdir(d, { withFileTypes: true })) {
+          if (e.isDirectory()) await walk(join(d, e.name))
+          else if (e.name.endsWith('.wlo')) out.push(e.name)
+        }
+      }
+      await walk(cache)
+      return out
+    }
+    const waitForTiles = async (n: number): Promise<string[]> => {
+      for (let i = 0; i < 50; i++) {
+        const t = await tiles()
+        if (t.length === n) return t
+        await new Promise((r) => setTimeout(r, 20))
+      }
+      return tiles()
+    }
+
+    await readLowresTile(world, 'overworld', 0, 0, cache)
+    const [first] = await waitForTiles(1)
+    expect(first).toMatch(/^r\.0\.0\.mca\..+\.wlo$/)
+
+    // Editing the save changes the region stamp: the new tile replaces the old one on disk
+    await new Promise((r) => setTimeout(r, 20))
+    await writeFile(join(world, 'region', 'r.0.0.mca'), makeRegionFile(makeTestNbtChunk('minecraft:dirt', 70)))
+    await readLowresTile(world, 'overworld', 0, 0, cache)
+    await new Promise((r) => setTimeout(r, 100))
+    const after = await waitForTiles(1)
+    expect(after).toHaveLength(1)
+    expect(after[0]).not.toBe(first)
   })
 
   it('slices off the solid Nether ceiling in hires chunks while keeping the cavern floor', async () => {

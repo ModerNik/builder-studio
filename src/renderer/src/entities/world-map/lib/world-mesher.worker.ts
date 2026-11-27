@@ -23,11 +23,11 @@ export type LowresLod = 0 | 1 | 2
 export interface MeshBucketBuffer {
   /** World-space XYZ positions (3 float32 per vertex = 12 B/v). */
   positions: Float32Array
-  /** Quantized signed normals in [-127, 127] (3 int8 per vertex = 3 B/v, GPU-normalized). */
+  /** Quantized signed normals in [-127, 127] (4 int8 per vertex, w = 0; 4-byte aligned for ANGLE/D3D11). */
   normals: Int8Array
   /** Atlas UVs (Float32Array) for hires chunks or chunk-mask UVs (Uint8Array normalized) for lowres regions. */
   uvs: Float32Array | Uint8Array
-  /** Quantized RGB vertex colors in [0, 255] (3 uint8 per vertex = 3 B/v, GPU-normalized). */
+  /** Quantized RGBA vertex colors in [0, 255] (4 uint8 per vertex, alpha = 255; 4-byte aligned). */
   colors: Uint8Array
   quadCount: number
   /** Precomputed [minX, minY, minZ, maxX, maxY, maxZ] so main-thread mounting needs 0 vertex loops. */
@@ -124,10 +124,10 @@ class QuadBuf {
   ) {
     this.cap = Math.max(16, initialVerts)
     this.pos = new Float32Array(this.cap * 3)
-    this.norm = new Int8Array(this.cap * 3)
+    this.norm = new Int8Array(this.cap * 4)
     this.uvF = byteUv ? null : new Float32Array(this.cap * 2)
     this.uvU8 = byteUv ? new Uint8Array(this.cap * 2) : null
-    this.col = new Uint8Array(this.cap * 3)
+    this.col = new Uint8Array(this.cap * 4)
   }
 
   private ensure(extraVerts: number): void {
@@ -137,8 +137,8 @@ class QuadBuf {
     nextPos.set(this.pos.subarray(0, this.verts * 3))
     this.pos = nextPos
 
-    const nextNorm = new Int8Array(nextCap * 3)
-    nextNorm.set(this.norm.subarray(0, this.verts * 3))
+    const nextNorm = new Int8Array(nextCap * 4)
+    nextNorm.set(this.norm.subarray(0, this.verts * 4))
     this.norm = nextNorm
 
     if (this.byteUv) {
@@ -151,8 +151,8 @@ class QuadBuf {
       this.uvF = nextUv
     }
 
-    const nextCol = new Uint8Array(nextCap * 3)
-    nextCol.set(this.col.subarray(0, this.verts * 3))
+    const nextCol = new Uint8Array(nextCap * 4)
+    nextCol.set(this.col.subarray(0, this.verts * 4))
     this.col = nextCol
 
     this.cap = nextCap
@@ -224,52 +224,53 @@ class QuadBuf {
     const col = this.col
     let p3 = this.verts * 3
     let p2 = this.verts * 2
+    let p4 = this.verts * 4
 
-    // Fill shared face normal for all 4 vertices
-    norm[p3] = pnx
-    norm[p3 + 1] = pny
-    norm[p3 + 2] = pnz
-    norm[p3 + 3] = pnx
-    norm[p3 + 4] = pny
-    norm[p3 + 5] = pnz
-    norm[p3 + 6] = pnx
-    norm[p3 + 7] = pny
-    norm[p3 + 8] = pnz
-    norm[p3 + 9] = pnx
-    norm[p3 + 10] = pny
-    norm[p3 + 11] = pnz
+    // Fill shared face normal for all 4 vertices (w stays 0)
+    for (let i = p4; i < p4 + 16; i += 4) {
+      norm[i] = pnx
+      norm[i + 1] = pny
+      norm[i + 2] = pnz
+    }
 
     if (!flip) {
       pos[p3] = x0
       pos[p3 + 1] = y0
       pos[p3 + 2] = z0
-      col[p3] = c0r
-      col[p3 + 1] = c0g
-      col[p3 + 2] = c0b
+      col[p4] = c0r
+      col[p4 + 1] = c0g
+      col[p4 + 2] = c0b
+      col[p4 + 3] = 255
+      p4 += 4
       p3 += 3
 
       pos[p3] = x1
       pos[p3 + 1] = y1
       pos[p3 + 2] = z1
-      col[p3] = c1r
-      col[p3 + 1] = c1g
-      col[p3 + 2] = c1b
+      col[p4] = c1r
+      col[p4 + 1] = c1g
+      col[p4 + 2] = c1b
+      col[p4 + 3] = 255
+      p4 += 4
       p3 += 3
 
       pos[p3] = x2
       pos[p3 + 1] = y2
       pos[p3 + 2] = z2
-      col[p3] = c2r
-      col[p3 + 1] = c2g
-      col[p3 + 2] = c2b
+      col[p4] = c2r
+      col[p4 + 1] = c2g
+      col[p4 + 2] = c2b
+      col[p4 + 3] = 255
+      p4 += 4
       p3 += 3
 
       pos[p3] = x3
       pos[p3 + 1] = y3
       pos[p3 + 2] = z3
-      col[p3] = c3r
-      col[p3 + 1] = c3g
-      col[p3 + 2] = c3b
+      col[p4] = c3r
+      col[p4 + 1] = c3g
+      col[p4 + 2] = c3b
+      col[p4 + 3] = 255
 
       if (this.byteUv) {
         const uv = this.uvU8!
@@ -300,33 +301,40 @@ class QuadBuf {
       pos[p3] = x1
       pos[p3 + 1] = y1
       pos[p3 + 2] = z1
-      col[p3] = c1r
-      col[p3 + 1] = c1g
-      col[p3 + 2] = c1b
+      col[p4] = c1r
+      col[p4 + 1] = c1g
+      col[p4 + 2] = c1b
+      col[p4 + 3] = 255
+      p4 += 4
       p3 += 3
 
       pos[p3] = x2
       pos[p3 + 1] = y2
       pos[p3 + 2] = z2
-      col[p3] = c2r
-      col[p3 + 1] = c2g
-      col[p3 + 2] = c2b
+      col[p4] = c2r
+      col[p4 + 1] = c2g
+      col[p4 + 2] = c2b
+      col[p4 + 3] = 255
+      p4 += 4
       p3 += 3
 
       pos[p3] = x3
       pos[p3 + 1] = y3
       pos[p3 + 2] = z3
-      col[p3] = c3r
-      col[p3 + 1] = c3g
-      col[p3 + 2] = c3b
+      col[p4] = c3r
+      col[p4 + 1] = c3g
+      col[p4 + 2] = c3b
+      col[p4 + 3] = 255
+      p4 += 4
       p3 += 3
 
       pos[p3] = x0
       pos[p3 + 1] = y0
       pos[p3 + 2] = z0
-      col[p3] = c0r
-      col[p3 + 1] = c0g
-      col[p3 + 2] = c0b
+      col[p4] = c0r
+      col[p4 + 1] = c0g
+      col[p4 + 2] = c0b
+      col[p4 + 3] = 255
 
       if (this.byteUv) {
         const uv = this.uvU8!
@@ -363,9 +371,9 @@ class QuadBuf {
     const quadCount = v / 4
     return {
       positions: this.pos.slice(0, v * 3),
-      normals: this.norm.slice(0, v * 3),
+      normals: this.norm.slice(0, v * 4),
       uvs: this.byteUv ? this.uvU8!.slice(0, v * 2) : this.uvF!.slice(0, v * 2),
-      colors: this.col.slice(0, v * 3),
+      colors: this.col.slice(0, v * 4),
       quadCount,
       bounds:
         quadCount > 0
@@ -963,6 +971,7 @@ interface PaletteMeta {
   air: boolean
   opaque: boolean
   water: boolean
+  leaves: boolean
   selfCull: boolean
   cross: boolean
   height: number
@@ -1007,6 +1016,7 @@ export function meshHires(
         air: true,
         opaque: false,
         water: false,
+        leaves: false,
         selfCull: false,
         cross: false,
         height: 1,
@@ -1066,6 +1076,7 @@ export function meshHires(
       air: false,
       opaque,
       water: isWater,
+      leaves: isLeaves,
       selfCull,
       cross: isCross,
       height: blockH,
@@ -1101,6 +1112,8 @@ export function meshHires(
     if (neighbor.opaque) return true
     if (cur.selfCull && neighbor.short === cur.short) return true
     if (cur.water && neighbor.water) return true
+    // Fast leaves (as in Minecraft's "Fast" graphics): faces between any two leaf blocks are never seen from outside
+    if (cur.leaves && neighbor.leaves) return true
     return false
   }
 

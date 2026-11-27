@@ -329,6 +329,8 @@ export function WorldMapViewport({
 
     streamerRef.current = streamer
     sceneRef.current = scene
+    // Dev-only handle for CDP performance scripts
+    if (import.meta.env.DEV) Object.assign(window, { __worldMap: { scene, streamer } })
     overlayRef.current = overlay
     onHeightLookup?.((x, z) => streamer.heightAt(x, z))
 
