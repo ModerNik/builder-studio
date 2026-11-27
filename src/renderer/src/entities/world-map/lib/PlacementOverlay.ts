@@ -14,6 +14,7 @@ import { cssColor } from '@/shared/lib/theme'
 import {
   boxWithMargin,
   buildBoxFromOrigin,
+  buildClipSlice,
   normalizeBox,
   rotatedFootprint
 } from '../model/placement'
@@ -70,6 +71,7 @@ export class PlacementOverlay {
   private rotation: RotationDeg = 0
   private margin = 48
   private buildSize: Vec3 = [16, 16, 16]
+  private clipY: number | null = null
 
   private loadedSrc: string | null = null
   private loadedSchematic: Schematic | null = null
@@ -80,13 +82,13 @@ export class PlacementOverlay {
   private draggingHandle = false
 
   private onOriginDrag?: (origin: Vec3) => void
-  private onBuildLoaded?: (size: Vec3) => void
+  private onBuildLoaded?: (size: Vec3 | null) => void
 
   constructor(
     private worldScene: WorldScene,
     callbacks: {
       onOriginDrag?: (origin: Vec3) => void
-      onBuildLoaded?: (size: Vec3) => void
+      onBuildLoaded?: (size: Vec3 | null) => void
     }
   ) {
     this.onOriginDrag = callbacks.onOriginDrag
@@ -125,6 +127,7 @@ export class PlacementOverlay {
       }
       this.origin = next
       this.positionBuildGroup()
+      this.applyClip()
       this.rebuildOutlines()
       this.onOriginDrag?.(next)
       this.worldScene.invalidate()
@@ -173,6 +176,7 @@ export class PlacementOverlay {
     this.remeshGen++
     this.disposeBuildMesh()
     this.loadedSchematic = null
+    this.onBuildLoaded?.(null)
     if (!src) {
       this.rebuildOutlines()
       this.worldScene.invalidate()
@@ -215,7 +219,21 @@ export class PlacementOverlay {
     this.buildObj = obj
     this.buildGroup.add(obj.group)
     this.positionBuildGroup()
+    this.applyClip()
     this.worldScene.invalidate()
+  }
+
+  private applyClip(): void {
+    if (!this.buildObj) return
+    const slice = buildClipSlice(this.origin[1], this.clipY, this.buildSize[1])
+    if (!slice) {
+      this.buildObj.setClipping([], null)
+      return
+    }
+    this.buildObj.setClipping(
+      [new THREE.Plane(new THREE.Vector3(0, -1, 0), slice.worldTopY)],
+      slice.capLayer
+    )
   }
 
   private disposeBuildMesh(): void {
@@ -232,15 +250,18 @@ export class PlacementOverlay {
     rotation: RotationDeg
     margin: number
     groundY: number | null
+    clipY?: number | null
   }): void {
     this.mode = params.mode
     this.areaBox = params.box
     this.origin = params.origin
     this.rotation = params.rotation
     this.margin = params.margin
+    this.clipY = params.clipY ?? null
 
     this.buildGroup.visible = this.mode === 'build'
     this.positionBuildGroup()
+    this.applyClip()
     this.anchor.position.set(this.origin[0], this.origin[1], this.origin[2])
     this.updateTransformAttachment()
     this.rebuildOutlines(params.groundY)

@@ -299,9 +299,13 @@ describe('world-reader & site-meta', () => {
       dimension: 'overworld' as const,
       mode: 'build' as const,
       box: [100, -50, 131, -19] as [number, number, number, number],
+      areaBox: [90, -60, 140, -10] as [number, number, number, number],
       origin: [100, 69, -50] as [number, number, number],
       rotation: 90 as const,
       margin: 48,
+      cameraMode: 'iso' as const,
+      lighting: 'game' as const,
+      clipY: 12,
       ground: { min: 65, max: 71, median: 68 }
     }
     await saveSiteMeta(ws, 'keep', placement)
@@ -323,13 +327,15 @@ describe('world-reader & site-meta', () => {
     await mkdir(join(world, 'dimensions', 'minecraft', 'overworld', 'region'), { recursive: true })
     await mkdir(join(world, 'players', 'data'), { recursive: true })
 
-    const encodeNbt = (build: (ops: {
-      b: (v: number) => void
-      s: (v: string) => void
-      i32: (v: number) => void
-      f64: (v: number) => void
-      tag: (t: number, name: string) => void
-    }) => void): Uint8Array => {
+    const encodeNbt = (
+      build: (ops: {
+        b: (v: number) => void
+        s: (v: string) => void
+        i32: (v: number) => void
+        f64: (v: number) => void
+        tag: (t: number, name: string) => void
+      }) => void
+    ): Uint8Array => {
       const parts: Uint8Array[] = []
       const b = (v: number): void => void parts.push(new Uint8Array([v & 0xff]))
       const s = (str: string): void => {

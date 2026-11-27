@@ -164,6 +164,7 @@ export class WorldScene {
 
     this.gl = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
     this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
+    this.gl.localClippingEnabled = true
     this.gl.outputColorSpace = THREE.LinearSRGBColorSpace
     this.gl.domElement.style.display = 'block'
     this.gl.domElement.style.width = '100%'
