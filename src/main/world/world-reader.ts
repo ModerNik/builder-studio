@@ -28,12 +28,14 @@ import {
   NO_HEIGHT
 } from '@shared/world-tiles'
 import {
-  decodeChunkSections,
+  extractLazySections,
+  lazyBlockNameAt,
   parseGzippedNbt,
   readChunkBiome,
   readHeightmap,
   readRegionChunk,
-  type DecodedSection,
+  unpackLazySection,
+  type LazySection,
   type NbtCompound,
   type NbtTag
 } from './nbt'
@@ -317,28 +319,21 @@ async function loadRegionBytes(
   return entry
 }
 
-function blockAtSection(sec: DecodedSection, lx: number, ly: number, lz: number): string {
-  if (!sec.indices) return sec.palette[0] ?? 'minecraft:air'
-  const idx = sec.indices[(ly << 8) | (lz << 4) | lx]
-  return sec.palette[idx] ?? 'minecraft:air'
-}
-
-/** Find the topmost non-air block below maxY (used for Nether roof slicing or missing heightmaps). */
-function scanColumnDown(
-  bySecY: Map<number, DecodedSection>,
+function scanColumnDownLazy(
+  bySecY: Map<number, LazySection>,
   lx: number,
   lz: number,
   startY: number,
   minY: number
-): { y: number; state: string } | null {
+): { y: number; name: string } | null {
   for (let y = startY; y >= minY; y--) {
     const sec = bySecY.get(y >> 4)
     if (!sec) {
       y = y & ~15 // skip whole missing section
       continue
     }
-    const state = blockAtSection(sec, lx, y & 15, lz)
-    if (!isAir(state)) return { y, state }
+    const name = lazyBlockNameAt(sec, lx, y & 15, lz)
+    if (!isAir(name)) return { y, name }
   }
   return null
 }
@@ -388,12 +383,12 @@ export async function readLowresTile(
 
     for (let lcz = 0; lcz < 32; lcz++) {
       for (let lcx = 0; lcx < 32; lcx++) {
-        const chunk = readRegionChunk(region, lcx, lcz)
+        const chunk = readRegionChunk(region, lcx, lcz, true)
         if (!chunk) continue
-        const sections = decodeChunkSections(chunk)
+        const sections = extractLazySections(chunk)
         if (!sections.length) continue
 
-        const bySecY = new Map<number, DecodedSection>()
+        const bySecY = new Map<number, LazySection>()
         let secMinY = 320
         let secMaxY = -64
         for (const s of sections) {
@@ -406,7 +401,7 @@ export async function readLowresTile(
         const ofHm = nether ? null : readHeightmap(chunk, 'OCEAN_FLOOR')
         const bPreset = biomePreset(readChunkBiome(chunk)) << 4
 
-        // Sample 8x8 cells per chunk (step = 2 blocks)
+        // Sample 8x8 cells per chunk (step = 2 blocks) using O(1) direct bit-packed reads
         for (let dz = 0; dz < 16; dz += LOWRES_STEP) {
           for (let dx = 0; dx < 16; dx += LOWRES_STEP) {
             const gx = (lcx * 16 + dx) / LOWRES_STEP
@@ -423,31 +418,31 @@ export async function readLowresTile(
               let scanStart = Math.min(118, secMaxY)
               while (scanStart > 28) {
                 const sec = bySecY.get(scanStart >> 4)
-                if (!sec || isAir(blockAtSection(sec, dx, scanStart & 15, dz))) break
+                if (!sec || isAir(lazyBlockNameAt(sec, dx, scanStart & 15, dz))) break
                 scanStart--
               }
-              const hit = scanColumnDown(bySecY, dx, dz, scanStart, Math.max(0, secMinY))
+              const hit = scanColumnDownLazy(bySecY, dx, dz, scanStart, Math.max(0, secMinY))
               if (hit) {
                 y = hit.y
-                state = hit.state
+                state = hit.name
                 floorY = hit.y
-                floorState = hit.state
+                floorState = hit.name
               }
             } else {
               const hmY = wsHm ? wsHm[dz * 16 + dx] : NO_HEIGHT
               if (wsHm && hmY >= secMinY && hmY <= secMaxY) {
                 const sec = bySecY.get(hmY >> 4)
-                const st = sec ? blockAtSection(sec, dx, hmY & 15, dz) : 'minecraft:air'
+                const st = sec ? lazyBlockNameAt(sec, dx, hmY & 15, dz) : 'minecraft:air'
                 if (!isAir(st)) {
                   y = hmY
                   state = st
                 }
               }
               if (y === NO_HEIGHT) {
-                const hit = scanColumnDown(bySecY, dx, dz, secMaxY, secMinY)
+                const hit = scanColumnDownLazy(bySecY, dx, dz, secMaxY, secMinY)
                 if (hit) {
                   y = hit.y
-                  state = hit.state
+                  state = hit.name
                 }
               }
               if (y !== NO_HEIGHT) {
@@ -458,7 +453,7 @@ export async function readLowresTile(
                   if (candidate >= secMinY && candidate < y) {
                     const fSec = bySecY.get(candidate >> 4)
                     const fSt = fSec
-                      ? blockAtSection(fSec, dx, candidate & 15, dz)
+                      ? lazyBlockNameAt(fSec, dx, candidate & 15, dz)
                       : 'minecraft:sand'
                     floorY = candidate
                     floorState = !isAir(fSt) && !WATER_RE.test(fSt) ? fSt : 'minecraft:sand'
@@ -527,15 +522,15 @@ export async function readHiresChunk(
   const loaded = await loadRegionBytes(worldPath, dim, rx, rz, cacheRoot)
   if (!loaded) return null
 
-  const chunk = readRegionChunk(loaded.bytes, cx & 31, cz & 31)
+  const chunk = readRegionChunk(loaded.bytes, cx & 31, cz & 31, true)
   if (!chunk) return null
-  const sections = decodeChunkSections(chunk)
-  if (!sections.length) return null
+  const lazySections = extractLazySections(chunk)
+  if (!lazySections.length) return null
 
-  const bySecY = new Map<number, DecodedSection>()
+  const bySecY = new Map<number, LazySection>()
   let chunkBot = 320
   let chunkTop = -64
-  for (const s of sections) {
+  for (const s of lazySections) {
     bySecY.set(s.sectionY, s)
     chunkBot = Math.min(chunkBot, s.sectionY * 16)
     chunkTop = Math.max(chunkTop, s.sectionY * 16 + 15)
@@ -556,11 +551,11 @@ export async function readHiresChunk(
         let scanStart = maxBandY
         while (scanStart > minBandY) {
           const sec = bySecY.get(scanStart >> 4)
-          if (!sec || isAir(blockAtSection(sec, lx, scanStart & 15, lz))) break
+          if (!sec || isAir(lazyBlockNameAt(sec, lx, scanStart & 15, lz))) break
           scanStart--
         }
         roofCut![lz * 16 + lx] = scanStart
-        const hit = scanColumnDown(bySecY, lx, lz, scanStart, minBandY)
+        const hit = scanColumnDownLazy(bySecY, lx, lz, scanStart, minBandY)
         if (hit) surfaceY[lz * 16 + lx] = hit.y
       }
     }
@@ -583,7 +578,7 @@ export async function readHiresChunk(
       // Fallback scan for legacy/custom chunks lacking valid heightmaps
       for (let lz = 0; lz < 16; lz++) {
         for (let lx = 0; lx < 16; lx++) {
-          const hit = scanColumnDown(bySecY, lx, lz, chunkTop, chunkBot)
+          const hit = scanColumnDownLazy(bySecY, lx, lz, chunkTop, chunkBot)
           if (hit) {
             surfaceY[lz * 16 + lx] = hit.y
             minBandY = Math.min(minBandY, hit.y)
@@ -607,10 +602,13 @@ export async function readHiresChunk(
   const palette = ['minecraft:air']
   const blocks = new Uint16Array(16 * height * 16)
 
-  for (const sec of sections) {
-    const sy0 = sec.sectionY * 16
+  for (const lazySec of lazySections) {
+    const sy0 = lazySec.sectionY * 16
     const sy1 = sy0 + 15
     if (sy1 < minY || sy0 > maxBandY) continue
+
+    // Only unpack sections that actually overlap the visible vertical band
+    const sec = unpackLazySection(lazySec)
 
     // Map this section's local palette into the chunk's unified palette
     const lut = new Uint16Array(sec.palette.length)

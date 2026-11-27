@@ -105,6 +105,9 @@ export class PlacementOverlay {
     this.transformHelper.renderOrder = 20
     this.worldScene.overlayRoot.add(this.transformHelper)
 
+    this.transform.addEventListener('change', () => {
+      this.worldScene.invalidate()
+    })
     this.transform.addEventListener('dragging-changed', (e) => {
       this.draggingHandle = Boolean(e.value)
       this.worldScene.controls.enabled = !this.draggingHandle

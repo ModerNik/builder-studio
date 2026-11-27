@@ -9,17 +9,24 @@ import {
   LOWRES_STEP,
   NO_HEIGHT
 } from '@shared/world-tiles'
-import { meshHires, meshLowres, UNTEXTURED, type MeshBucketBuffer } from './world-mesher.worker'
-
-const STRIDE = 11
+import {
+  buildQuadIndices,
+  meshHires,
+  meshLowres,
+  UNTEXTURED,
+  VERTEX_STRIDE,
+  type MeshBucketBuffer
+} from './world-mesher.worker'
 
 function assertOutwardWinding(buf: MeshBucketBuffer, label: string): number {
-  const { vertices: v, indices: idx } = buf
+  const v = buf.vertices
+  const idx = buildQuadIndices(buf.quadCount)
+  expect(v.length).toBe(buf.quadCount * 4 * VERTEX_STRIDE)
   const tris = idx.length / 3
   for (let t = 0; t < tris; t++) {
-    const i0 = idx[t * 3] * STRIDE
-    const i1 = idx[t * 3 + 1] * STRIDE
-    const i2 = idx[t * 3 + 2] * STRIDE
+    const i0 = idx[t * 3] * VERTEX_STRIDE
+    const i1 = idx[t * 3 + 1] * VERTEX_STRIDE
+    const i2 = idx[t * 3 + 2] * VERTEX_STRIDE
 
     const e1x = v[i1] - v[i0]
     const e1y = v[i1 + 1] - v[i0 + 1]
@@ -46,7 +53,7 @@ function assertOutwardWinding(buf: MeshBucketBuffer, label: string): number {
   return tris
 }
 
-describe('world-mesher winding', () => {
+describe('world-mesher winding and greedy optimization', () => {
   it('emits CCW outward-facing quads for lowres terrain top, water, and all 4 cliff skirts', () => {
     const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
     const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
@@ -86,7 +93,44 @@ describe('world-mesher winding', () => {
     expect(assertOutwardWinding(res.water, 'lowres water')).toBe(2)
   })
 
-  it('emits CCW outward-facing quads for all 6 faces of hires voxel blocks', () => {
+  it('greedily merges flat 8x8 lowres chunk surfaces and water into single quads with valid winding', () => {
+    const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+    const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+    const topBlock = new Uint16Array(LOWRES_CELLS)
+    const flags = new Uint8Array(LOWRES_CELLS)
+
+    // Fill one complete 8x8 lowres chunk (gx=0..7, gz=0..7) with uniform water over flat sand
+    for (let gz = 0; gz < 8; gz++) {
+      for (let gx = 0; gx < 8; gx++) {
+        const i = gz * LOWRES_GRID + gx
+        surfaceY[i] = 63
+        oceanFloorY[i] = 58
+        topBlock[i] = 1
+        flags[i] = FLAG_WATER
+      }
+    }
+
+    const encoded = encodeLowresTile({
+      rx: 0,
+      rz: 0,
+      step: LOWRES_STEP,
+      grid: LOWRES_GRID,
+      palette: ['minecraft:air', 'minecraft:sand'],
+      surfaceY,
+      oceanFloorY,
+      topBlock,
+      flags
+    })
+
+    const res = meshLowres(10, new Uint8Array(encoded).buffer)
+    // 64 water cells collapse into 1 water quad (2 tris), and 64 flat floor cells + 4 merged skirts -> 5 terrain quads (10 tris)
+    expect(res.water.quadCount).toBe(1)
+    expect(res.terrain.quadCount).toBe(5)
+    expect(assertOutwardWinding(res.water, 'greedy water')).toBe(2)
+    expect(assertOutwardWinding(res.terrain, 'greedy terrain + skirts')).toBe(10)
+  })
+
+  it('emits CCW outward-facing quads for all 6 faces of hires voxel blocks and skips enclosed interior blocks', () => {
     const height = 4
     const blocks = new Uint16Array(16 * height * 16)
     const surfaceY = new Int16Array(256).fill(NO_HEIGHT)
@@ -107,6 +151,27 @@ describe('world-mesher winding', () => {
     const res = meshHires(2, new Uint8Array(encoded).buffer)
     // 6 faces * 2 triangles = 12 triangles
     expect(assertOutwardWinding(res.buckets[0], 'hires opaque')).toBe(12)
+
+    // Solid 3x3x3 cube at x=2..4, y=1..3, z=2..4: center block (3,2,3) is fully enclosed -> 6 * 9 = 54 faces = 108 tris
+    const cubeBlocks = new Uint16Array(16 * 5 * 16)
+    for (let y = 1; y <= 3; y++) {
+      for (let z = 2; z <= 4; z++) {
+        for (let x = 2; x <= 4; x++) {
+          cubeBlocks[(y << 8) | (z << 4) | x] = 1
+        }
+      }
+    }
+    const cubeEnc = encodeHiresChunk({
+      cx: 0,
+      cz: 0,
+      minY: 64,
+      height: 5,
+      palette: ['minecraft:air', 'minecraft:stone'],
+      surfaceY,
+      blocks: cubeBlocks
+    })
+    const cubeRes = meshHires(20, new Uint8Array(cubeEnc).buffer)
+    expect(assertOutwardWinding(cubeRes.buckets[0], 'hires 3x3x3 cube')).toBe(108)
   })
 
   it('routes unmapped blocks to the untextured bucket when a texture atlas is active', () => {

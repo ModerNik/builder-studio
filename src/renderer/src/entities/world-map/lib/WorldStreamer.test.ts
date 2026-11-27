@@ -9,7 +9,7 @@ import {
 } from '@shared/world-tiles'
 import type { StreamStats, WorldDataSource } from '../model/types'
 import { meshHires, meshLowres, type WorkerErrorResult } from './world-mesher.worker'
-import { WorldStreamer, type WorkerLike } from './WorldStreamer'
+import { lowresRadiusFor, WorldStreamer, type WorkerLike } from './WorldStreamer'
 
 function makeFakeWorker(mode: 'ok' | 'error-reply' | 'worker-crash' = 'ok'): WorkerLike {
   const worker: WorkerLike = {
@@ -252,6 +252,115 @@ describe('WorldStreamer resilience and stats deduplication', () => {
 
     expect(statsHistory.at(-1)?.hiresLoaded).toBe(0)
     expect(streamer.hiresGroup.children.length).toBe(0)
+
+    streamer.dispose()
+  })
+
+  it('scales lowres coverage radius up to 5 regions (11x11) and prioritizes regions ahead of the camera', async () => {
+    expect(lowresRadiusFor(200, '3d')).toBe(2)
+    expect(lowresRadiusFor(600, '3d')).toBe(3)
+    expect(lowresRadiusFor(1200, '3d')).toBe(4)
+    expect(lowresRadiusFor(2000, '3d')).toBe(5)
+    expect(lowresRadiusFor(2000, 'top')).toBe(5)
+
+    const requested: Array<[number, number]> = []
+    const streamer = new WorldStreamer(
+      () => {},
+      undefined,
+      {
+        createWorker: () => makeFakeWorker('ok'),
+        workerCount: 1,
+        loadColors: async () => ({})
+      }
+    )
+    streamer.setSource({
+      key: 'worldFrustum::overworld',
+      dimension: 'overworld',
+      regions: [
+        [-1, 0],
+        [1, 0]
+      ],
+      fetchLowres: async (rx, rz) => {
+        requested.push([rx, rz])
+        return makeLowresBuffer()
+      },
+      fetchHires: async () => null
+    })
+
+    // Looking strictly toward +X from (256, 256): region (1, 0) is ahead and (-1, 0) is behind
+    streamer.update(256, 256, 500, '3d', 1, 0)
+    await flush()
+    expect(requested[0]).toEqual([1, 0])
+    expect(requested[1]).toEqual([-1, 0])
+
+    streamer.dispose()
+  })
+
+  it('buffers mounts when deferred mounting is enabled and flushes them incrementally', async () => {
+    const mountedBounds: Array<[number, number, number, number]> = []
+    const fetchLowres = vi.fn(async (rx: number, rz: number) => {
+      const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+      const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+      const topBlock = new Uint16Array(LOWRES_CELLS)
+      const flags = new Uint8Array(LOWRES_CELLS)
+      surfaceY[0] = 64
+      oceanFloorY[0] = 64
+      topBlock[0] = 1
+      return new Uint8Array(
+        encodeLowresTile({
+          rx,
+          rz,
+          step: LOWRES_STEP,
+          grid: LOWRES_GRID,
+          palette: ['minecraft:air', 'minecraft:stone'],
+          surfaceY,
+          oceanFloorY,
+          topBlock,
+          flags
+        })
+      ).buffer
+    })
+    const streamer = new WorldStreamer(
+      () => {},
+      undefined,
+      {
+        createWorker: () => makeFakeWorker('ok'),
+        workerCount: 1,
+        loadColors: async () => ({}),
+        onTerrainBounds: (b) => mountedBounds.push(b)
+      }
+    )
+    streamer.setDeferredMounts(true)
+    streamer.setSource({
+      key: 'worldDeferred::overworld',
+      dimension: 'overworld',
+      regions: [
+        [0, 0],
+        [1, 0]
+      ],
+      fetchLowres,
+      fetchHires: async () => null
+    })
+
+    streamer.update(256, 256, 500, '3d')
+    await flush()
+    // Queued, not mounted yet
+    expect(streamer.hasPendingMounts()).toBe(true)
+    expect(streamer.lowresGroup.children.length).toBe(0)
+
+    // First frame-budget flush mounts 1 region; calling update() while the 2nd region is still queued must NOT re-fetch it
+    expect(streamer.flushMounts(4)).toBe(true)
+    expect(streamer.lowresGroup.children.length).toBe(1)
+    expect(streamer.hasPendingMounts()).toBe(true)
+    streamer.update(256, 256, 500, '3d')
+    await flush()
+    expect(fetchLowres).toHaveBeenCalledTimes(2)
+
+    // Second flush mounts the remaining region
+    expect(streamer.flushMounts(4)).toBe(true)
+    expect(streamer.lowresGroup.children.length).toBe(2)
+    expect(streamer.hasPendingMounts()).toBe(false)
+    expect(mountedBounds).toHaveLength(2)
 
     streamer.dispose()
   })
