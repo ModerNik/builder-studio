@@ -70,7 +70,8 @@ type QueuedMount =
       key: string
       rx: number
       rz: number
-      lod: LowresLod
+      /** LOD that was requested (the mesher may fall back to a finer one for small tiles). */
+      reqLod: LowresLod
       gen: number
       res: LowresMeshResult
     }
@@ -98,6 +99,8 @@ interface RegionEntry {
   rx: number
   rz: number
   lod: LowresLod
+  /** LOD requested for this mesh; compared against lowresLodFor() to decide up/downgrades. */
+  reqLod: LowresLod
   group: THREE.Group
   terrainMesh: THREE.Mesh | null
   waterMesh: THREE.Mesh | null
@@ -119,6 +122,11 @@ interface ChunkEntry {
   group: THREE.Group
   surfaceY: Int16Array
   lastUsed: number
+}
+
+/** Drop the JS copy once the attribute is on the GPU; context loss re-streams via reload(). */
+function releaseArray(this: THREE.BufferAttribute): void {
+  ;(this as { array: THREE.TypedArray | null }).array = null
 }
 
 /** Compute desired lowres region radius around target from camera distance and mode. */
@@ -211,6 +219,11 @@ export class WorldStreamer {
   private generation = 0
   private hiresGen = 0
   private tick = 0
+  private centerRx = 0
+  private centerRz = 0
+  // Last heightAt() hits: ray-march steps mostly stay in one chunk/region, so skip the string-key Map lookup
+  private lastChunk: ChunkEntry | null = null
+  private lastRegion: RegionEntry | null = null
   private lastError: string | null = null
   private lastStats: StreamStats | null = null
   private statsListeners = new Set<(stats: StreamStats) => void>()
@@ -291,13 +304,14 @@ export class WorldStreamer {
       if (this.disposed || item.gen !== this.generation) continue
       if (item.kind === 'lowres') {
         const existing = this.regions.get(item.key)
-        // Skip stale coarser LOD if a finer LOD is already mounted
-        if (existing && existing.lod <= item.lod) continue
-        this.mountLowres(item.key, item.res)
+        // Skip meshes whose LOD is already mounted or no longer wanted at the current focus
+        if (existing?.reqLod === item.reqLod) continue
+        if (item.reqLod !== lowresLodFor(item.rx, item.rz, this.centerRx, this.centerRz)) continue
+        this.mountLowres(item.key, item.res, item.reqLod)
         mountedAny = true
         mountedRegions++
         mountedCount++
-        if (item.lod === 0) this.lastFlushWasHeavy = true
+        if (item.res.lod === 0) this.lastFlushWasHeavy = true
       } else {
         if (item.hGen !== this.hiresGen) continue
         this.mountHires(item.key, item.res)
@@ -330,11 +344,12 @@ export class WorldStreamer {
     this.sharedIndex = nextAttr
     this.sharedIndexQuads = nextQuads
 
-    // Re-point existing mounted geometries to the enlarged shared index buffer
+    // Re-point existing mounted geometries (and hires pick proxies) to the enlarged shared index buffer
     const rebind = (group: THREE.Group): void => {
       group.traverse((o) => {
         if (o instanceof THREE.Mesh && o.geometry instanceof THREE.BufferGeometry) {
           o.geometry.setIndex(nextAttr)
+          ;(o.userData.pick as THREE.Mesh | undefined)?.geometry.setIndex(nextAttr)
         }
       })
     }
@@ -343,13 +358,20 @@ export class WorldStreamer {
     return nextAttr
   }
 
-  private buildGeometry(buf: MeshBucketBuffer): THREE.BufferGeometry | null {
+  /** Build a GPU-only geometry; `keepPositions` keeps the position array for exact hires picking. */
+  private buildGeometry(buf: MeshBucketBuffer, keepPositions = false): THREE.BufferGeometry | null {
     if (!buf.quadCount || !buf.positions.length) return null
     const g = new THREE.BufferGeometry()
-    g.setAttribute('position', new THREE.BufferAttribute(buf.positions, 3, false))
-    g.setAttribute('normal', new THREE.BufferAttribute(buf.normals, 3, true))
-    g.setAttribute('uv', new THREE.BufferAttribute(buf.uvs, 2, buf.uvs instanceof Uint8Array))
-    g.setAttribute('color', new THREE.BufferAttribute(buf.colors, 3, true))
+    const position = new THREE.BufferAttribute(buf.positions, 3, false)
+    if (!keepPositions) position.onUpload(releaseArray)
+    g.setAttribute('position', position)
+    // 4-component normals/colors: ANGLE's D3D11 backend CPU-converts 3-byte vertex formats into extra copies
+    g.setAttribute('normal', new THREE.BufferAttribute(buf.normals, 4, true).onUpload(releaseArray))
+    g.setAttribute(
+      'uv',
+      new THREE.BufferAttribute(buf.uvs, 2, buf.uvs instanceof Uint8Array).onUpload(releaseArray)
+    )
+    g.setAttribute('color', new THREE.BufferAttribute(buf.colors, 4, true).onUpload(releaseArray))
     g.setIndex(this.ensureSharedIndex(buf.quadCount))
     g.setDrawRange(0, buf.quadCount * 6)
     if (buf.bounds) {
@@ -469,6 +491,20 @@ export class WorldStreamer {
     this.onInvalidate()
   }
 
+  /** Drop every mounted mesh and stream again (after WebGL context loss: GPU buffers are gone, CPU copies were released). */
+  reload(): void {
+    this.generation++
+    this.abortAll()
+    this.mountQueue = []
+    this.queuedLowres.clear()
+    this.queuedHires.clear()
+    this.clearHires()
+    this.clearLowres()
+    this.pumpRequested = !!this.source
+    this.emitStats()
+    this.onInvalidate()
+  }
+
   /** Update streaming around camera focus (targetX, targetZ) given camera mode, distance, and forward XZ direction. */
   update(
     targetX: number,
@@ -491,6 +527,8 @@ export class WorldStreamer {
     // 1. Stream distance-scaled lowres regions in an adaptive radius up to 5 regions (11x11 = 5632x5632 blocks)
     const centerRx = Math.floor(targetX / 512)
     const centerRz = Math.floor(targetZ / 512)
+    this.centerRx = centerRx
+    this.centerRz = centerRz
     const lowRadius = lowresRadiusFor(camDist, camMode)
 
     const wantsHires = camMode !== 'top' ? camDist < 260 : camDist < 140
@@ -517,8 +555,8 @@ export class WorldStreamer {
         const existing = this.regions.get(key)
         if (existing) {
           existing.lastUsed = this.tick
-          // Keep existing mesh if it is already at or finer than desiredLod; otherwise upgrade in-place
-          if (existing.lod <= desiredLod) continue
+          // Re-mesh in place when the wanted LOD changed: finer on approach, coarser when far (frees memory)
+          if (existing.reqLod === desiredLod) continue
         }
         if (
           this.emptyRegions.has(key) ||
@@ -532,8 +570,8 @@ export class WorldStreamer {
         const dz = (rz + 0.5) * 512 - targetZ
         const d = Math.hypot(dx, dz)
         const align = d > 1 && fwdLen > 1e-4 ? (dx * fx + dz * fz) / d : 0
-        // Prioritize missing regions ahead of the camera; upgrades of already-visible regions sort slightly after missing ones
-        const upgradePenalty = existing ? 900 : 0
+        // Prioritize missing regions ahead of the camera; upgrades sort after missing ones, downgrades last
+        const upgradePenalty = !existing ? 0 : desiredLod < existing.reqLod ? 900 : 2400
         const score = d * (1 - 0.35 * align) + upgradePenalty
         desiredRegions.push({ rx, rz, lod: desiredLod, score, key })
       }
@@ -589,8 +627,58 @@ export class WorldStreamer {
       }
     }
 
+    // Hysteresis: hires chunks load below 260 (140 top-down) and are dropped only well past that
+    const dropHires = camMode !== 'top' ? camDist >= 330 : camDist >= 190
+    this.evictOutOfRange(
+      centerRx,
+      centerRz,
+      lowRadius + 1,
+      targetX,
+      targetZ,
+      hiresRadius,
+      dropHires
+    )
     this.evictLru(targetX, targetZ)
     this.emitStats()
+  }
+
+  /** Unload regions/chunks outside the view radius (paced per sweep) instead of waiting for the 121 caps. */
+  private evictOutOfRange(
+    centerRx: number,
+    centerRz: number,
+    maxCheb: number,
+    targetX: number,
+    targetZ: number,
+    hiresRadius: number,
+    dropHires: boolean
+  ): void {
+    let regionsLeft = MAX_EVICT_REGIONS_PER_SWEEP
+    for (const r of this.regions.values()) {
+      if (Math.max(Math.abs(r.rx - centerRx), Math.abs(r.rz - centerRz)) <= maxCheb) continue
+      if (regionsLeft-- <= 0) {
+        this.pumpRequested = true
+        break
+      }
+      this.regions.delete(r.key)
+      this.disposeRegion(r)
+    }
+    if (hiresRadius === 0 && !dropHires) return
+    const maxDist = hiresRadius > 0 ? (hiresRadius + 2) * 16 : -1
+    let chunksLeft = MAX_EVICT_CHUNKS_PER_SWEEP
+    for (const c of this.chunks.values()) {
+      if (
+        maxDist >= 0 &&
+        Math.hypot((c.cx + 0.5) * 16 - targetX, (c.cz + 0.5) * 16 - targetZ) <= maxDist
+      ) {
+        continue
+      }
+      if (chunksLeft-- <= 0) {
+        this.pumpRequested = true
+        break
+      }
+      this.chunks.delete(c.key)
+      this.disposeChunk(c)
+    }
   }
 
   private cancelStaleRequests(
@@ -647,7 +735,11 @@ export class WorldStreamer {
     const iz = Math.floor(z)
     const cx = ix >> 4
     const cz = iz >> 4
-    const chunk = this.chunks.get(`${cx},${cz}`)
+    let chunk = this.lastChunk
+    if (!chunk || chunk.cx !== cx || chunk.cz !== cz) {
+      chunk = this.chunks.get(`${cx},${cz}`) ?? null
+      if (chunk) this.lastChunk = chunk
+    }
     if (chunk) {
       const lx = ix & 15
       const lz = iz & 15
@@ -656,7 +748,11 @@ export class WorldStreamer {
     }
     const rx = ix >> 9
     const rz = iz >> 9
-    const reg = this.regions.get(`${rx},${rz}`)
+    let reg = this.lastRegion
+    if (!reg || reg.rx !== rx || reg.rz !== rz) {
+      reg = this.regions.get(`${rx},${rz}`) ?? null
+      if (reg) this.lastRegion = reg
+    }
     if (reg) {
       const gx = Math.min(reg.grid - 1, Math.max(0, Math.floor((ix - rx * 512) / reg.step)))
       const gz = Math.min(reg.grid - 1, Math.max(0, Math.floor((iz - rz * 512) / reg.step)))
@@ -714,10 +810,10 @@ export class WorldStreamer {
         if (this.disposed || gen !== this.generation || ctrl.signal.aborted) return
         if (this.deferredMounts) {
           this.queuedLowres.add(key)
-          this.mountQueue.push({ kind: 'lowres', key, rx, rz, lod: mesh.lod, gen, res: mesh })
+          this.mountQueue.push({ kind: 'lowres', key, rx, rz, reqLod: lod, gen, res: mesh })
           this.onInvalidate()
         } else {
-          this.mountLowres(key, mesh)
+          this.mountLowres(key, mesh, lod)
         }
       })
       .catch((err: unknown) => {
@@ -825,7 +921,7 @@ export class WorldStreamer {
     reg.maskData = null
   }
 
-  private mountLowres(key: string, res: LowresMeshResult): void {
+  private mountLowres(key: string, res: LowresMeshResult, reqLod: LowresLod): void {
     const existing = this.regions.get(key)
     if (existing) this.disposeRegion(existing)
 
@@ -859,6 +955,7 @@ export class WorldStreamer {
       rx: res.rx,
       rz: res.rz,
       lod: res.lod,
+      reqLod,
       group,
       terrainMesh,
       waterMesh,
@@ -906,10 +1003,21 @@ export class WorldStreamer {
     group.matrixAutoUpdate = false
     group.updateMatrix()
     for (let b = 0; b < res.buckets.length; b++) {
-      const geo = this.buildGeometry(res.buckets[b])
+      const isTerrain = b === OPAQUE || b === CUTOUT || b === UNTEXTURED
+      const geo = this.buildGeometry(res.buckets[b], isTerrain)
       if (!geo) continue
       const mesh = new THREE.Mesh(geo, this.hiresMaterials[b])
-      if (b === OPAQUE || b === CUTOUT || b === UNTEXTURED) mesh.userData.isTerrain = true
+      if (isTerrain) {
+        mesh.userData.isTerrain = true
+        // Raycast proxy sharing the kept position array: three's raycast also reads uv/normal, which are released
+        const pick = new THREE.BufferGeometry()
+        pick.setAttribute('position', geo.getAttribute('position'))
+        pick.setIndex(geo.index)
+        pick.setDrawRange(0, geo.drawRange.count)
+        pick.boundingBox = geo.boundingBox
+        pick.boundingSphere = geo.boundingSphere
+        mesh.userData.pick = new THREE.Mesh(pick)
+      }
       if (b === LIQUID || b === TRANSLUCENT) mesh.renderOrder = 2
       mesh.matrixAutoUpdate = false
       mesh.updateMatrix()
@@ -987,6 +1095,7 @@ export class WorldStreamer {
   }
 
   private disposeRegion(r: RegionEntry): void {
+    if (this.lastRegion === r) this.lastRegion = null
     r.group.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         // Detach shared quad index before dispose so Three.js never frees the shared GPU index buffer
@@ -1001,6 +1110,7 @@ export class WorldStreamer {
   }
 
   private disposeChunk(c: ChunkEntry): void {
+    if (this.lastChunk === c) this.lastChunk = null
     this.setRegionMaskBit(c.cx, c.cz, 0)
     c.group.traverse((o) => {
       if (o instanceof THREE.Mesh) {

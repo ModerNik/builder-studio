@@ -3,7 +3,7 @@
 import { createHash } from 'crypto'
 import { existsSync } from 'fs'
 import { copyFile, mkdir, readdir, readFile, rename, stat, unlink, writeFile } from 'fs/promises'
-import { basename, join } from 'path'
+import { basename, dirname, join } from 'path'
 import type { WorldDimension, WorldInfo } from '@shared/api'
 import {
   BIOME_BADLANDS,
@@ -227,9 +227,10 @@ function worldCacheKey(worldPath: string): string {
   return createHash('sha1').update(worldPath).digest('hex').slice(0, 16)
 }
 
-// In-memory LRU of decompressed/copied region file bytes for ultra-fast hires chunk reads
-const REGION_MEM_CAP = 12
+// In-memory LRU of copied region file bytes for fast hires chunk reads, capped by size (region files vary 1-10 MB)
+const REGION_MEM_BYTES = 48 * 1024 * 1024
 const regionMem = new Map<string, { stamp: string; bytes: Uint8Array }>()
+let regionMemBytes = 0
 const copyInflight = new Map<string, Promise<{ stamp: string; path: string } | null>>()
 const lowresInflight = new Map<string, Promise<Uint8Array | null>>()
 
@@ -293,12 +294,14 @@ export async function ensureRegionSnapshot(
   }
 }
 
+/** `remember` = false for one-shot reads (lowres tile builds are disk-cached), so they don't evict hires regions. */
 async function loadRegionBytes(
   worldPath: string,
   dim: WorldDimension,
   rx: number,
   rz: number,
-  cacheRoot: string
+  cacheRoot: string,
+  remember = true
 ): Promise<{ stamp: string; bytes: Uint8Array } | null> {
   const snap = await ensureRegionSnapshot(worldPath, dim, rx, rz, cacheRoot)
   if (!snap) return null
@@ -311,10 +314,16 @@ async function loadRegionBytes(
   }
   const bytes = new Uint8Array(await readFile(snap.path))
   const entry = { stamp: snap.stamp, bytes }
+  if (!remember) return entry
+  const replaced = regionMem.get(snap.path)
+  if (replaced) regionMemBytes -= replaced.bytes.byteLength
+  regionMem.delete(snap.path)
   regionMem.set(snap.path, entry)
-  while (regionMem.size > REGION_MEM_CAP) {
-    const oldest = regionMem.keys().next().value
-    if (oldest) regionMem.delete(oldest)
+  regionMemBytes += bytes.byteLength
+  for (const [key, old] of regionMem) {
+    if (regionMemBytes <= REGION_MEM_BYTES || regionMem.size <= 1) break
+    regionMem.delete(key)
+    regionMemBytes -= old.bytes.byteLength
   }
   return entry
 }
@@ -338,6 +347,18 @@ function scanColumnDownLazy(
   return null
 }
 
+/** Delete `r.X.Z.mca.<stamp>.wlo` tiles of the same region other than `current` (each region edit leaves one behind). */
+async function removeStaleTiles(current: string): Promise<void> {
+  const dir = dirname(current)
+  const prefix = basename(current).replace(/\.[^.]+\.wlo$/, '.')
+  const names = await readdir(dir)
+  await Promise.all(
+    names
+      .filter((n) => n.startsWith(prefix) && n.endsWith('.wlo') && join(dir, n) !== current)
+      .map((n) => unlink(join(dir, n)).catch(() => {}))
+  )
+}
+
 /** Build or read disk-cached LOD-1 binary lowres region tile (256x256 cells covering 512x512 blocks). */
 export async function readLowresTile(
   worldPath: string,
@@ -357,7 +378,7 @@ export async function readLowresTile(
   if (inflight) return inflight
 
   const task = (async (): Promise<Uint8Array | null> => {
-    const loaded = await loadRegionBytes(worldPath, dim, rx, rz, cacheRoot)
+    const loaded = await loadRegionBytes(worldPath, dim, rx, rz, cacheRoot, false)
     if (!loaded) return null
     const region = loaded.bytes
 
@@ -496,8 +517,10 @@ export async function readLowresTile(
       topBlock,
       flags
     })
-    // Cache atomically without failing the response if disk write errors
-    void writeFileAtomic(tilePath, encoded).catch(() => {})
+    // Cache atomically without failing the response if disk write errors, then drop tiles of older region stamps
+    void writeFileAtomic(tilePath, encoded)
+      .then(() => removeStaleTiles(tilePath))
+      .catch(() => {})
     return encoded
   })()
 

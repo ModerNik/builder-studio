@@ -104,6 +104,7 @@ export class WorldScene {
   private raf = 0
   private pumpTimer: ReturnType<typeof setTimeout> | null = null
   private dirty = true
+  private inLoop = false
   private disposed = false
   private dim: WorldDimension = 'overworld'
   private lighting: LightingMode = 'sun'
@@ -145,6 +146,11 @@ export class WorldScene {
     this.dampingUntil = Math.max(this.dampingUntil, performance.now() + 260)
     this.wake()
   }
+  // Meshes keep no CPU copy after upload, so a restored context re-streams them
+  private onContextRestored = (): void => {
+    this.streamer.reload()
+    this.invalidate()
+  }
   private onVisibilityChange = (): void => {
     if (
       !document.hidden &&
@@ -162,8 +168,10 @@ export class WorldScene {
     this.onCameraChange = onCameraChange
     this.streamer.setDeferredMounts(true)
 
-    this.gl = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
+    const dpr = window.devicePixelRatio || 1
+    // MSAA buffers scale with pixel count; at >= 1.5x the extra pixels already smooth edges
+    this.gl = new THREE.WebGLRenderer({ antialias: dpr < 1.5, powerPreference: 'high-performance' })
+    this.gl.setPixelRatio(Math.min(dpr, MAX_PIXEL_RATIO))
     this.gl.localClippingEnabled = true
     this.gl.outputColorSpace = THREE.LinearSRGBColorSpace
     this.gl.domElement.style.display = 'block'
@@ -206,6 +214,7 @@ export class WorldScene {
     window.addEventListener('blur', this.onDomPointerUp)
     this.gl.domElement.addEventListener('wheel', this.onDomWheel, { passive: true })
     document.addEventListener('visibilitychange', this.onVisibilityChange)
+    this.gl.domElement.addEventListener('webglcontextrestored', this.onContextRestored)
 
     this.perspective.position.set(110, 145, 110)
     this.controls.target.set(0, 66, 0)
@@ -234,7 +243,8 @@ export class WorldScene {
   }
 
   private wake(): void {
-    if (this.disposed || this.raf) return
+    // Inside frame() the end-of-frame check reschedules; waking there would queue a second loop every frame
+    if (this.disposed || this.raf || this.inLoop) return
     this.clearPumpTimer()
     this.lastTime = 0
     this.raf = requestAnimationFrame(this.loop)
@@ -458,9 +468,9 @@ export class WorldScene {
       const candidates: THREE.Object3D[] = []
       for (const chunkGroup of this.streamer.hiresGroup.children) {
         for (const child of chunkGroup.children) {
-          if (!child.userData.isTerrain || !(child instanceof THREE.Mesh)) continue
-          const bs = child.geometry.boundingSphere
-          if (bs && ray.intersectsSphere(bs)) candidates.push(child)
+          const pick = child.userData.pick as THREE.Mesh | undefined
+          const bs = pick?.geometry.boundingSphere
+          if (pick && bs && ray.intersectsSphere(bs)) candidates.push(pick)
         }
       }
       if (candidates.length > 0) {
@@ -568,7 +578,15 @@ export class WorldScene {
   private loop = (now: number): void => {
     this.raf = 0
     if (this.disposed) return
+    this.inLoop = true
+    try {
+      this.frame(now)
+    } finally {
+      this.inLoop = false
+    }
+  }
 
+  private frame(now: number): void {
     const dt = Math.min(0.05, Math.max(0.001, (now - (this.lastTime || now)) / 1000))
     this.lastTime = now
 
@@ -662,6 +680,7 @@ export class WorldScene {
     window.removeEventListener('blur', this.onDomPointerUp)
     this.gl.domElement.removeEventListener('wheel', this.onDomWheel)
     document.removeEventListener('visibilitychange', this.onVisibilityChange)
+    this.gl.domElement.removeEventListener('webglcontextrestored', this.onContextRestored)
     this.controls.dispose()
     this.sky.mesh.geometry.dispose()
     ;(this.sky.mesh.material as THREE.Material).dispose()

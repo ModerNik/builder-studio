@@ -55,7 +55,7 @@ function makeFakeWorker(mode: 'ok' | 'error-reply' | 'worker-crash' = 'ok'): Wor
   return worker
 }
 
-function makeLowresBuffer(): ArrayBuffer {
+function makeLowresBuffer(rx = 0, rz = 0): ArrayBuffer {
   const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
   const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
   const topBlock = new Uint16Array(LOWRES_CELLS)
@@ -64,8 +64,8 @@ function makeLowresBuffer(): ArrayBuffer {
   oceanFloorY[0] = 64
   topBlock[0] = 1
   const encoded = encodeLowresTile({
-    rx: 0,
-    rz: 0,
+    rx,
+    rz,
     step: LOWRES_STEP,
     grid: LOWRES_GRID,
     palette: ['minecraft:air', 'minecraft:stone'],
@@ -523,6 +523,78 @@ describe('WorldStreamer resilience and stats deduplication', () => {
     expect(abortedSignals[0].aborted).toBe(true)
     expect(fetchLowres.mock.calls.length).toBeGreaterThan(callsBeforeMove)
     expect(streamer.heightAt(4 * 512, 0)).toBe(64)
+
+    streamer.dispose()
+  })
+
+  it('downgrades regions that fall behind and unloads regions outside the view radius', async () => {
+    const fetchLowres = vi.fn(async (rx: number, rz: number) => makeLowresBuffer(rx, rz))
+    const streamer = new WorldStreamer(() => {}, undefined, {
+      createWorker: () => makeFakeWorker('ok'),
+      workerCount: 1,
+      loadColors: async () => ({})
+    })
+    streamer.setSource({
+      key: 'worldDowngrade::overworld',
+      dimension: 'overworld',
+      regions: [
+        [0, 0],
+        [6, 0],
+        [9, 0]
+      ],
+      fetchLowres: (rx: number, rz: number) => fetchLowres(rx, rz),
+      fetchHires: async () => null
+    })
+    type Internals = { regions: Map<string, { reqLod: number }> }
+    const regions = (streamer as unknown as Internals).regions
+
+    // Focus on region (0, 0): it mounts at full detail
+    streamer.update(256, 256, 500, '3d')
+    await flush()
+    expect(regions.get('0,0')?.reqLod).toBe(0)
+
+    // Focus on region (4, 0), zoomed out (radius 5): (0, 0) is 4 away, so it re-meshes at LOD 2
+    for (let i = 0; i < 3; i++) {
+      streamer.update(4 * 512 + 256, 256, 2000, '3d')
+      await flush()
+    }
+    expect(regions.get('0,0')?.reqLod).toBe(2)
+
+    // Focus on region (9, 0), close up (radius 2): (0, 0) is 9 away and must be unloaded
+    streamer.update(9 * 512 + 256, 256, 200, '3d')
+    await flush()
+    expect(regions.has('0,0')).toBe(false)
+    expect(regions.has('9,0')).toBe(true)
+    expect(streamer.lowresGroup.getObjectByName('r.0.0')).toBeUndefined()
+
+    streamer.dispose()
+  })
+
+  it('re-streams everything on reload() (after WebGL context loss)', async () => {
+    const fetchLowres = vi.fn(async () => makeLowresBuffer())
+    const streamer = new WorldStreamer(() => {}, undefined, {
+      createWorker: () => makeFakeWorker('ok'),
+      workerCount: 1,
+      loadColors: async () => ({})
+    })
+    streamer.setSource({
+      key: 'worldReload::overworld',
+      dimension: 'overworld',
+      regions: [[0, 0]],
+      fetchLowres,
+      fetchHires: async () => null
+    })
+    streamer.update(256, 256, 500, '3d')
+    await flush()
+    expect(streamer.lowresGroup.children).toHaveLength(1)
+
+    streamer.reload()
+    expect(streamer.lowresGroup.children).toHaveLength(0)
+    expect(streamer.needsPump()).toBe(true)
+    streamer.update(256, 256, 500, '3d')
+    await flush()
+    expect(streamer.lowresGroup.children).toHaveLength(1)
+    expect(fetchLowres).toHaveBeenCalledTimes(2)
 
     streamer.dispose()
   })

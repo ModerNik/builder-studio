@@ -23,9 +23,10 @@ function assertOutwardWinding(buf: MeshBucketBuffer, label: string): number {
   const vertCount = buf.quadCount * 4
   const idx = buildQuadIndices(buf.quadCount)
   expect(pos.length).toBe(vertCount * 3)
-  expect(norm.length).toBe(vertCount * 3)
+  expect(norm.length).toBe(vertCount * 4)
   expect(buf.uvs.length).toBe(vertCount * 2)
-  expect(buf.colors.length).toBe(vertCount * 3)
+  expect(buf.colors.length).toBe(vertCount * 4)
+  for (let i = 0; i < vertCount; i++) expect(buf.colors[i * 4 + 3]).toBe(255)
 
   if (buf.quadCount > 0) {
     expect(buf.bounds).not.toBeNull()
@@ -62,9 +63,10 @@ function assertOutwardWinding(buf: MeshBucketBuffer, label: string): number {
     const gy = e1z * e2x - e1x * e2z
     const gz = e1x * e2y - e1y * e2x
 
-    const nx = norm[i0] / 127
-    const ny = norm[i0 + 1] / 127
-    const nz = norm[i0 + 2] / 127
+    const n0 = idx[t * 3] * 4
+    const nx = norm[n0] / 127
+    const ny = norm[n0 + 1] / 127
+    const nz = norm[n0 + 2] / 127
     const dot = gx * nx + gy * ny + gz * nz
     expect(
       dot,
@@ -193,6 +195,30 @@ describe('world-mesher winding and greedy optimization', () => {
     })
     const cubeRes = meshHires(20, new Uint8Array(cubeEnc).buffer)
     expect(assertOutwardWinding(cubeRes.buckets[0], 'hires 3x3x3 cube')).toBe(108)
+  })
+
+  it('culls faces between neighbouring leaf blocks of any kind (fast leaves)', () => {
+    // 3x3x3 leaves mixing two leaf types: only the 54 outer faces remain, inner shared faces are culled
+    const blocks = new Uint16Array(16 * 5 * 16)
+    for (let y = 1; y <= 3; y++) {
+      for (let z = 2; z <= 4; z++) {
+        for (let x = 2; x <= 4; x++) {
+          blocks[(y << 8) | (z << 4) | x] = (x + y + z) % 2 ? 1 : 2
+        }
+      }
+    }
+    const enc = encodeHiresChunk({
+      cx: 0,
+      cz: 0,
+      minY: 64,
+      height: 5,
+      palette: ['minecraft:air', 'minecraft:oak_leaves', 'minecraft:birch_leaves'],
+      surfaceY: new Int16Array(256).fill(NO_HEIGHT),
+      blocks
+    })
+    const res = meshHires(21, new Uint8Array(enc).buffer)
+    const quads = res.buckets.reduce((sum, b) => sum + b.quadCount, 0)
+    expect(quads).toBe(54)
   })
 
   it('routes unmapped blocks to the untextured bucket when a texture atlas is active', () => {
