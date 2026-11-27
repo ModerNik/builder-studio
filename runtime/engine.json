@@ -1,26 +1,26 @@
 {
-  "identity": "engine-1.0.3-cp314-win_amd64-2860b1930d49",
-  "engineVersion": "1.0.3",
+  "identity": "engine-1.0.4-cp314-win_amd64-d24a867faf28",
+  "engineVersion": "1.0.4",
   "schematicaVersion": "0.3.0",
   "pythonVersion": "3.14.7",
   "platform": "win32-x64",
   "source": {
     "repository": "https://github.com/ModerNik/builder-studio-engine",
-    "commit": "2860b1930d49523ac2c582755d0c114bf0467f47",
-    "tree": "daf7d6a7a119e52102a341d389ca0ee81f2f2c1a"
+    "commit": "d24a867faf286fa5c7f1fa9e32abbbfeef07c4a7",
+    "tree": "85dd4dcf2c2cedb93a50d7e15eb3b30a391d226d"
   },
   "publication": {
     "kind": "release",
-    "tag": "v1.0.3",
-    "sha256": "1483c4b57ae1eaa9786dac336ec22c8b2e2c56711327c9bf35f79fe4063a80c7",
-    "manifestSha256": "b3a239734be611e607e69e6859de28e95025428f5dae7ce0fecf10c63cc15886"
+    "tag": "v1.0.4",
+    "sha256": "d533d38e2d545b77ae24fc040f33df9569bc4e63c175e5ecaa5cd046d04d9c29",
+    "manifestSha256": "c037b7f0a1cd61c7cf473ee425cc3e51415139085fa42ee36611c44eb84ed5db"
   },
   "inputs": [
     {
       "kind": "release",
-      "tag": "v1.0.3",
-      "sha256": "1483c4b57ae1eaa9786dac336ec22c8b2e2c56711327c9bf35f79fe4063a80c7",
-      "manifestSha256": "b3a239734be611e607e69e6859de28e95025428f5dae7ce0fecf10c63cc15886"
+      "tag": "v1.0.4",
+      "sha256": "d533d38e2d545b77ae24fc040f33df9569bc4e63c175e5ecaa5cd046d04d9c29",
+      "manifestSha256": "c037b7f0a1cd61c7cf473ee425cc3e51415139085fa42ee36611c44eb84ed5db"
     }
   ]
 }
