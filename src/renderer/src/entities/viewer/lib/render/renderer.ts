@@ -381,11 +381,16 @@ export class Renderer {
     this.scene.add(this.lights)
     this.lights.add(new THREE.AmbientLight(0xffffff, Math.PI))
     this.resize()
-    const loop = (): void => {
-      this.raf = requestAnimationFrame(loop)
+    this.schedule()
+  }
+
+  // a frame is requested only when something changed, so an idle viewer costs no wakeups
+  private schedule(): void {
+    if (this.raf || this.paused || !this.dirty) return
+    this.raf = requestAnimationFrame(() => {
+      this.raf = 0
       if (!this.paused && this.dirty) this.render()
-    }
-    loop()
+    })
   }
 
   get suspended(): boolean {
@@ -393,6 +398,7 @@ export class Renderer {
   }
   invalidate(): void {
     this.dirty = true
+    this.schedule()
   }
   suspend(): void {
     this.paused = true
@@ -400,7 +406,7 @@ export class Renderer {
   resume(): void {
     if (!this.paused) return
     this.paused = false
-    this.dirty = true
+    this.invalidate()
   }
 
   /** Match the drawing buffer to the canvas's CSS size. */
@@ -555,6 +561,7 @@ export class Renderer {
 
   dispose(): void {
     cancelAnimationFrame(this.raf)
+    this.paused = true // nothing schedules a frame after this
     this.removeAll()
     this.cameras.dispose()
     this.outline?.dispose()

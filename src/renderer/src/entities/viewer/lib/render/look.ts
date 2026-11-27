@@ -153,6 +153,8 @@ export function applyLook(r: Renderer, LOOK: LookOptions): Scene {
   // the game multiplies texels by the light directly: no sRGB encode, no gamma pass
   gl.outputColorSpace = THREE.LinearSRGBColorSpace
   gl.shadowMap.enabled = false
+  // dispose frees a shadow-casting light's shadow map, which clear() would leave on the GPU
+  for (const l of r.lights.children) if (l instanceof THREE.Light) l.dispose()
   r.lights.clear()
   if (LOOK.look === 'flat') r.lights.add(new THREE.AmbientLight(0xffffff, K))
   else if (LOOK.look === 'game') {
@@ -178,7 +180,7 @@ export function applyLook(r: Renderer, LOOK: LookOptions): Scene {
     const mapSize = Math.min(LOOK.shadow, gl.capabilities.maxTextureSize)
     fitDirectionalShadow(sun, box, d, mapSize, false)
     gl.shadowMap.enabled = true
-    gl.shadowMap.type = THREE.PCFSoftShadowMap
+    gl.shadowMap.type = THREE.PCFShadowMap // three draws PCFSoftShadowMap as this anyway
     r.lights.add(new THREE.HemisphereLight(0xdde8ff, 0x9a9488, 0.6 * K), sun)
   }
   for (const l of [...r.lights.children] as THREE.DirectionalLight[])

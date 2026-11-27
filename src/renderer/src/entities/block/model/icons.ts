@@ -14,11 +14,21 @@ import { CUTOUT, OPAQUE } from '@/entities/viewer/lib/render/resources'
 const SIZE = 64 // pixels; tiles show them at 36 to 48
 const STRIDE = 11 // the mesher's vertex layout: position, normal, uv, colour
 const BUDGET = 8 // milliseconds of drawing per frame
+const IDLE_MS = 10_000 // the drawing context is freed this long after the last icon
 // the game shades faces by direction: top, bottom, north and south, east and west
 const shade = (ny: number, nz: number): number =>
   ny > 0.5 ? 1 : ny < -0.5 ? 0.5 : Math.abs(nz) > 0.5 ? 0.8 : 0.6
 
 let gl: THREE.WebGLRenderer | null = null
+let idle: ReturnType<typeof setTimeout> | undefined
+function releaseSoon(): void {
+  clearTimeout(idle)
+  idle = setTimeout(() => {
+    gl?.dispose()
+    gl?.forceContextLoss()
+    gl = null
+  }, IDLE_MS)
+}
 const scene = new THREE.Scene()
 // the game's inventory angle: 30° down, from the south-east, so south shows left and east right
 const camera = new THREE.OrthographicCamera(-0.85, 0.85, 0.85, -0.85, 0.1, 10)
@@ -26,8 +36,10 @@ camera.position.set(Math.SQRT1_2 * Math.cos(Math.PI / 6), 0.5, Math.SQRT1_2 * Ma
 camera.position.multiplyScalar(4)
 camera.lookAt(0, 0, 0)
 
+/** Draw one icon as a PNG data URL; '' for a block that draws nothing. */
 function draw(res: Resources, materials: THREE.Material[], state: string): string {
-  gl ??= new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true })
+  clearTimeout(idle)
+  gl ??= new THREE.WebGLRenderer({ alpha: true, antialias: true })
   gl.setSize(SIZE, SIZE, false)
   gl.outputColorSpace = THREE.LinearSRGBColorSpace // the viewer's look: raw texels times the shade
   gl.setClearColor(0x000000, 0)
@@ -52,6 +64,7 @@ function draw(res: Resources, materials: THREE.Material[], state: string): strin
   gl.render(scene, camera)
   scene.remove(group)
   for (const m of group.children as THREE.Mesh[]) m.geometry.dispose()
+  // read in the same task as the render, so the drawing buffer needs no preserving
   return gl.domElement.toDataURL('image/png')
 }
 
@@ -62,6 +75,7 @@ class Painter {
   private res: Resources | null = null
   private materials: THREE.Material[] = []
   private frame: number | null = null
+  private users = 0
   /** The lookup hooks hand out: a new function after each drawn batch, so memoized callers ask again. */
   lookup = (state: string): string | undefined => this.get(state)
 
@@ -78,6 +92,19 @@ class Painter {
         })
     )
     this.schedule()
+  }
+  retain(): void {
+    this.users++
+  }
+  /** With no picker left, let the pack go; the drawn icons stay. */
+  release(): void {
+    if (--this.users) return
+    if (this.frame !== null) cancelAnimationFrame(this.frame)
+    this.frame = null
+    this.res = null
+    this.materials.forEach((m) => m.dispose())
+    this.materials = []
+    releaseSoon()
   }
   /** The state's icon: a URL, '' when it draws nothing, undefined until drawn. */
   get(state: string): string | undefined {
@@ -108,10 +135,15 @@ class Painter {
         }
         this.urls.set(state, url)
       }
-      this.lookup = (state) => this.get(state)
-      this.listeners.forEach((cb) => cb())
+      this.notify()
       this.schedule()
     })
+  }
+  // once per drawn batch: each update re-renders the pickers
+  private notify(): void {
+    this.lookup = (state) => this.get(state)
+    this.listeners.forEach((cb) => cb())
+    if (!this.queue.size) releaseSoon()
   }
 }
 
@@ -129,6 +161,7 @@ export function useBlockIcons(
     if (!pack || !painter) return
     const key = `pack:${pack}`
     let live = true
+    painter.retain()
     acquireResources(key, async () => {
       const res = await fetch(pack)
       if (!res.ok) throw new Error(`texture pack: ${res.status}`)
@@ -140,6 +173,7 @@ export function useBlockIcons(
     return () => {
       live = false
       releaseResources(key)
+      painter.release()
     }
   }, [pack, painter])
   const p = painter ?? NONE

@@ -1,5 +1,12 @@
 // The block picker: search, one category, any shapes, then the blocks as tiles in one grid.
-import { useRef, useState, type KeyboardEvent, type ReactElement } from 'react'
+import {
+  memo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactElement,
+  type SyntheticEvent
+} from 'react'
 import { SearchX, Search } from 'lucide-react'
 import { cn } from '@/shared/lib/utils'
 import { Button } from '@/shared/ui/primitives/button'
@@ -15,6 +22,10 @@ import {
   type Shape
 } from '@/entities/block/model/registry'
 import { BlockTile } from './BlockTile'
+
+// tiles take only plain props, so a picker update (an icon batch, a selection) re-renders just the tiles it
+// changes; clicks and focus are handled once on the grid
+const Tile = memo(BlockTile)
 
 export function BlockPicker({
   blocks,
@@ -65,6 +76,11 @@ export function BlockPicker({
     grid.current.querySelectorAll('button')[next]?.focus()
   }
 
+  const tileAt = (e: SyntheticEvent): number => {
+    const tile = (e.target as HTMLElement).closest<HTMLElement>('[data-index]')
+    return tile && e.currentTarget.contains(tile) ? Number(tile.dataset.index) : -1
+  }
+
   return (
     <div className={cn('flex min-w-0 flex-col gap-2', className)}>
       <Input
@@ -108,18 +124,25 @@ export function BlockPicker({
           role="group"
           aria-label="Blocks"
           onKeyDown={move}
+          onClick={(e) => {
+            const i = tileAt(e)
+            if (i >= 0) onChange(shown[i])
+          }}
+          onFocus={(e) => {
+            const i = tileAt(e)
+            if (i >= 0) setFocus(i)
+          }}
           className="grid grid-cols-[repeat(auto-fill,minmax(2.25rem,1fr))] gap-1"
         >
           {shown.map((b, i) => (
-            <BlockTile
+            <Tile
               key={b.id}
+              data-index={i}
               label={b.label}
               icon={icon(fullState(b))}
               color={color(b.id)}
               selected={b.id === value}
               tabIndex={i === at ? 0 : -1}
-              onFocus={() => setFocus(i)}
-              onClick={() => onChange(b)}
               className="size-auto aspect-square"
             />
           ))}

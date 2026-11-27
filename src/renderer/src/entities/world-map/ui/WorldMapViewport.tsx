@@ -383,16 +383,17 @@ export function WorldMapViewport({
       let res: Resources | null = null
       if (pack) {
         try {
-          const loaded = await acquireResources(pack, async () => {
+          // same key as the build viewer, Render Studio and block icons: one parsed pack for all of them
+          const loaded = await acquireResources(`pack:${pack}`, async () => {
             const r = await fetch(pack)
             if (!r.ok) throw new Error('pack fetch failed')
             return loadResources(await r.arrayBuffer())
           })
           if (!active) {
-            releaseResources(pack)
+            releaseResources(`pack:${pack}`)
             return
           }
-          acquiredKey = pack
+          acquiredKey = `pack:${pack}`
           res = loaded
         } catch {
           res = null
