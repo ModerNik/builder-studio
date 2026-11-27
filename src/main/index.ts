@@ -6,7 +6,7 @@ import { type Settings, type AppState, type JobUpdate, UI_SCALES } from '@shared
 import { PythonBridge } from './engine/bridge'
 import { JobService } from './engine/jobs'
 import { buildDir, draftMinecraftVersion, listBuilds, ProjectService } from './workspace/projects'
-import { handleProtocols, registerSchemes } from './app/protocols'
+import { disposeWorldPool, handleProtocols, registerSchemes } from './app/protocols'
 import { existsSync, constants } from 'fs'
 import { access, readFile, stat } from 'fs/promises'
 import { appendGist, ReviewQueue, writeAtomic } from './workspace/review'
@@ -566,6 +566,7 @@ app.whenReady().then(() => {
     state.preparation?.abort()
     imports.cancel()
     runtime.cancel()
+    disposeWorldPool()
     mcp.close()
     agent.closeAll()
     variants.closeAll()
@@ -576,6 +577,7 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   jobs.dispose()
   disposeBridges()
+  disposeWorldPool()
   void projects.dispose()
   if (process.platform !== 'darwin') app.quit()
 })

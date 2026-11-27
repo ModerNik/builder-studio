@@ -2,10 +2,16 @@ import { deflateSync, gzipSync } from 'zlib'
 import { describe, expect, it } from 'vitest'
 import {
   decodeChunkSections,
+  extractLazySections,
+  formatBlockName,
   formatBlockState,
+  isPackedPadded,
+  lazyBlockNameAt,
+  parseChunkNbt,
   parseGzippedNbt,
   parseNbt,
   readHeightmap,
+  readPackedIndex,
   readRegionChunk,
   unpackLongs
 } from './nbt'
@@ -226,5 +232,87 @@ describe('nbt parser & chunk decoders', () => {
     expect(secs[0].palette).toEqual(['minecraft:air', 'minecraft:grass_block'])
     expect(secs[0].indices?.[3 * 256]).toBe(1)
     expect(parseNbt(w.finish()).DataVersion).toBe(4189)
+  })
+
+  it('readPackedIndex matches unpackLongs for both padded and unpadded layouts across bit widths', () => {
+    for (const bits of [4, 5, 6, 7, 9]) {
+      const mod = (1 << bits) - 1
+      const values = Array.from({ length: 4096 }, (_, i) => (i * 13 + 7) % mod)
+      for (const padded of [true, false]) {
+        const longs = packLongsBigInt(values, bits, padded)
+        const words = new Uint32Array(longs.length * 2)
+        longs.forEach((v, i) => {
+          words[i * 2] = Number(v & 0xffffffffn)
+          words[i * 2 + 1] = Number((v >> 32n) & 0xffffffffn)
+        })
+        const detectedPadded = isPackedPadded(words, 4096, bits)
+        const unpacked = unpackLongs(words, 4096, bits)
+        for (const idx of [0, 1, 7, 15, 63, 64, 511, 2048, 4094, 4095]) {
+          expect(readPackedIndex(words, idx, bits, detectedPadded)).toBe(unpacked[idx])
+          expect(readPackedIndex(words, idx, bits, detectedPadded)).toBe(values[idx])
+        }
+      }
+    }
+  })
+
+  it('parseChunkNbt skips heavy lighting, entity, and structure tags while preserving heightmaps and lazy sections', () => {
+    const w = new NbtWriter()
+    w.tag(10, '')
+    w.tag(3, 'DataVersion')
+    w.int(4189)
+    // Heavy ignored fields
+    w.tag(9, 'entities')
+    w.byte(10)
+    w.int(2)
+    w.tag(8, 'id')
+    w.str('minecraft:sheep')
+    w.byte(0)
+    w.tag(8, 'id')
+    w.str('minecraft:cow')
+    w.byte(0)
+    w.tag(10, 'structures')
+    w.intArray('starts', [1, 2, 3, 4])
+    w.byte(0)
+    // Required fields
+    w.tag(10, 'Heightmaps')
+    w.longArray('WORLD_SURFACE', packLongsBigInt(new Array(256).fill(68), 9, true))
+    w.byte(0)
+    w.tag(9, 'sections')
+    w.byte(10)
+    w.int(1)
+    w.tag(1, 'Y')
+    w.byte(0)
+    w.byteArray('BlockLight', new Uint8Array(2048).fill(15))
+    w.byteArray('SkyLight', new Uint8Array(2048).fill(15))
+    w.tag(10, 'block_states')
+    w.tag(9, 'palette')
+    w.byte(10)
+    w.int(2)
+    w.tag(8, 'Name')
+    w.str('minecraft:air')
+    w.byte(0)
+    w.tag(8, 'Name')
+    w.str('minecraft:oak_stairs')
+    w.tag(10, 'Properties')
+    w.tag(8, 'facing')
+    w.str('north')
+    w.byte(0)
+    w.byte(0)
+    const cells = new Array(4096).fill(0)
+    cells[(3 << 8) | (5 << 4) | 2] = 1
+    w.longArray('data', packLongsBigInt(cells, 4, true))
+    w.byte(0) // end block_states
+    w.byte(0) // end section
+    w.byte(0) // end root
+
+    const parsed = parseChunkNbt(w.finish())
+    expect(parsed.entities).toBeUndefined()
+    expect(parsed.structures).toBeUndefined()
+    expect(readHeightmap(parsed, 'WORLD_SURFACE')?.[0]).toBe(3)
+    const lazy = extractLazySections(parsed)
+    expect(lazy).toHaveLength(1)
+    expect(lazyBlockNameAt(lazy[0], 2, 3, 5)).toBe('minecraft:oak_stairs')
+    expect(lazyBlockNameAt(lazy[0], 0, 0, 0)).toBe('minecraft:air')
+    expect(formatBlockName('minecraft:oak_stairs[facing=east]')).toBe('minecraft:oak_stairs')
   })
 })

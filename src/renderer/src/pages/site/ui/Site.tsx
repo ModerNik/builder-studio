@@ -129,7 +129,7 @@ function Location({ name }: { name: string }): ReactElement {
 
   // ── Slim Inspector Rail (Variant B) ──
   const rail = (
-    <div className="flex h-full min-h-0 flex-col bg-surface-panel">
+    <div className="@container flex h-full min-h-0 flex-col bg-surface-panel">
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-3.5">
         {/* Auto-adaptive mode switch: only shown once a .litematic draft exists */}
         {loc.hasDrafts && (
@@ -187,13 +187,14 @@ function Location({ name }: { name: string }): ReactElement {
               )}
             </div>
             {areaNorm && (
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 gap-2 @[15rem]:grid-cols-2">
                 {(['x1', 'z1', 'x2', 'z2'] as const).map((key, i) => (
                   <NumberField
                     key={key}
                     aria-label={`Area ${key}`}
                     className="font-mono"
                     unit={key}
+                    hideStepper
                     value={areaNorm[i]}
                     onValueChange={(v) => updateAreaCorner(i as 0 | 1 | 2 | 3, v)}
                   />
@@ -235,16 +236,22 @@ function Location({ name }: { name: string }): ReactElement {
                 <span className="font-mono text-xs tabular-nums text-fg-muted">{groundBadge}</span>
               )}
             </div>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="flex flex-col gap-2">
               {AXES.map(([axis, tone], i) => (
-                <Field key={axis} label={<span className={`font-mono ${tone}`}>{axis}</span>}>
+                <div key={axis} className="flex items-center gap-2">
+                  <span
+                    aria-hidden="true"
+                    className={`w-4 shrink-0 text-center font-mono text-xs font-semibold ${tone}`}
+                  >
+                    {axis}
+                  </span>
                   <NumberField
                     aria-label={`Build ${axis}`}
-                    className="font-mono"
+                    className="min-w-0 flex-1 font-mono"
                     value={loc.origin[i]}
                     onValueChange={(v) => updateOriginAxis(i as 0 | 1 | 2, v)}
                   />
-                </Field>
+                </div>
               ))}
             </div>
 
@@ -507,6 +514,7 @@ function Location({ name }: { name: string }): ReactElement {
                     <NumberField
                       aria-label="Jump X"
                       unit="X"
+                      hideStepper
                       className="font-mono"
                       value={jumpX}
                       onValueChange={(v) => setJumpX(Math.round(v ?? 0))}
@@ -514,6 +522,7 @@ function Location({ name }: { name: string }): ReactElement {
                     <NumberField
                       aria-label="Jump Z"
                       unit="Z"
+                      hideStepper
                       className="font-mono"
                       value={jumpZ}
                       onValueChange={(v) => setJumpZ(Math.round(v ?? 0))}
