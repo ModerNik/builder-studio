@@ -3,11 +3,19 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-const state = vi.hoisted(() => ({ dir: '' }))
+const state = vi.hoisted(() => ({ dir: '', packaged: false }))
 vi.mock('electron', () => ({
-  app: { getPath: () => state.dir, getAppPath: () => process.cwd(), isPackaged: false }
+  app: {
+    getPath: () => state.dir,
+    getAppPath: () => process.cwd(),
+    get isPackaged() {
+      return state.packaged
+    }
+  }
 }))
 afterEach(() => {
+  state.packaged = false
+  vi.unstubAllEnvs()
   vi.useRealTimers()
   vi.doUnmock('../runtime/detect')
   if (state.dir) rmSync(state.dir, { recursive: true, force: true })
@@ -119,6 +127,29 @@ describe('loading settings', () => {
       linter: { enabled: true, rules: { ...s.linter.rules, gravity: false } }
     })
     expect(JSON.parse(readFileSync(file, 'utf8')).linter.rules.gravity).toBe(false)
+  })
+
+  it('applies BS_* env overrides in development and ignores them when packaged', async () => {
+    vi.resetModules()
+    state.dir = mkdtempSync(join(tmpdir(), 'studio settings env '))
+    vi.stubEnv('BS_WORKSPACE', 'D:\\Dev\\Workspace')
+    vi.stubEnv('BS_PROVIDER', 'codex')
+    vi.stubEnv('BS_SETUP_COMPLETED', 'true')
+    const devSettings = await import('./settings')
+    expect(devSettings.getSettings()).toMatchObject({
+      workspace: 'D:\\Dev\\Workspace',
+      provider: 'codex',
+      setup: { step: 'verify', completed: true }
+    })
+
+    vi.resetModules()
+    state.packaged = true
+    const packagedSettings = await import('./settings')
+    expect(packagedSettings.getSettings()).toMatchObject({
+      workspace: '',
+      provider: 'claude',
+      setup: { step: 'welcome', completed: false }
+    })
   })
 })
 

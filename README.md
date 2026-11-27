@@ -152,6 +152,8 @@ To test against a clean profile without touching your own app settings, run with
 $env:BS_USER_DATA = 'out/test-profile'; npx electron-vite dev -- --remote-debugging-port=9223
 ```
 
+To avoid re-entering workspace, runtime, Minecraft, and assistant settings in development, copy [`.env.example`](.env.example) to `.env` (gitignored) and fill in your local paths. Development `.env*` files are loaded only when running unpackaged (`npm run dev` / `npm start`) and never in packaged releases or unit tests.
+
 ### Assembling a runtime and packaging (maintainers)
 
 Official installers pair this application with a pinned, checksum-verified Windows x64 engine distribution (`runtime/engine.json`):

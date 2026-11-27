@@ -27,6 +27,8 @@ $env:BS_USER_DATA = 'out/test-profile'; npx electron-vite dev -- --remote-debugg
 
 Delete `out/test-profile` when you are done. Keep temporary build outputs and test profiles under `out/` (which is gitignored).
 
+To pre-populate setup paths and settings automatically in development, copy `.env.example` to `.env` (gitignored) and set the `BS_*` variables you need. These files are read only in development and never bundled into releases.
+
 ## Architecture and UI rules
 
 ### Feature-Sliced Design (`src/renderer/src/`)
