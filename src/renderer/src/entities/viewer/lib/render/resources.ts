@@ -134,6 +134,8 @@ export async function loadResources(zip: ArrayBuffer | Uint8Array): Promise<Reso
       }
     })
   )
+  // only the JSON is read from here on: let the PNG bytes go instead of keeping them for the pack's life
+  for (const name of Object.keys(files)) if (name.startsWith(ROOT + 'textures/')) delete files[name]
 
   // shelf-pack: tallest first, every sprite at a multiple of 16 so mip levels up to 16px stay inside one sprite
   sprites.sort((a, b) => b.h - a.h || b.w - a.w || a.id.localeCompare(b.id))

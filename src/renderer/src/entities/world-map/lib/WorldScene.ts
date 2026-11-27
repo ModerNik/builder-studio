@@ -685,6 +685,7 @@ export class WorldScene {
     this.sky.mesh.geometry.dispose()
     ;(this.sky.mesh.material as THREE.Material).dispose()
     this.gl.dispose()
+    this.gl.forceContextLoss() // free the context now, not at GC: Chromium caps live contexts
     this.gl.domElement.remove()
   }
 }

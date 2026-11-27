@@ -63,6 +63,7 @@ function sunDirection(azimuthDeg: number, elevationDeg: number): THREE.Vector3 {
 export class CinematicRenderer {
   readonly gl: THREE.WebGLRenderer
   readonly scene = new THREE.Scene()
+  private readonly fog = new THREE.Fog(0) // reused: renderFrame sets it on every perspective frame
   readonly cameras: CameraManager
   private readonly lights = new THREE.Group()
   private readonly emissiveLights = new THREE.Group()
@@ -107,7 +108,9 @@ export class CinematicRenderer {
     this.gl.localClippingEnabled = true
     this.gl.outputColorSpace = THREE.LinearSRGBColorSpace
     this.gl.shadowMap.enabled = true
-    this.gl.shadowMap.type = THREE.PCFSoftShadowMap
+    this.gl.shadowMap.type = THREE.PCFShadowMap // three draws PCFSoftShadowMap as this anyway
+    // the sun is fitted to the build, not the camera: redraw shadows only when the build, clip or look change
+    this.gl.shadowMap.autoUpdate = false
 
     this.cameras = new CameraManager(canvas)
     this.cameras.addEventListener('change', () => this.invalidate())
@@ -160,11 +163,16 @@ export class CinematicRenderer {
     this.composer.addPass(this.smaaPass)
 
     this.resize()
-    const loop = (): void => {
-      this.raf = requestAnimationFrame(loop)
+    this.schedule()
+  }
+
+  // a frame is requested only when something changed, so an idle stage costs no wakeups
+  private schedule(): void {
+    if (this.raf || this.paused || !this.dirty) return
+    this.raf = requestAnimationFrame(() => {
+      this.raf = 0
       if (!this.paused && this.dirty) this.renderFrame()
-    }
-    loop()
+    })
   }
 
   get dims(): Vec3 | null {
@@ -177,6 +185,7 @@ export class CinematicRenderer {
 
   invalidate(): void {
     this.dirty = true
+    this.schedule()
   }
 
   resize(): void {
@@ -258,6 +267,7 @@ export class CinematicRenderer {
 
     this.applyClip()
     if (this.currentLook) this.applyLook(this.currentLook)
+    this.gl.shadowMap.needsUpdate = true
     this.invalidate()
     return true
   }
@@ -275,6 +285,7 @@ export class CinematicRenderer {
   setClipY(y: number | null): void {
     this.clipY = y
     this.applyClip()
+    this.gl.shadowMap.needsUpdate = true
     this.invalidate()
   }
 
@@ -354,8 +365,10 @@ export class CinematicRenderer {
     const dir = sunDirection(look.sunAzimuth, look.sunElevation)
     const palette = skyPalette(look.sunElevation)
 
-    // Rebuild scene lights
+    // Rebuild scene lights; dispose frees the old sun's shadow map, which clear() would leave on the GPU
+    for (const l of this.lights.children) if (l instanceof THREE.Light) l.dispose()
     this.lights.clear()
+    this.gl.shadowMap.needsUpdate = true
     this.gl.shadowMap.enabled = look.lightingMode === 'sun'
 
     const dirLight = (
@@ -522,7 +535,10 @@ export class CinematicRenderer {
           : new THREE.Color(look.bgColor)
       const far =
         dist + Math.max(this.radius * 1.4, (1.15 - look.fogDensity * 0.8) * this.radius * 4.5)
-      this.scene.fog = new THREE.Fog(fogCol, Math.max(1, dist - this.radius * 0.4), far)
+      this.fog.color.copy(fogCol)
+      this.fog.near = Math.max(1, dist - this.radius * 0.4)
+      this.fog.far = far
+      this.scene.fog = this.fog
     } else {
       this.scene.fog = null
     }
@@ -671,6 +687,7 @@ export class CinematicRenderer {
 
   dispose(): void {
     cancelAnimationFrame(this.raf)
+    this.paused = true // nothing schedules a frame after this
     this.clearBuild()
     this.skyDome.dispose()
     this.studioBackdrop.dispose()
