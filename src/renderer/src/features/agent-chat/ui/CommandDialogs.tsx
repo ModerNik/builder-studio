@@ -126,9 +126,13 @@ export function RewindDialog({
 
 export function ContextDialog({
   context,
+  onCompact,
+  compactDisabled = false,
   onClose
 }: {
   context: AgentState['context']
+  onCompact?: () => void
+  compactDisabled?: boolean
   onClose(): void
 }): ReactElement {
   const format = (tokens: number): string => tokens.toLocaleString()
@@ -145,7 +149,7 @@ export function ContextDialog({
           <DialogDescription>Tokens in the current conversation window.</DialogDescription>
         </DialogHeader>
         {context ? (
-          <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm">
+          <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-2 text-sm tabular-nums">
             <dt>Used</dt>
             <dd className="text-right font-mono">
               {format(context.tokens)} / {format(context.max)}
@@ -167,6 +171,20 @@ export function ContextDialog({
           <p className="text-sm text-fg-secondary">
             Context usage is unavailable. Send a message to update it.
           </p>
+        )}
+        {onCompact && (
+          <DialogFooter>
+            <Button
+              variant="outline"
+              disabled={compactDisabled}
+              onClick={() => {
+                onClose()
+                onCompact()
+              }}
+            >
+              Compact conversation
+            </Button>
+          </DialogFooter>
         )}
       </DialogContent>
     </Dialog>

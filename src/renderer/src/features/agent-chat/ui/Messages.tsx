@@ -13,6 +13,7 @@ import {
 import { cn } from '@/shared/lib/utils'
 import { Prose } from '@/shared/ui/code/Prose'
 import { CopyButton } from '@/shared/ui/common/CopyButton'
+import { formatFullDateTime, useRelativeTime } from '@/shared/ui/common/time'
 import { IconAction, Tip } from '@/shared/ui/common/Tip'
 import { InlineNotice } from '@/shared/ui/feedback/Alert'
 import { Button } from '@/shared/ui/primitives/button'
@@ -261,10 +262,27 @@ function MessageBubbleEditor({
   )
 }
 
+function MessageTimestamp({ timestamp }: { timestamp?: number }): ReactElement | null {
+  const relative = useRelativeTime(timestamp)
+  if (timestamp === undefined || !relative) return null
+  return (
+    <Tip label={formatFullDateTime(timestamp)}>
+      <time
+        dateTime={new Date(timestamp).toISOString()}
+        tabIndex={0}
+        className="focus-ring cursor-default rounded-sm px-1 font-mono text-2xs text-fg-muted tabular-nums select-none"
+      >
+        {relative}
+      </time>
+    </Tip>
+  )
+}
+
 /** The user's message: right-aligned, plain text as typed, with attachments and hover/focus quick actions. */
 export function MessageBubble({
   children,
   attachments,
+  timestamp,
   copyable = true,
   onEdit,
   onFork,
@@ -275,6 +293,7 @@ export function MessageBubble({
 }: {
   children: string
   attachments?: Attachment[]
+  timestamp?: number
   copyable?: boolean
   onEdit?: () => void
   onFork?: () => void
@@ -313,43 +332,48 @@ export function MessageBubble({
           </div>
         ) : null}
       </div>
-      {hasActions && (
-        <div
-          role="toolbar"
-          aria-label="Message actions"
-          className="flex items-center gap-0.5 opacity-0 transition-opacity duration-(--dur-fast) group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100"
-        >
-          {copyable && <CopyButton size="xs" text={children} label="Copy message" />}
-          {onEdit && (
-            <IconAction
-              size="xs"
-              icon={Pencil}
-              label="Edit message"
-              tip="Edit and resend from here"
-              disabled={actionsDisabled}
-              onClick={onEdit}
-            />
+      {(hasActions || timestamp !== undefined) && (
+        <div className="flex items-center gap-1">
+          {hasActions && (
+            <div
+              role="toolbar"
+              aria-label="Message actions"
+              className="flex items-center gap-0.5 opacity-0 transition-opacity duration-(--dur-fast) group-focus-within/message:opacity-100 group-hover/message:opacity-100 pointer-coarse:opacity-100"
+            >
+              {onEdit && (
+                <IconAction
+                  size="xs"
+                  icon={Pencil}
+                  label="Edit message"
+                  tip="Edit and resend from here"
+                  disabled={actionsDisabled}
+                  onClick={onEdit}
+                />
+              )}
+              {onFork && (
+                <IconAction
+                  size="xs"
+                  icon={GitFork}
+                  label="Fork from here"
+                  tip="Fork conversation after this turn"
+                  disabled={actionsDisabled}
+                  onClick={onFork}
+                />
+              )}
+              {onRewind && (
+                <IconAction
+                  size="xs"
+                  icon={RotateCcw}
+                  label="Rewind to here"
+                  tip="Rewind conversation to before this message"
+                  disabled={actionsDisabled}
+                  onClick={onRewind}
+                />
+              )}
+              {copyable && <CopyButton size="xs" text={children} label="Copy message" />}
+            </div>
           )}
-          {onFork && (
-            <IconAction
-              size="xs"
-              icon={GitFork}
-              label="Fork from here"
-              tip="Fork conversation after this turn"
-              disabled={actionsDisabled}
-              onClick={onFork}
-            />
-          )}
-          {onRewind && (
-            <IconAction
-              size="xs"
-              icon={RotateCcw}
-              label="Rewind to here"
-              tip="Rewind conversation to before this message"
-              disabled={actionsDisabled}
-              onClick={onRewind}
-            />
-          )}
+          <MessageTimestamp timestamp={timestamp} />
         </div>
       )}
     </div>
@@ -360,15 +384,36 @@ export function MessageBubble({
 export function AssistantMessage({
   children,
   streaming = false,
+  timestamp,
+  copyable = true,
   className
 }: {
   children: string
   streaming?: boolean
+  timestamp?: number
+  copyable?: boolean
   className?: string
 }): ReactElement {
+  const showFooter = !streaming && (copyable || timestamp !== undefined)
   return (
-    <div aria-busy={streaming || undefined} className={cn('min-w-0', className)}>
+    <div
+      aria-busy={streaming || undefined}
+      className={cn('group/assistant flex min-w-0 flex-col', className)}
+    >
       <Prose variant="chat">{children}</Prose>
+      {showFooter && (
+        <div className="mt-1 flex items-center gap-1">
+          {copyable && (
+            <CopyButton
+              size="xs"
+              text={children}
+              label="Copy reply"
+              className="opacity-65 transition-opacity duration-(--dur-fast) group-focus-within/assistant:opacity-100 group-hover/assistant:opacity-100 pointer-coarse:opacity-100"
+            />
+          )}
+          <MessageTimestamp timestamp={timestamp} />
+        </div>
+      )}
     </div>
   )
 }

@@ -3,50 +3,76 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { Select as SelectPrimitive } from 'radix-ui'
 import { cn } from '@/shared/lib/utils'
 import { useFieldControl } from '@/shared/ui/primitives/field'
-import { inputSurface } from '@/shared/ui/primitives/input'
 import {
-  menuChoiceItem,
   menuContent,
-  menuIndicator,
   menuLabel,
-  menuSeparator
+  menuSeparator,
+  menuTrailingChoiceItem,
+  menuTrailingIndicator
 } from '@/shared/ui/primitives/menu-styles'
 
 function Select(props: React.ComponentProps<typeof SelectPrimitive.Root>): React.ReactElement {
   return <SelectPrimitive.Root data-slot="select" {...props} />
 }
 
-function SelectGroup(props: React.ComponentProps<typeof SelectPrimitive.Group>): React.ReactElement {
+function SelectGroup(
+  props: React.ComponentProps<typeof SelectPrimitive.Group>
+): React.ReactElement {
   return <SelectPrimitive.Group data-slot="select-group" {...props} />
 }
 
-function SelectValue(props: React.ComponentProps<typeof SelectPrimitive.Value>): React.ReactElement {
+function SelectValue(
+  props: React.ComponentProps<typeof SelectPrimitive.Value>
+): React.ReactElement {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
+
+const TRIGGER_VARIANTS = {
+  default:
+    'border border-border-default bg-surface-sunken can-hover:border-border-strong can-hover:bg-surface-hover data-[state=open]:border-border-strong data-[state=open]:bg-surface-hover',
+  subtle:
+    'border border-border-default bg-surface-raised can-hover:border-border-strong can-hover:bg-surface-hover data-[state=open]:border-border-strong data-[state=open]:bg-surface-hover',
+  ghost:
+    'border border-transparent bg-transparent can-hover:bg-surface-hover data-[state=open]:bg-surface-hover'
+} as const
+
+export type SelectTriggerVariant = keyof typeof TRIGGER_VARIANTS
 
 function SelectTrigger({
   className,
   size = 'default',
+  variant = 'default',
+  leading,
   children,
   ...rest
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: 'sm' | 'default'
+  variant?: SelectTriggerVariant
+  /** Optional leading icon or badge rendered before the selected value. */
+  leading?: React.ReactNode
 }): React.ReactElement {
   const props = useFieldControl(rest)
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
+      data-variant={variant}
       className={cn(
-        inputSurface,
-        "focus-ring flex w-full min-w-0 cursor-pointer items-center justify-between gap-2 px-2 text-start whitespace-nowrap can-hover:bg-surface-hover aria-invalid:focus-visible:outline-danger-solid disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-fg-muted data-[size=default]:h-(--density-control) data-[size=sm]:h-(--density-control-sm) *:data-[slot=select-value]:truncate *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        TRIGGER_VARIANTS[variant],
+        "focus-ring flex w-full min-w-0 cursor-pointer items-center justify-between gap-1.5 rounded-md px-2.5 text-start text-(length:--density-text) whitespace-nowrap text-fg transition-[border-color,background-color,color] duration-fast ease-standard aria-invalid:border-danger-solid aria-invalid:focus-visible:outline-danger-solid disabled:cursor-not-allowed disabled:opacity-50 data-placeholder:text-fg-muted data-[size=default]:h-(--density-control) data-[size=sm]:h-(--density-control-sm) data-[size=sm]:px-2 *:data-[slot=select-value]:flex *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 *:data-[slot=select-value]:truncate [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&[data-state=open]_[data-slot=select-chevron]]:rotate-180",
         className
       )}
       {...props}
     >
-      {children}
+      <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {leading}
+        {children}
+      </span>
       <SelectPrimitive.Icon asChild>
-        <ChevronDownIcon className="text-fg-muted" />
+        <ChevronDownIcon
+          data-slot="select-chevron"
+          className="text-fg-muted transition-transform duration-fast ease-standard motion-reduce:transition-none"
+        />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )
@@ -76,7 +102,9 @@ function SelectContent({
         {...props}
       >
         <SelectScrollUpButton />
-        <SelectPrimitive.Viewport className="p-1">{children}</SelectPrimitive.Viewport>
+        <SelectPrimitive.Viewport className="flex flex-col gap-0.5 p-1.5">
+          {children}
+        </SelectPrimitive.Viewport>
         <SelectScrollDownButton />
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
@@ -88,7 +116,11 @@ function SelectLabel({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Label>): React.ReactElement {
   return (
-    <SelectPrimitive.Label data-slot="select-label" className={cn(menuLabel, className)} {...props} />
+    <SelectPrimitive.Label
+      data-slot="select-label"
+      className={cn(menuLabel, className)}
+      {...props}
+    />
   )
 }
 
@@ -96,25 +128,31 @@ function SelectItem({
   className,
   children,
   description,
+  icon,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item> & {
   /** A second line under the label (not shown in the trigger). */
   description?: React.ReactNode
+  /** Optional leading icon aligned beside the label (not shown in the trigger). */
+  icon?: React.ReactNode
 }): React.ReactElement {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
-      className={cn(menuChoiceItem, description && 'py-1.5', className)}
+      className={cn(menuTrailingChoiceItem, description && 'items-start py-1.5', className)}
       {...props}
     >
-      <span className={menuIndicator}>
+      {icon && <span className={cn('shrink-0', description && 'mt-0.5')}>{icon}</span>}
+      <span className="flex min-w-0 flex-1 flex-col">
+        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+        {description && (
+          <span className="text-xs font-normal text-fg-secondary">{description}</span>
+        )}
+      </span>
+      <span className={cn(menuTrailingIndicator, description && 'top-2')}>
         <SelectPrimitive.ItemIndicator>
           <CheckIcon className="text-accent-text!" />
         </SelectPrimitive.ItemIndicator>
-      </span>
-      <span className="flex min-w-0 flex-col">
-        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-        {description && <span className="text-sm text-fg-muted">{description}</span>}
       </span>
     </SelectPrimitive.Item>
   )

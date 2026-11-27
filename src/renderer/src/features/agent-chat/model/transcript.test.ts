@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { claudeEvents } from '../../../../../main/agent/claude-events'
 import type { AgentMsg } from '@shared/api'
-import { activity, jobSummary, reduce, type Item } from './transcript'
+import { activity, jobSummary, reduce, reduceLive, type Item } from './transcript'
 
 // recorded shapes of SDK 0.3.311 messages, trimmed to the fields the reducer reads
 const CHECK = '.venv/Scripts/python builds/narkina5/build.py check --x0 40 --sx 30'
@@ -191,6 +191,33 @@ describe('transcript', () => {
   it('ignores suggestion messages so they stay out of the transcript history', () => {
     const base: Item[] = [{ kind: 'user', id: 'u1', text: 'hi' }]
     expect(reduce(base, { type: 'suggestion', id: 's1', text: 'Next step' })).toBe(base)
+  })
+
+  it('stamps live events via reduceLive and preserves timestamps across streamed replacement', () => {
+    const t0 = 1_700_000_000_000
+    let items = reduceLive(
+      [],
+      { type: 'text', id: 'live:', parent: null, text: 'Hi ', delta: true },
+      t0
+    )
+    items = reduceLive(
+      items,
+      { type: 'text', id: 'live:', parent: null, text: 'there', delta: true },
+      t0 + 1000
+    )
+    expect(items).toEqual([
+      { kind: 'text', id: 'live:', parent: null, text: 'Hi there', live: true, timestamp: t0 }
+    ])
+    items = reduce(items, {
+      type: 'text',
+      id: 'final:0',
+      parent: null,
+      text: 'Hi there',
+      replaceLive: true
+    })
+    expect(items).toEqual([
+      { kind: 'text', id: 'final:0', parent: null, text: 'Hi there', timestamp: t0 }
+    ])
   })
 })
 

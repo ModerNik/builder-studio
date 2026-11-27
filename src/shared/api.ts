@@ -840,7 +840,7 @@ export interface AgentSession {
 
 /** Provider-independent events. Native SDK/protocol payloads stay in main. */
 export type AgentMsg =
-  | { type: 'user'; id: string; text: string; point?: string }
+  | { type: 'user'; id: string; text: string; point?: string; timestamp?: number }
   | {
       type: 'text'
       id: string
@@ -849,6 +849,7 @@ export type AgentMsg =
       delta?: boolean
       replaceLive?: boolean
       plan?: boolean // a Codex plan-mode proposal
+      timestamp?: number
     }
   | {
       type: 'tool'

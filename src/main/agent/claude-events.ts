@@ -10,10 +10,21 @@ const text = (v: unknown): string =>
     .join('\n')
 let n = 0
 
+function parseTimestamp(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value))
+    return value > 1e12 ? value : value * 1000
+  if (typeof value === 'string' && value) {
+    const ms = Date.parse(value)
+    if (!Number.isNaN(ms)) return ms
+  }
+  return undefined
+}
+
 /** Preserve Claude's partial/final replacement and nested subagent transcript semantics. */
 export function claudeEvents(m: Native): AgentMsg[] {
   const id = String(m.uuid ?? `claude:${++n}`)
   const parent = (m.parent_tool_use_id as string | null) ?? null
+  const timestamp = parseTimestamp(m.timestamp)
   if (m.type === 'system') {
     if (m.subtype === 'init')
       return [
@@ -41,7 +52,8 @@ export function claudeEvents(m: Native): AgentMsg[] {
           id: `${id}:${i}`,
           parent,
           text: String(b.text),
-          replaceLive: true
+          replaceLive: true,
+          ...(timestamp !== undefined ? { timestamp } : {})
         })
       if (b.type === 'tool_use')
         result.push({
@@ -82,7 +94,8 @@ export function claudeEvents(m: Native): AgentMsg[] {
         type: 'user',
         id: `${id}:0`,
         text: said,
-        ...(typeof m.uuid === 'string' ? { point: m.uuid } : {})
+        ...(typeof m.uuid === 'string' ? { point: m.uuid } : {}),
+        ...(timestamp !== undefined ? { timestamp } : {})
       })
     return result
   }
