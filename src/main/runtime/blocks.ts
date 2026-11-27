@@ -33,11 +33,8 @@ export function catalogPath(python: string): string | null {
   return [join(dir, CATALOG), join(dir, '..', CATALOG)].find((p) => existsSync(p)) ?? null
 }
 
-let cached: { path: string; catalog: Catalog } | null = null
 export function readCatalog(path: string): Catalog {
-  if (cached?.path !== path)
-    cached = { path, catalog: JSON.parse(inflateSync(readFileSync(path)).toString('utf8')) }
-  return cached.catalog
+  return JSON.parse(inflateSync(readFileSync(path)).toString('utf8'))
 }
 
 const valuesOf = (s: RawState): string[] =>

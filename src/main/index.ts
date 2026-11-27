@@ -7,12 +7,13 @@ import { PythonBridge } from './engine/bridge'
 import { JobService } from './engine/jobs'
 import { buildDir, draftMinecraftVersion, listBuilds, ProjectService } from './workspace/projects'
 import { disposeWorldPool, handleProtocols, registerSchemes } from './app/protocols'
-import { existsSync, constants } from 'fs'
+import { existsSync, constants, readFileSync, statSync, writeFileSync } from 'fs'
 import { access, readFile, stat } from 'fs/promises'
 import { appendGist, ReviewQueue, writeAtomic } from './workspace/review'
 import { getSettings, projectSettings, pythonEnv, resolved, setSettings } from './app/settings'
 import { loadDevEnv } from './app/dev-env'
 import { startMcp, type McpDeps } from './agent/mcp'
+import { batchDeltas } from './agent/delta-batch'
 import { agentResources } from './agent/agent-resources'
 import { VariantService } from './agent/variants'
 import { startUpdater } from './app/updater'
@@ -185,18 +186,19 @@ const agentDeps = {
   tools: toolDeps
 }
 let authState = ''
+const streamed = batchDeltas(broadcast)
 const agent = new ProviderAgent(
   {
     ...agentDeps,
     emit: (channel, payload) => {
-      broadcast(channel, payload)
+      streamed(channel, payload)
       const { thread, data } = payload as { thread: string | null; data: unknown }
       if (channel === 'agent:state' && thread === null) {
         const state = data as { provider: string; auth: string | null; error: string | null }
         const next = JSON.stringify([state.provider, state.auth, state.error])
         if (authState !== next) {
           authState = next
-          availability.invalidate()
+          availability.invalidateAi()
         }
       }
     }
@@ -207,7 +209,7 @@ const agent = new ProviderAgent(
 const variants = new VariantService(
   (lane, emit) => agent.lane(lane, emit),
   () => agent.selected,
-  broadcast,
+  streamed,
   () => getSettings().variantCap
 )
 
@@ -306,9 +308,36 @@ const diagnosticEnv = (s: Settings): NodeJS.ProcessEnv => {
       .join(delimiter)
   }
 }
+const fileStamp = (path: string): string => {
+  try {
+    const { size, mtimeMs } = statSync(path)
+    return `${size}:${mtimeMs}`
+  } catch {
+    return '-'
+  }
+}
+const passesFile = (): string => join(app.getPath('userData'), 'availability.json')
 const availability = new AvailabilityService({
   settings: () => resolved(),
   changed: () => broadcast('availability:changed'),
+  // Python, headless Chromium and the pack check cost seconds of CPU: a pass is reused on the next launch
+  // while the app version and these files are unchanged.
+  // shortcut: a development interpreter's pip installs don't touch python.exe; Settings → re-check covers it.
+  fingerprint: (requirement, s) =>
+    requirement === 'engine' || requirement === 'browser'
+      ? [
+          app.getVersion(),
+          fileStamp(s.python),
+          fileStamp(join(s.runtime, 'runtime.json')),
+          fileStamp(s.browser)
+        ].join()
+      : requirement === 'pack'
+        ? [app.getVersion(), fileStamp(s.pack)].join()
+        : undefined,
+  store: {
+    read: () => JSON.parse(readFileSync(passesFile(), 'utf8')),
+    write: (passes) => writeFileSync(passesFile(), JSON.stringify(passes))
+  },
   probe: async (requirement, s) => {
     switch (requirement) {
       case 'workspace':
@@ -404,7 +433,9 @@ const saveSettings = (s: Settings, checked = false): Settings => {
     agentAllow: old.workspace === next.workspace ? getSettings().agentAllow : {}
   })
   applyTheme()
-  availability.invalidate(true, true)
+  // paths and the Minecraft version key every check; the provider settings key the AI check
+  if (changed) availability.invalidate(true, true)
+  else if (providerChanged) broadcast('availability:changed')
   const now = resolved()
   if (providerChanged || changed) agent.select()
   if (changed) disposeBridges()
@@ -567,10 +598,11 @@ app.whenReady().then(() => {
   app.on('browser-window-created', (_, w) => optimizer.watchWindowShortcuts(w))
   handleProtocols()
   registerIpc()
-  void projects.watch(resolved().workspace)
   applyTheme()
   nativeTheme.on('updated', paintChrome) // 'system' follows the OS while the app runs
   createWindow()
+  // the watcher's first scan of builds/ waits for the window to paint; the renderer asks for the list itself
+  state.win?.on('ready-to-show', () => void projects.watch(resolved().workspace))
   const mcp = startMcp(toolDeps, () => agentResources(resolved()).instructions)
   startUpdater((s) => broadcast('updater:state', s))
   app.on('will-quit', () => {

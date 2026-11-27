@@ -38,6 +38,10 @@ export function readMinecraftVersion(path: string): string {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return DEFAULT_MINECRAFT_VERSION
     throw error
   }
+  return minecraftVersionOf(content)
+}
+
+function minecraftVersionOf(content: string): string {
   const value = JSON.parse(content)?.minecraftVersion
   if (typeof value !== 'string' || !isMinecraftVersion(value))
     throw new Error('This project or draft uses an unsupported Minecraft version')
@@ -57,8 +61,17 @@ export function draftMinecraftVersion(repo: string, path: string): string {
 /** Where a draft's (0, 0, 0) sits in build coordinates: the engine records it in <stem>.minecraft.json. */
 export function draftOrigin(repo: string, path: string): [number, number, number] | undefined {
   try {
-    const sidecar = toolPath(repo, path.replace(/\.litematic$/, '.minecraft.json'))
-    const origin = JSON.parse(readFileSync(sidecar, 'utf8'))?.origin
+    return originOf(
+      readFileSync(toolPath(repo, path.replace(/\.litematic$/, '.minecraft.json')), 'utf8')
+    )
+  } catch {
+    return undefined
+  }
+}
+
+function originOf(content: string): [number, number, number] | undefined {
+  try {
+    const origin = JSON.parse(content)?.origin
     return Array.isArray(origin) && origin.length === 3 && origin.every(Number.isInteger)
       ? (origin as [number, number, number])
       : undefined
@@ -139,17 +152,29 @@ async function summary(repo: string, name: string): Promise<BuildSummary> {
   const files = await readdir(out, { withFileTypes: true }).catch(() => [])
   const versions: BuildSummary['versions'] = []
   let sheet: { path: string; mtime: number } | undefined
+  // one link check for out/; a sidecar is read only when readdir lists it as a plain file (never a link)
+  const outInside = listedVersion(() => toolPath(repo, rel('out'))) !== undefined
+  const plain = new Set(files.filter((f) => f.isFile()).map((f) => f.name))
   await Promise.all(
     files.map(async (f) => {
       if (f.isFile() && f.name.endsWith('.litematic')) {
-        const s = await stat(join(out, f.name))
-        const path = rel('out', f.name)
+        const sidecar = f.name.replace(/\.litematic$/, '.minecraft.json')
+        const [s, meta] = await Promise.all([
+          stat(join(out, f.name)),
+          outInside && plain.has(sidecar)
+            ? readFile(join(out, sidecar), 'utf8').catch(() => undefined)
+            : null
+        ])
         versions.push({
-          path,
+          path: rel('out', f.name),
           mtime: s.mtimeMs,
           size: s.size,
-          minecraftVersion: listedVersion(() => draftMinecraftVersion(repo, path)),
-          origin: draftOrigin(repo, path)
+          minecraftVersion: !outInside
+            ? undefined
+            : meta === null
+              ? DEFAULT_MINECRAFT_VERSION
+              : listedVersion(() => minecraftVersionOf(meta ?? '')),
+          origin: meta ? originOf(meta) : undefined
         })
       } else if (f.isDirectory() && !f.name.startsWith('.')) {
         const s = await stat(join(out, f.name, 'sheet.png')).catch(() => null)

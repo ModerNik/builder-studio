@@ -4,8 +4,7 @@
 // - the embedded agent's in-process server (agent.ts): show_in_viewer, show_sheet, status, request_review, log_round.
 // request_review waits until the user saves or declines the round.
 import { createServer, type Server } from 'http'
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { MCP_PORT, type ReviewRequest, type SavedRound } from '@shared/api'
 
@@ -111,9 +110,24 @@ const INSTRUCTIONS =
   'Python command and the build workflow. Then use show and sheet to put results in front of the user, status to ' +
   'see what they have open, and request_review to get their pick and notes on variants.'
 
-function tools(d: McpDeps, guide: () => string): McpServer {
+// The MCP SDK (and express, hono, ajv under it) loads on the first client request, not at app start
+let sdk:
+  | Promise<
+      [
+        typeof import('@modelcontextprotocol/sdk/server/mcp.js'),
+        typeof import('@modelcontextprotocol/sdk/server/streamableHttp.js')
+      ]
+    >
+  | undefined
+const loadSdk = (): NonNullable<typeof sdk> =>
+  (sdk ??= Promise.all([
+    import('@modelcontextprotocol/sdk/server/mcp.js'),
+    import('@modelcontextprotocol/sdk/server/streamableHttp.js')
+  ]))
+
+function tools(McpServerClass: typeof McpServer, d: McpDeps, guide: () => string): McpServer {
   const h = handlers(d)
-  const s = new McpServer(
+  const s = new McpServerClass(
     { name: 'builder-studio', version: '0.3.0' },
     { instructions: INSTRUCTIONS }
   )
@@ -171,15 +185,16 @@ export function startMcp(d: McpDeps, guide: () => string): Server {
       res.writeHead(404).end()
       return
     }
-    const server = tools(d, guide)
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
-    res.on('close', () => {
-      void transport.close()
-      void server.close()
-    })
-    server
-      .connect(transport)
-      .then(() => transport.handleRequest(req, res))
+    loadSdk()
+      .then(([{ McpServer }, { StreamableHTTPServerTransport }]) => {
+        const server = tools(McpServer, d, guide)
+        const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined })
+        res.on('close', () => {
+          void transport.close()
+          void server.close()
+        })
+        return server.connect(transport).then(() => transport.handleRequest(req, res))
+      })
       .catch((e) => {
         if (!res.headersSent) res.writeHead(500).end(String(e))
       })

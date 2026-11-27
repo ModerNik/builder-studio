@@ -312,7 +312,7 @@ async function loadRegionBytes(
     regionMem.set(snap.path, cached)
     return cached
   }
-  const bytes = new Uint8Array(await readFile(snap.path))
+  const bytes: Uint8Array = await readFile(snap.path) // a Buffer is a Uint8Array: no second copy
   const entry = { stamp: snap.stamp, bytes }
   if (!remember) return entry
   const replaced = regionMem.get(snap.path)
@@ -372,7 +372,7 @@ export async function readLowresTile(
 
   const tilePath = `${snap.path}.${snap.stamp}.wlo`
   if (existsSync(tilePath)) {
-    return new Uint8Array(await readFile(tilePath))
+    return await readFile(tilePath)
   }
   const inflight = lowresInflight.get(tilePath)
   if (inflight) return inflight

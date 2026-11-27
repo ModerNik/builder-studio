@@ -10,21 +10,12 @@ import { existsSync, readdirSync, readFileSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
 import { join } from 'path'
-import {
-  createSdkMcpServer,
-  deleteSession,
-  forkSession,
-  getSessionMessages,
-  listSessions,
-  query,
-  renameSession,
-  tagSession,
-  tool,
-  type CanUseTool,
-  type HookCallback,
-  type PermissionMode,
-  type Query,
-  type SDKUserMessage
+import type {
+  CanUseTool,
+  HookCallback,
+  PermissionMode,
+  Query,
+  SDKUserMessage
 } from '@anthropic-ai/claude-agent-sdk'
 import type {
   AgentCommand,
@@ -192,6 +183,10 @@ export interface AgentDeps {
   checkpoint?(session: string, turn: string): void
 }
 
+type Sdk = typeof import('@anthropic-ai/claude-agent-sdk')
+let sdkLoad: Promise<Sdk> | undefined
+// the Agent SDK loads on the first chat or session list, not at app start
+const sdk = (): Promise<Sdk> => (sdkLoad ??= import('@anthropic-ai/claude-agent-sdk'))
 export class AgentService {
   state: AgentState = OFF
   private q: Query | null = null
@@ -222,13 +217,15 @@ export class AgentService {
   async send(a: AgentSend): Promise<string> {
     if (a.provider !== 'claude' || (a.resume && a.resume.provider !== 'claude'))
       throw new Error('Claude requires a Claude session')
+    // awaited before the live check, so two quick sends still see each other's session
+    const lib = await sdk()
     const live =
       this.q &&
       this.state.build === a.build &&
       (a.resume === null || a.resume.id === this.state.sessionId)
     const content = this.content(a)
     if (!live) {
-      const q = this.start(a)
+      const q = this.start(a, lib)
       // the account is known before any prompt is sent: a subscription login never gets a turn
       const { apiKeySource } = await q.accountInfo()
       if (q !== this.q) throw new Error('Agent start cancelled')
@@ -276,7 +273,7 @@ export class AgentService {
     ]
   }
 
-  private start(a: AgentSend): Query {
+  private start(a: AgentSend, { createSdkMcpServer, query, tool }: Sdk): Query {
     this.close()
     const s = this.d.projectSettings?.(a.build) ?? this.d.settings()
     if (!s.workspace) throw new Error('set the workspace in Settings first')
@@ -417,9 +414,11 @@ export class AgentService {
           if (!this.tagged && id) {
             this.tagged = true
             // lanes get their own tag, so the Agent panel's session list stays the build's main line
-            await tagSession(id, this.lane ? `${build}#${this.lane}` : build, { dir: repo }).catch(
-              (e) => console.error(`tagSession: ${e}`)
+            await (
+              await sdk()
             )
+              .tagSession(id, this.lane ? `${build}#${this.lane}` : build, { dir: repo })
+              .catch((e) => console.error(`tagSession: ${e}`))
           }
           const u = await q.getContextUsage({ detail: 'summary' }).catch(() => null)
           if (u && q === this.q)
@@ -614,7 +613,9 @@ export class AgentService {
   }
 
   async sessions(build: string): Promise<AgentSession[]> {
-    const all = await listSessions({ dir: this.d.settings().workspace, includeWorktrees: false })
+    const all = await (
+      await sdk()
+    ).listSessions({ dir: this.d.settings().workspace, includeWorktrees: false })
     return all
       .filter((s) => s.tag === build)
       .sort((a, b) => b.lastModified - a.lastModified)
@@ -628,12 +629,13 @@ export class AgentService {
   }
 
   async history(id: string): Promise<AgentMsg[]> {
-    const msgs = await getSessionMessages(id, { dir: this.d.settings().workspace })
+    const msgs = await (await sdk()).getSessionMessages(id, { dir: this.d.settings().workspace })
     return msgs.flatMap((m) => claudeEvents({ ...m }))
   }
 
   async fork(id: string, tag: string, point?: string): Promise<string> {
     const dir = this.d.settings().workspace
+    const { forkSession, getSessionMessages, tagSession } = await sdk()
     let upToMessageId: string | undefined
     if (point) {
       const messages = await getSessionMessages(id, { dir })
@@ -650,7 +652,11 @@ export class AgentService {
   }
 
   async rewindPoints(id: string): Promise<AgentRewindPoint[]> {
-    const messages = await getSessionMessages(id, { dir: this.d.settings().workspace })
+    const messages = await (
+      await sdk()
+    ).getSessionMessages(id, {
+      dir: this.d.settings().workspace
+    })
     return messages.flatMap((m) =>
       claudeEvents({ ...m }).flatMap((e) =>
         e.type === 'user' ? [{ id: m.uuid, text: e.text }] : []
@@ -660,6 +666,7 @@ export class AgentService {
 
   async rewind(id: string, tag: string, point: string): Promise<string | null> {
     const dir = this.d.settings().workspace
+    const { forkSession, getSessionMessages, tagSession } = await sdk()
     const messages = await getSessionMessages(id, { dir })
     const at = messages.findIndex(
       (m) => m.uuid === point && claudeEvents({ ...m }).some((e) => e.type === 'user')
@@ -671,12 +678,12 @@ export class AgentService {
     return sessionId
   }
 
-  rename(id: string, title: string): Promise<void> {
-    return renameSession(id, title, { dir: this.d.settings().workspace })
+  async rename(id: string, title: string): Promise<void> {
+    return (await sdk()).renameSession(id, title, { dir: this.d.settings().workspace })
   }
 
-  remove(id: string): Promise<void> {
-    return deleteSession(id, { dir: this.d.settings().workspace })
+  async remove(id: string): Promise<void> {
+    return (await sdk()).deleteSession(id, { dir: this.d.settings().workspace })
   }
 
   /** The live session's skills and slash commands; before it starts, the skills on disk. */
