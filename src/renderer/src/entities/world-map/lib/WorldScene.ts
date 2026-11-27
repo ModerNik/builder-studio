@@ -1,5 +1,5 @@
 // BlueMap-inspired Three.js scene, fog-free atmosphere, lighting, smooth 3D/Iso/2D cameras,
-// demand-driven rAF scheduling, and fast heightfield terrain picking.
+// demand-driven rAF scheduling, continuous paced streaming, and fast heightfield terrain picking.
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { WorldDimension } from '@shared/api'
@@ -9,6 +9,10 @@ import { raymarchHeightfield } from './raymarch'
 import { WorldStreamer } from './WorldStreamer'
 
 const K = Math.PI
+const UP = new THREE.Vector3(0, 1, 0)
+const MOVING_STREAM_INTERVAL_MS = 200
+const IDLE_STREAM_INTERVAL_MS = 120
+const MAX_PIXEL_RATIO = 1.5
 
 interface SkyPalette {
   zenith: number
@@ -93,8 +97,12 @@ export class WorldScene {
   private sky = createSkyDome()
   private raycaster = new THREE.Raycaster()
   private fwdScratch = new THREE.Vector3()
+  private rightScratch = new THREE.Vector3()
+  private moveScratch = new THREE.Vector3()
+  private ndcScratch = new THREE.Vector2()
   private aspect = 1
   private raf = 0
+  private pumpTimer: ReturnType<typeof setTimeout> | null = null
   private dirty = true
   private disposed = false
   private dim: WorldDimension = 'overworld'
@@ -109,6 +117,9 @@ export class WorldScene {
   private lastStreamMode: CameraMode | null = null
   private controlsActive = false
   private dampingUntil = 0
+  private mountSkipFrames = 0
+  private orientationPending = false
+  private lastQuat: Orientation = [Number.NaN, Number.NaN, Number.NaN, Number.NaN]
 
   // Smooth fly-to animation target
   private anim: {
@@ -127,15 +138,18 @@ export class WorldScene {
   }
   private onDomPointerUp = (): void => {
     this.controlsActive = false
-    this.dampingUntil = performance.now() + 350
+    this.dampingUntil = Math.max(this.dampingUntil, performance.now() + 260)
     this.wake()
   }
   private onDomWheel = (): void => {
-    this.dampingUntil = performance.now() + 350
+    this.dampingUntil = Math.max(this.dampingUntil, performance.now() + 260)
     this.wake()
   }
   private onVisibilityChange = (): void => {
-    if (!document.hidden && (this.dirty || this.streamer.hasPendingMounts() || this.streamer.needsPump())) {
+    if (
+      !document.hidden &&
+      (this.dirty || this.streamer.hasPendingMounts() || this.streamer.needsPump())
+    ) {
       this.wake()
     }
   }
@@ -149,12 +163,16 @@ export class WorldScene {
     this.streamer.setDeferredMounts(true)
 
     this.gl = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    this.gl.setPixelRatio(Math.min(window.devicePixelRatio || 1, MAX_PIXEL_RATIO))
+    this.gl.localClippingEnabled = true
     this.gl.outputColorSpace = THREE.LinearSRGBColorSpace
     this.gl.domElement.style.display = 'block'
     this.gl.domElement.style.width = '100%'
     this.gl.domElement.style.height = '100%'
     container.appendChild(this.gl.domElement)
+
+    this.lights.matrixAutoUpdate = false
+    this.lights.updateMatrix()
 
     this.scene.add(this.sky.mesh)
     this.scene.add(this.lights)
@@ -164,7 +182,7 @@ export class WorldScene {
 
     this.controls = new OrbitControls(this.perspective, this.gl.domElement)
     this.controls.enableDamping = true
-    this.controls.dampingFactor = 0.1
+    this.controls.dampingFactor = 0.16
     this.controls.screenSpacePanning = false
     this.controls.maxPolarAngle = Math.PI * 0.485
     this.controls.minDistance = 8
@@ -178,8 +196,7 @@ export class WorldScene {
     }
     this.controls.addEventListener('change', () => {
       this.dirty = true
-      this.dampingUntil = Math.max(this.dampingUntil, performance.now() + 260)
-      this.emitOrientation()
+      this.orientationPending = true
       this.wake()
     })
 
@@ -193,6 +210,7 @@ export class WorldScene {
     this.perspective.position.set(110, 145, 110)
     this.controls.target.set(0, 66, 0)
     this.controls.update()
+    this.emitOrientationIfChanged()
 
     this.applyAtmosphere()
     this.resize()
@@ -208,8 +226,16 @@ export class WorldScene {
     this.wake()
   }
 
+  private clearPumpTimer(): void {
+    if (this.pumpTimer !== null) {
+      clearTimeout(this.pumpTimer)
+      this.pumpTimer = null
+    }
+  }
+
   private wake(): void {
     if (this.disposed || this.raf) return
+    this.clearPumpTimer()
     this.lastTime = 0
     this.raf = requestAnimationFrame(this.loop)
   }
@@ -238,10 +264,15 @@ export class WorldScene {
       const dir = (intensity: number, x: number, y: number, z: number): THREE.DirectionalLight => {
         const l = new THREE.DirectionalLight(0xffffff, intensity * K)
         l.position.set(x, y, z)
+        l.matrixAutoUpdate = false
+        l.updateMatrix()
         return l
       }
+      const amb = new THREE.AmbientLight(0xffffff, 0.56 * K)
+      amb.matrixAutoUpdate = false
+      amb.updateMatrix()
       this.lights.add(
-        new THREE.AmbientLight(0xffffff, 0.56 * K),
+        amb,
         dir(0.44, 0, 1, 0),
         dir(0.22, 0, 0, 1),
         dir(0.22, 0, 0, -1),
@@ -256,9 +287,14 @@ export class WorldScene {
         this.dim === 'nether' ? 0x3b1514 : this.dim === 'end' ? 0x201833 : 0x6f7568
       const sun = new THREE.DirectionalLight(sunColor, 0.62 * K)
       sun.position.set(-220, 320, -160)
+      sun.matrixAutoUpdate = false
+      sun.updateMatrix()
       const hemi = new THREE.HemisphereLight(skyColor, groundColor, 0.58 * K)
+      hemi.matrixAutoUpdate = false
+      hemi.updateMatrix()
       this.lights.add(hemi, sun)
     }
+    this.lights.updateMatrixWorld(true)
   }
 
   resize(): void {
@@ -317,7 +353,7 @@ export class WorldScene {
     this.controls.target.copy(target)
     this.controls.update()
     this.applyAtmosphere()
-    this.emitOrientation()
+    this.emitOrientationIfChanged()
     this.invalidate()
   }
 
@@ -359,7 +395,7 @@ export class WorldScene {
         .add(new THREE.Vector3(0.65, 0.72, 0.65).normalize().multiplyScalar(distance))
     }
     this.controls.update()
-    this.emitOrientation()
+    this.emitOrientationIfChanged()
     this.updateStreaming(true)
     this.invalidate()
   }
@@ -374,7 +410,7 @@ export class WorldScene {
     offset.setFromSpherical(sph)
     this.activeCamera.position.copy(this.controls.target).add(offset)
     this.controls.update()
-    this.emitOrientation()
+    this.orientationPending = true
     this.invalidate()
   }
 
@@ -391,7 +427,7 @@ export class WorldScene {
       .multiplyScalar(dist)
     this.activeCamera.position.copy(this.controls.target).add(v)
     this.controls.update()
-    this.emitOrientation()
+    this.orientationPending = true
     this.invalidate()
   }
 
@@ -410,11 +446,11 @@ export class WorldScene {
   pickTerrain(clientX: number, clientY: number, exactHires = false): WorldCursor | null {
     const rect = this.gl.domElement.getBoundingClientRect()
     if (!rect.width || !rect.height) return null
-    const ndc = new THREE.Vector2(
+    this.ndcScratch.set(
       ((clientX - rect.left) / rect.width) * 2 - 1,
       -((clientY - rect.top) / rect.height) * 2 + 1
     )
-    this.raycaster.setFromCamera(ndc, this.activeCamera)
+    this.raycaster.setFromCamera(this.ndcScratch, this.activeCamera)
     const ray = this.raycaster.ray
 
     // 1. On click/drag, pre-filter hires chunks by bounding sphere before triangle testing (typically 1-4 chunks)
@@ -450,7 +486,7 @@ export class WorldScene {
     if (hit) return hit
 
     // 3. Fallback horizontal ground plane at current target Y
-    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -this.controls.target.y)
+    const plane = new THREE.Plane(UP, -this.controls.target.y)
     const pt = new THREE.Vector3()
     if (ray.intersectPlane(plane, pt)) {
       const x = Math.floor(pt.x)
@@ -468,10 +504,18 @@ export class WorldScene {
     return this.activeCamera.position.distanceTo(this.controls.target)
   }
 
-  private emitOrientation(): void {
+  /** Emit camera quaternion only when rotation actually changed (skips pure panning/zooming). */
+  private emitOrientationIfChanged(): void {
+    this.orientationPending = false
     if (!this.onCameraChange) return
     const q = this.activeCamera.quaternion
-    this.onCameraChange([q.x, q.y, q.z, q.w])
+    const [lx, ly, lz, lw] = this.lastQuat
+    if (!Number.isNaN(lx)) {
+      const dot = Math.abs(q.x * lx + q.y * ly + q.z * lz + q.w * lw)
+      if (1 - dot < 1e-6) return
+    }
+    this.lastQuat = [q.x, q.y, q.z, q.w]
+    this.onCameraChange(this.lastQuat)
   }
 
   private hasMovementKeys(): boolean {
@@ -485,10 +529,10 @@ export class WorldScene {
     fwd.y = 0
     if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1)
     fwd.normalize()
-    const right = new THREE.Vector3().crossVectors(fwd, new THREE.Vector3(0, 1, 0)).normalize()
+    const right = this.rightScratch.crossVectors(fwd, UP).normalize()
     const boost = this.keys.has('shift') ? 2.5 : 1
     const speed = Math.max(24, this.effectiveDistance() * 0.9) * boost * dt
-    const move = new THREE.Vector3()
+    const move = this.moveScratch.set(0, 0, 0)
     if (this.keys.has('w')) move.addScaledVector(fwd, speed)
     if (this.keys.has('s')) move.addScaledVector(fwd, -speed)
     if (this.keys.has('d')) move.addScaledVector(right, speed)
@@ -508,8 +552,8 @@ export class WorldScene {
       this.streamer.needsPump() ||
       this.lastStreamMode !== this.cameraMode ||
       Number.isNaN(this.lastStreamX) ||
-      Math.hypot(tx - this.lastStreamX, tz - this.lastStreamZ) >= 4 ||
-      Math.abs(dist - this.lastStreamDist) / Math.max(1, this.lastStreamDist) >= 0.05
+      Math.hypot(tx - this.lastStreamX, tz - this.lastStreamZ) >= 8 ||
+      Math.abs(dist - this.lastStreamDist) / Math.max(1, this.lastStreamDist) >= 0.06
 
     if (!moved) return
     this.lastStreamX = tx
@@ -535,19 +579,51 @@ export class WorldScene {
       this.controls.target.lerpVectors(this.anim.startTarget, this.anim.endTarget, ease)
       if (this.anim.t >= 1) this.anim = null
       this.dirty = true
+      this.orientationPending = true
     }
 
-    if (this.applyKeyboardFly(dt)) this.dirty = true
+    const flew = this.applyKeyboardFly(dt)
+    if (flew) this.dirty = true
     const controlsChanged = this.controls.update()
     if (controlsChanged) this.dirty = true
 
-    // Mount completed worker meshes with a 4ms per-frame budget for smooth 60fps streaming
-    if (this.streamer.flushMounts(4)) {
-      this.dirty = true
+    if (this.orientationPending) {
+      this.emitOrientationIfChanged()
     }
 
-    // Throttle streaming sweeps to ~10 Hz while moving, or immediately when a worker slot opens
-    if (this.streamer.needsPump() || now - this.lastStreamAt > 100) {
+    const isMoving =
+      this.controlsActive ||
+      flew ||
+      this.hasMovementKeys() ||
+      !!this.anim ||
+      controlsChanged ||
+      now < this.dampingUntil
+
+    // Continuous paced GPU mounting: keep loading while moving, but limit to <=1 mesh with breathing frames
+    if (this.streamer.hasPendingMounts()) {
+      if (this.mountSkipFrames > 0) {
+        this.mountSkipFrames--
+      } else {
+        const budgetMs = isMoving ? 1.5 : 2.5
+        const maxItems = isMoving ? 1 : 2
+        if (this.streamer.flushMounts(budgetMs, maxItems)) {
+          this.dirty = true
+          if (this.streamer.lastFlushHeavy()) {
+            this.mountSkipFrames = isMoving ? 2 : 1
+          } else if (isMoving) {
+            this.mountSkipFrames = 1
+          }
+        }
+      }
+    }
+
+    // Continuous streaming sweeps with a strict minimum interval so needsPump() never runs back-to-back every frame
+    const streamInterval = isMoving ? MOVING_STREAM_INTERVAL_MS : IDLE_STREAM_INTERVAL_MS
+    const elapsedSinceStream = now - this.lastStreamAt
+    if (
+      (this.streamer.needsPump() && elapsedSinceStream >= streamInterval) ||
+      elapsedSinceStream >= MOVING_STREAM_INTERVAL_MS
+    ) {
       this.lastStreamAt = now
       this.updateStreaming(false)
     }
@@ -558,25 +634,26 @@ export class WorldScene {
       this.gl.render(this.scene, this.activeCamera)
     }
 
-    // Sleep rAF completely when idle so the app uses 0% CPU/GPU at rest
-    const keepRunning =
-      !document.hidden &&
-      (this.dirty ||
-        !!this.anim ||
-        this.hasMovementKeys() ||
-        this.controlsActive ||
-        controlsChanged ||
-        now < this.dampingUntil ||
-        this.streamer.hasPendingMounts() ||
-        this.streamer.needsPump())
+    // Keep rAF running while animating/moving/mounting; otherwise defer pump check to a lightweight timer
+    if (document.hidden) return
 
-    if (keepRunning) {
+    const keepRaf = this.dirty || isMoving || this.streamer.hasPendingMounts()
+
+    if (keepRaf) {
       this.raf = requestAnimationFrame(this.loop)
+    } else if (this.streamer.needsPump()) {
+      const waitMs = Math.max(16, IDLE_STREAM_INTERVAL_MS - (now - this.lastStreamAt))
+      this.clearPumpTimer()
+      this.pumpTimer = setTimeout(() => {
+        this.pumpTimer = null
+        this.wake()
+      }, waitMs)
     }
   }
 
   dispose(): void {
     this.disposed = true
+    this.clearPumpTimer()
     if (this.raf) cancelAnimationFrame(this.raf)
     this.raf = 0
     this.gl.domElement.removeEventListener('pointerdown', this.onDomPointerDown)

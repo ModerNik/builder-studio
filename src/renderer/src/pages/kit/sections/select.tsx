@@ -1,4 +1,5 @@
 import type { ComponentProps, ReactElement } from 'react'
+import { Compass, FilePen, Shield, Zap } from 'lucide-react'
 import {
   Select,
   SelectContent,
@@ -15,7 +16,10 @@ export const meta = { group: 'Forms', title: 'Select' }
 
 const versions = Array.from({ length: 30 }, (_, i) => `v${30 - i}`)
 
-function Versions({ className, ...props }: { className?: string } & ComponentProps<typeof Select>): ReactElement {
+function Versions({
+  className,
+  ...props
+}: { className?: string } & ComponentProps<typeof Select>): ReactElement {
   return (
     <Select {...props}>
       <SelectTrigger aria-label="Version" className={className}>
@@ -65,14 +69,59 @@ export default function SelectSection(): ReactElement {
         <Specimen label="disabled">
           <Versions defaultValue="v3" disabled />
         </Specimen>
-        <Specimen label="sm">
+        <Specimen label="sm (subtle variant)">
           <Select defaultValue="a">
-            <SelectTrigger size="sm" aria-label="Small">
+            <SelectTrigger size="sm" variant="subtle" aria-label="Small subtle">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="a">Blocks</SelectItem>
               <SelectItem value="b">Parts</SelectItem>
+            </SelectContent>
+          </Select>
+        </Specimen>
+        <Specimen label="ghost with icons & descriptions">
+          <Select defaultValue="auto">
+            <SelectTrigger
+              size="sm"
+              variant="ghost"
+              leading={<Zap aria-hidden className="size-3.5 text-warning-text" />}
+              aria-label="Mode"
+              className="w-auto text-warning-text"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="w-64">
+              <SelectItem
+                value="default"
+                icon={<Shield aria-hidden className="size-3.5" />}
+                description="Asks before each edit"
+              >
+                Manual
+              </SelectItem>
+              <SelectItem
+                value="acceptEdits"
+                icon={<FilePen aria-hidden className="size-3.5" />}
+                description="Runs edits without asking"
+              >
+                Accept edits
+              </SelectItem>
+              <SelectItem
+                value="auto"
+                icon={<Zap aria-hidden className="size-3.5 text-warning-text" />}
+                description="Runs every call without asking"
+                className="text-warning-text"
+              >
+                Auto
+              </SelectItem>
+              <SelectItem
+                value="plan"
+                icon={<Compass aria-hidden className="size-3.5 text-accent-text" />}
+                description="Plans before editing"
+                className="text-accent-text"
+              >
+                Plan
+              </SelectItem>
             </SelectContent>
           </Select>
         </Specimen>
@@ -126,8 +175,8 @@ export default function SelectSection(): ReactElement {
         </Specimen>
       </Specimens>
       <Guidance>
-        Use Select instead of a native select (lint warns on native selects in app screens). Type to jump to
-        an option; for long or searchable lists use Combobox.
+        Use Select instead of a native select (lint warns on native selects in app screens). Type to
+        jump to an option; for long or searchable lists use Combobox.
       </Guidance>
     </div>
   )

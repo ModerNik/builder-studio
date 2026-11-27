@@ -6,15 +6,17 @@ import { cn } from '@/shared/lib/utils'
 import type { ViewName } from '@/entities/viewer/model/look'
 import {
   CAMERA_VIEWS,
+  GIZMO_SIZE,
+  GIZMO_TURN,
   axisClickView,
   projectAxes,
   type AxisEnd,
   type Orientation
 } from '@/entities/viewer/model/axis-gizmo'
 
-const SIZE = 96 // SVG units; the SVG is 6rem, so one unit is one pixel at the default root size
+const SIZE = GIZMO_SIZE
 const C = SIZE / 2
-const TURN = Math.PI / SIZE // radians of orbit per pixel dragged: across the gizmo is half a turn
+const TURN = GIZMO_TURN
 const CLICK = 4 // pixels of travel under which a press is a click
 const LABELS = new Map(CAMERA_VIEWS.map((item) => [item.view, item.label]))
 const id = (end: AxisEnd): string => `${end.sign > 0 ? '+' : '-'}${end.axis}`

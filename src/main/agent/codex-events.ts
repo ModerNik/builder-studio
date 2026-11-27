@@ -5,14 +5,45 @@ const stringify = (v: unknown): string => (typeof v === 'string' ? v : JSON.stri
 const object = (v: unknown): Record<string, unknown> =>
   v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {}
 
+function parseTimestamp(item: CodexItem): number | undefined {
+  for (const raw of [item.timestamp, item.completedAt, item.createdAt]) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw > 1e12 ? raw : raw * 1000
+    if (typeof raw === 'string' && raw) {
+      const ms = Date.parse(raw)
+      if (!Number.isNaN(ms)) return ms
+    }
+  }
+  return undefined
+}
+
 /** Live completions and stored items use the same mapping, so reopening a session keeps tool results. */
 export function codexEvents(item: CodexItem, completed: boolean): AgentMsg[] {
   const { id, type } = item
+  const timestamp = parseTimestamp(item)
   if (type === 'agentMessage')
-    return completed ? [{ type: 'text', id, text: String(item.text ?? ''), parent: null }] : []
+    return completed
+      ? [
+          {
+            type: 'text',
+            id,
+            text: String(item.text ?? ''),
+            parent: null,
+            ...(timestamp !== undefined ? { timestamp } : {})
+          }
+        ]
+      : []
   if (type === 'plan')
     return completed
-      ? [{ type: 'text', id, text: String(item.text ?? ''), parent: null, plan: true }]
+      ? [
+          {
+            type: 'text',
+            id,
+            text: String(item.text ?? ''),
+            parent: null,
+            plan: true,
+            ...(timestamp !== undefined ? { timestamp } : {})
+          }
+        ]
       : []
   if (type === 'userMessage')
     return completed
@@ -23,7 +54,8 @@ export function codexEvents(item: CodexItem, completed: boolean): AgentMsg[] {
             text: (item.content as { type: string; text?: string }[])
               .filter((c) => c.type === 'text')
               .map((c) => c.text)
-              .join('\n')
+              .join('\n'),
+            ...(timestamp !== undefined ? { timestamp } : {})
           }
         ]
       : []

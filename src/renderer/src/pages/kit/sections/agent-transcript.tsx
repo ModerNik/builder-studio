@@ -65,10 +65,22 @@ const QUIZ: AgentQuestion[] = [
   }
 ]
 
+const NOW = Date.now()
 const ITEMS: Item[] = [
   { kind: 'note', id: 'n', text: 'New session · stone_watchtower' },
-  { kind: 'user', id: 'u', text: 'Make the keep taller and give it a darker roof.' },
-  { kind: 'text', id: 't', parent: null, text: 'I will raise the keep and swap the roof.' },
+  {
+    kind: 'user',
+    id: 'u',
+    text: 'Make the keep taller and give it a darker roof.',
+    timestamp: NOW - 5 * 60_000
+  },
+  {
+    kind: 'text',
+    id: 't',
+    parent: null,
+    text: 'I will raise the keep and swap the roof.',
+    timestamp: NOW - 4 * 60_000
+  },
   {
     kind: 'tool',
     id: 'e',
@@ -123,6 +135,7 @@ export default function AgentTranscript(): ReactElement {
           >
             <SystemNote>New session · stone_watchtower</SystemNote>
             <MessageBubble
+              timestamp={NOW - 5 * 60_000}
               attachments={[
                 { path: 'builds/stone_watchtower/attachments/pasted-1730662800.png', url: hero },
                 { path: 'builds/stone_watchtower/refs/gatehouse_notes.md' }
@@ -154,7 +167,7 @@ export default function AgentTranscript(): ReactElement {
             >
               {msgText}
             </MessageBubble>
-            <AssistantMessage>
+            <AssistantMessage timestamp={NOW - 4 * 60_000}>
               {
                 'I raised the keep to **22 blocks** and swapped the roof to `dark_oak_planks` with stairs on the eaves. Lint reports 2 blocks that will fall; want me to fix those next?'
               }

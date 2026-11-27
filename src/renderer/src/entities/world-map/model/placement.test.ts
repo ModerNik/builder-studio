@@ -4,6 +4,7 @@ import {
   boxDimensions,
   boxWithMargin,
   buildBoxFromOrigin,
+  buildClipSlice,
   centeredBox,
   computeGroundStats,
   defaultAnchor,
@@ -69,5 +70,17 @@ describe('world-map placement math', () => {
       }
     }
     expect(defaultAnchor(pruned, 'overworld')).toEqual([4 * 512 + 256, 68, 2 * 512 + 256])
+  })
+
+  it('computes world-space build clip ceilings and cap layers for positive and negative origins', () => {
+    expect(buildClipSlice(68, null, 20)).toBeNull()
+    expect(buildClipSlice(68, 0, 1)).toBeNull()
+    expect(buildClipSlice(68, 19, 20)).toBeNull()
+    expect(buildClipSlice(68, 25, 20)).toBeNull()
+
+    expect(buildClipSlice(68, 0, 20)).toEqual({ worldTopY: 69.001, capLayer: 0 })
+    expect(buildClipSlice(68, 5, 20)).toEqual({ worldTopY: 74.001, capLayer: 5 })
+    expect(buildClipSlice(-40, 3, 20)).toEqual({ worldTopY: -35.999, capLayer: 3 })
+    expect(buildClipSlice(68, -4, 20)).toEqual({ worldTopY: 69.001, capLayer: 0 })
   })
 })

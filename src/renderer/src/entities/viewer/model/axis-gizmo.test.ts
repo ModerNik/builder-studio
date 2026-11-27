@@ -2,6 +2,8 @@ import { expect, test } from 'vitest'
 import { Euler, Quaternion } from 'three'
 import {
   CAMERA_VIEWS,
+  GIZMO_SIZE,
+  GIZMO_TURN,
   axisClickView,
   projectAxes,
   type AxisEnd,
@@ -53,4 +55,8 @@ test('clicking the side the camera already looks from turns to the opposite one'
 test('every camera view has one menu entry', () => {
   expect(CAMERA_VIEWS.map((item) => item.view)).toContain('orbit')
   expect(new Set(CAMERA_VIEWS.map((item) => item.view)).size).toBe(CAMERA_VIEWS.length)
+})
+
+test('dragging across the gizmo orbits by 60 degrees', () => {
+  expect(GIZMO_SIZE * GIZMO_TURN).toBeCloseTo(Math.PI / 3)
 })

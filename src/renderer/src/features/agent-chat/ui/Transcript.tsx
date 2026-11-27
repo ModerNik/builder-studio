@@ -12,6 +12,7 @@ import {
   type ReactElement,
   type ReactNode
 } from 'react'
+import { ArrowDown } from 'lucide-react'
 import type { PermissionAsk, Permit } from '@shared/api'
 import { activity, isBuildRun, jobSummary, type Item } from '@/features/agent-chat/model/transcript'
 import { planRevisions, type PlanRevisionInfo } from '@/features/agent-chat/model/plans'
@@ -91,6 +92,7 @@ export function Transcript(props: TranscriptProps): ReactElement {
   const { items, asks, working = false, empty, children, className } = props
   const box = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  const [scrolledUp, setScrolledUp] = useState(false)
   const activePlanAsk = asks.find((a) => a.tool === 'ExitPlanMode')
   const plans = useMemo(() => planRevisions(items, activePlanAsk), [items, activePlanAsk])
   const openAskIds = useMemo(() => new Set(asks.map((a) => a.id)), [asks])
@@ -102,37 +104,60 @@ export function Transcript(props: TranscriptProps): ReactElement {
   useEffect(() => {
     if (working) void loadDiffView()
   }, [working])
+  const scrollToBottom = (): void => {
+    const el = box.current
+    if (!el) return
+    stick.current = true
+    setScrolledUp(false)
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }
   return (
-    <div
-      ref={box}
-      role="log"
-      aria-label="Conversation"
-      onScroll={(e) => {
-        const el = e.currentTarget
-        stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-      }}
-      className={cn('min-h-0 flex-1 overflow-x-hidden overflow-y-auto', className)}
-    >
-      <div className="mx-auto flex max-w-[68ch] min-w-0 flex-col gap-3 px-3 py-4 wrap-anywhere">
-        {!items.length && !asks.length && !working && empty}
-        <Items
-          {...props}
-          parent={null}
-          planById={plans.byId}
-          activeCodexPlanId={plans.activeCodexPlanId}
-          openAskIds={openAskIds}
-        />
-        {asks.map((a) => (
-          <Ask
-            key={a.id}
-            ask={a}
-            planMeta={a.tool === 'ExitPlanMode' ? plans.activeAsk : undefined}
+    <div className={cn('relative flex min-h-0 flex-1 flex-col overflow-hidden', className)}>
+      <div
+        ref={box}
+        role="log"
+        aria-label="Conversation"
+        onScroll={(e) => {
+          const el = e.currentTarget
+          const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          stick.current = nearBottom
+          setScrolledUp((prev) => (prev === !nearBottom ? prev : !nearBottom))
+        }}
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+      >
+        <div className="mx-auto flex max-w-[68ch] min-w-0 flex-col gap-3 px-3 py-4 wrap-anywhere">
+          {!items.length && !asks.length && !working && empty}
+          <Items
             {...props}
+            parent={null}
+            planById={plans.byId}
+            activeCodexPlanId={plans.activeCodexPlanId}
+            openAskIds={openAskIds}
           />
-        ))}
-        {working && <Working label={activity(items, asks.length)} />}
-        {children}
+          {asks.map((a) => (
+            <Ask
+              key={a.id}
+              ask={a}
+              planMeta={a.tool === 'ExitPlanMode' ? plans.activeAsk : undefined}
+              {...props}
+            />
+          ))}
+          {working && <Working label={activity(items, asks.length)} />}
+          {children}
+        </div>
       </div>
+      {scrolledUp && (
+        <button
+          type="button"
+          onClick={scrollToBottom}
+          aria-label="Scroll to latest messages"
+          className="focus-ring absolute bottom-3 left-1/2 z-sticky inline-flex -translate-x-1/2 cursor-pointer items-center gap-1.5 rounded-full border border-border-default bg-surface-overlay px-3 py-1 text-xs font-medium text-fg-secondary shadow-md transition-colors duration-fast ease-standard can-hover:bg-surface-hover can-hover:text-fg"
+        >
+          {working && <span aria-hidden className="working-dot" />}
+          <ArrowDown aria-hidden className="size-3.5" />
+          Latest messages
+        </button>
+      )}
     </div>
   )
 }
@@ -174,6 +199,7 @@ function Items(
         return (
           <MessageBubble
             key={i.id}
+            timestamp={i.timestamp}
             attachments={i.attachments?.map((path): Attachment => ({ path, url: fileUrl?.(path) }))}
             onEdit={i.point && onEditMessage ? () => onEditMessage(i) : undefined}
             onFork={i.point && onForkMessage ? () => onForkMessage(i) : undefined}
@@ -208,7 +234,7 @@ function Items(
       }
       if (i.kind === 'text')
         return (
-          <AssistantMessage key={i.id} streaming={i.live}>
+          <AssistantMessage key={i.id} streaming={i.live} timestamp={i.timestamp}>
             {i.text}
           </AssistantMessage>
         )

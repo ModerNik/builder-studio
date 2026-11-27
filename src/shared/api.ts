@@ -840,7 +840,7 @@ export interface AgentSession {
 
 /** Provider-independent events. Native SDK/protocol payloads stay in main. */
 export type AgentMsg =
-  | { type: 'user'; id: string; text: string; point?: string }
+  | { type: 'user'; id: string; text: string; point?: string; timestamp?: number }
   | {
       type: 'text'
       id: string
@@ -849,6 +849,7 @@ export type AgentMsg =
       delta?: boolean
       replaceLive?: boolean
       plan?: boolean // a Codex plan-mode proposal
+      timestamp?: number
     }
   | {
       type: 'tool'
@@ -883,10 +884,14 @@ export const SitePlacementSchema = z.object({
   dimension: WorldDimensionSchema.default('overworld'),
   mode: z.enum(['area', 'build']),
   box: z.tuple([z.int32(), z.int32(), z.int32(), z.int32()]),
+  areaBox: z.tuple([z.int32(), z.int32(), z.int32(), z.int32()]).optional(),
   origin: z.tuple([z.int32(), z.int32(), z.int32()]),
   rotation: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).default(0),
   margin: z.int32().min(0).default(48),
   versionPath: z.string().optional(),
+  cameraMode: z.enum(['3d', 'iso', 'top']).optional(),
+  lighting: z.enum(['sun', 'game']).optional(),
+  clipY: z.int32().min(0).nullable().optional(),
   ground: z
     .object({
       min: z.int32(),

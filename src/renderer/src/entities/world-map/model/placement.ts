@@ -50,6 +50,19 @@ export function nextRotation(current: RotationDeg, delta: 90 | -90): RotationDeg
   return ((((current + delta) % 360) + 360) % 360) as RotationDeg
 }
 
+/** World-space Y clip ceiling and local cap layer for slicing a placed build; null when unclipped. */
+export function buildClipSlice(
+  originY: number,
+  clipY: number | null,
+  buildHeight: number
+): { worldTopY: number; capLayer: number } | null {
+  if (clipY === null || !Number.isFinite(clipY) || buildHeight <= 1) return null
+  const maxLayer = buildHeight - 1
+  const capLayer = Math.max(0, Math.min(maxLayer, Math.floor(clipY)))
+  if (capLayer >= maxLayer) return null
+  return { worldTopY: originY + capLayer + 1.001, capLayer }
+}
+
 /** Sample min, max and median ground Y across a box using a height lookup (downsamples huge boxes cleanly). */
 export function computeGroundStats(
   box: Box2D,

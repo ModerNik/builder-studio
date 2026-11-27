@@ -70,9 +70,10 @@ export class WorldWorkerPool {
 
   constructor(options: WorldWorkerPoolOptions) {
     this.createWorker = options.createWorker
-    const defaultSize = Math.max(2, Math.min(4, Math.floor((cpus().length || 4) / 2)))
+    // Keep background decompression workers gentle so Chromium UI/GPU threads never starve
+    const defaultSize = Math.max(1, Math.min(2, Math.floor((cpus().length || 4) / 4)))
     this.poolSize = Math.max(1, options.poolSize ?? defaultSize)
-    this.maxPerWorker = Math.max(1, options.maxPerWorker ?? 2)
+    this.maxPerWorker = Math.max(1, options.maxPerWorker ?? 1)
     this.slots = Array.from({ length: this.poolSize }, () => ({
       worker: null,
       inflight: new Map(),

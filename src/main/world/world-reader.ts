@@ -589,8 +589,8 @@ export async function readHiresChunk(
       }
     }
     if (!any) return null
-    // Include generous skirt below lowest surface/seabed for cliffs & overhangs, capped to keep chunks compact
-    minBandY = Math.max(chunkBot, minBandY - 12)
+    // Include skirt below lowest surface/seabed for cliffs & overhangs, trimmed to reduce underground quads
+    minBandY = Math.max(chunkBot, minBandY - 6)
     maxBandY = Math.min(chunkTop, maxBandY + 1)
   }
 

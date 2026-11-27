@@ -14,36 +14,57 @@ import {
   meshHires,
   meshLowres,
   UNTEXTURED,
-  VERTEX_STRIDE,
   type MeshBucketBuffer
 } from './world-mesher.worker'
 
 function assertOutwardWinding(buf: MeshBucketBuffer, label: string): number {
-  const v = buf.vertices
+  const pos = buf.positions
+  const norm = buf.normals
+  const vertCount = buf.quadCount * 4
   const idx = buildQuadIndices(buf.quadCount)
-  expect(v.length).toBe(buf.quadCount * 4 * VERTEX_STRIDE)
+  expect(pos.length).toBe(vertCount * 3)
+  expect(norm.length).toBe(vertCount * 3)
+  expect(buf.uvs.length).toBe(vertCount * 2)
+  expect(buf.colors.length).toBe(vertCount * 3)
+
+  if (buf.quadCount > 0) {
+    expect(buf.bounds).not.toBeNull()
+    const [minX, minY, minZ, maxX, maxY, maxZ] = buf.bounds!
+    for (let i = 0; i < vertCount; i++) {
+      const x = pos[i * 3]
+      const y = pos[i * 3 + 1]
+      const z = pos[i * 3 + 2]
+      expect(x).toBeGreaterThanOrEqual(minX)
+      expect(x).toBeLessThanOrEqual(maxX)
+      expect(y).toBeGreaterThanOrEqual(minY)
+      expect(y).toBeLessThanOrEqual(maxY)
+      expect(z).toBeGreaterThanOrEqual(minZ)
+      expect(z).toBeLessThanOrEqual(maxZ)
+    }
+  }
+
   const tris = idx.length / 3
   for (let t = 0; t < tris; t++) {
-    const i0 = idx[t * 3] * VERTEX_STRIDE
-    const i1 = idx[t * 3 + 1] * VERTEX_STRIDE
-    const i2 = idx[t * 3 + 2] * VERTEX_STRIDE
+    const i0 = idx[t * 3] * 3
+    const i1 = idx[t * 3 + 1] * 3
+    const i2 = idx[t * 3 + 2] * 3
 
-    const e1x = v[i1] - v[i0]
-    const e1y = v[i1 + 1] - v[i0 + 1]
-    const e1z = v[i1 + 2] - v[i0 + 2]
+    const e1x = pos[i1] - pos[i0]
+    const e1y = pos[i1 + 1] - pos[i0 + 1]
+    const e1z = pos[i1 + 2] - pos[i0 + 2]
 
-    const e2x = v[i2] - v[i0]
-    const e2y = v[i2 + 1] - v[i0 + 1]
-    const e2z = v[i2 + 2] - v[i0 + 2]
+    const e2x = pos[i2] - pos[i0]
+    const e2y = pos[i2 + 1] - pos[i0 + 1]
+    const e2z = pos[i2 + 2] - pos[i0 + 2]
 
-    // Geometric normal (e1 x e2) must align with outward vertex normal for CCW FrontSide rendering
+    // Geometric normal (e1 x e2) must align with outward packed vertex normal for CCW FrontSide rendering
     const gx = e1y * e2z - e1z * e2y
     const gy = e1z * e2x - e1x * e2z
     const gz = e1x * e2y - e1y * e2x
 
-    const nx = v[i0 + 3]
-    const ny = v[i0 + 4]
-    const nz = v[i0 + 5]
+    const nx = norm[i0] / 127
+    const ny = norm[i0 + 1] / 127
+    const nz = norm[i0 + 2] / 127
     const dot = gx * nx + gy * ny + gz * nz
     expect(
       dot,
@@ -230,5 +251,60 @@ describe('world-mesher winding and greedy optimization', () => {
     // Only top (+Y) and bottom (-Y) faces for 256 water blocks -> 256 * 2 faces * 2 tris = 1024 tris,
     // with zero vertical chunk-border walls on lx=0/15 or lz=0/15.
     expect(assertOutwardWinding(res.buckets[3], 'hires water')).toBe(1024)
+  })
+
+  it('downsamples lowres tiles cleanly into Voxy-style step 2/4/8 LODs with packed byte UVs', () => {
+    const surfaceY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+    const oceanFloorY = new Int16Array(LOWRES_CELLS).fill(NO_HEIGHT)
+    const topBlock = new Uint16Array(LOWRES_CELLS)
+    const flags = new Uint8Array(LOWRES_CELLS)
+
+    // Varying wavy terrain across a 32x32 cell patch so coarser LODs collapse geometry aggressively
+    for (let gz = 0; gz < 32; gz++) {
+      for (let gx = 0; gx < 32; gx++) {
+        const i = gz * LOWRES_GRID + gx
+        const y = 64 + ((gx + gz) % 4) + (gx & 1)
+        surfaceY[i] = y
+        oceanFloorY[i] = y
+        topBlock[i] = 1
+        flags[i] = FLAG_GRASS
+      }
+    }
+
+    const encoded = encodeLowresTile({
+      rx: 0,
+      rz: 0,
+      step: LOWRES_STEP,
+      grid: LOWRES_GRID,
+      palette: ['minecraft:air', 'minecraft:grass_block'],
+      surfaceY,
+      oceanFloorY,
+      topBlock,
+      flags
+    })
+    const makeBuf = (): ArrayBuffer => new Uint8Array(encoded).buffer
+
+    const lod0 = meshLowres(100, makeBuf(), 0)
+    const lod1 = meshLowres(101, makeBuf(), 1)
+    const lod2 = meshLowres(102, makeBuf(), 2)
+
+    expect(lod0.lod).toBe(0)
+    expect(lod0.grid).toBe(256)
+    expect(lod0.step).toBe(2)
+    expect(lod0.terrain.uvs).toBeInstanceOf(Uint8Array)
+
+    expect(lod1.lod).toBe(1)
+    expect(lod1.grid).toBe(128)
+    expect(lod1.step).toBe(4)
+
+    expect(lod2.lod).toBe(2)
+    expect(lod2.grid).toBe(64)
+    expect(lod2.step).toBe(8)
+
+    expect(assertOutwardWinding(lod0.terrain, 'lod0')).toBeGreaterThan(0)
+    expect(assertOutwardWinding(lod1.terrain, 'lod1')).toBeGreaterThan(0)
+    expect(assertOutwardWinding(lod2.terrain, 'lod2')).toBeGreaterThan(0)
+    expect(lod1.terrain.quadCount).toBeLessThan(lod0.terrain.quadCount)
+    expect(lod2.terrain.quadCount).toBeLessThan(lod1.terrain.quadCount)
   })
 })

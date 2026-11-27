@@ -2,7 +2,7 @@
 // (saved under the build's attachments/); board refs and the Parts tab's selected parts go along as context; the
 // permission mode, model and effort, and the skill picker after / ($ for Codex).
 import { useEffect, useState, type ReactElement } from 'react'
-import { Boxes, Images } from 'lucide-react'
+import { Boxes, Compass, FilePen, Images, Shield, Zap } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/shared/ui/primitives/button'
 import { Checkbox } from '@/shared/ui/primitives/checkbox'
@@ -36,14 +36,30 @@ import type { AgentMode, Effort, Ref } from '@shared/api'
 
 const MAX_FILES = 10 // AgentSendSchema's cap
 const MODES: Record<AgentMode, Option> = {
-  default: { value: 'default', label: 'Manual', description: 'Asks before each edit and command' },
+  default: {
+    value: 'default',
+    label: 'Manual',
+    description: 'Asks before each edit and command',
+    icon: <Shield aria-hidden className="size-3.5" />
+  },
   acceptEdits: {
     value: 'acceptEdits',
     label: 'Accept edits',
-    description: 'Runs every edit and command without asking'
+    description: 'Runs every edit and command without asking',
+    icon: <FilePen aria-hidden className="size-3.5" />
   },
-  auto: { value: 'auto', label: 'Auto', description: 'Runs every call without asking' },
-  plan: { value: 'plan', label: 'Plan', description: 'Plans first and asks before it edits' }
+  auto: {
+    value: 'auto',
+    label: 'Auto',
+    description: 'Runs every call without asking',
+    icon: <Zap aria-hidden className="size-3.5 text-warning-text" />
+  },
+  plan: {
+    value: 'plan',
+    label: 'Plan',
+    description: 'Plans first and asks before it edits',
+    icon: <Compass aria-hidden className="size-3.5 text-accent-text" />
+  }
 }
 // a pasted screenshot is called image.png: give it a findable name
 const fileName = (f: File): string =>
@@ -52,9 +68,11 @@ const fileName = (f: File): string =>
     : `pasted-${Date.now()}.${f.type.split('/')[1] || 'png'}`
 
 export function AgentComposer({
-  onCommand
+  onCommand,
+  draftRequest
 }: {
   onCommand(name: ChatCommand, args: string): ChatCommandResult
+  draftRequest?: { id: number; text: string } | null
 }): ReactElement {
   const availability = useAvailability().data
   const [files, setFiles] = useState<string[]>([])
@@ -221,6 +239,7 @@ export function AgentComposer({
       onEffortChange={(effort) => pick({ effort: effort as Effort })}
       suggestion={suggestion}
       onDismissSuggestion={dismissSuggestion}
+      draftRequest={draftRequest}
       placeholder={`Ask the agent (/ for commands${provider === 'claude' ? '' : ', $ for skills'})`}
     />
   )

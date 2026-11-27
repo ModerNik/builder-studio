@@ -11,6 +11,7 @@ import { ThreadListItem } from '@/features/agent-chat/ui/ThreadListItem'
 import { InlineNotice } from '@/shared/ui/feedback/Alert'
 import { errorMessage } from '@/shared/ui/feedback/errors'
 import { ConfirmDestructive } from '@/shared/ui/feedback/ConfirmDestructive'
+import { StatusDot } from '@/shared/ui/status/StatusDot'
 import { IconAction } from '@/shared/ui/common/Tip'
 import { cn } from '@/shared/lib/utils'
 import { useBuilds } from '@/entities/build/model/builds'
@@ -95,15 +96,22 @@ export function AgentThreads({
             variant="ghost"
             size="sm"
             aria-label={`Threads and sessions: ${label(active, list.data)}`}
-            className="h-(--density-control-sm) min-w-0 shrink gap-1 px-1.5 font-medium"
+            className="h-(--density-control-sm) min-w-0 shrink gap-1.5 px-2 font-medium"
           >
+            {active.asks.length > 0 ? (
+              <StatusDot state="awaiting-approval" label="" />
+            ) : busy(active.state) ? (
+              <StatusDot state="running" label="" />
+            ) : active.state.status !== 'off' ? (
+              <StatusDot state="done" label="" />
+            ) : null}
             <span className="truncate">{label(active, list.data)}</span>
             {running > 0 && (
-              <span className="shrink-0 font-mono text-xs text-state-running">
+              <span className="shrink-0 font-mono text-xs text-state-running tabular-nums">
                 {running} running
               </span>
             )}
-            <ChevronDown aria-hidden />
+            <ChevronDown aria-hidden className="size-3.5 text-fg-muted" />
           </Button>
         </PopoverTrigger>
         <PopoverContent
