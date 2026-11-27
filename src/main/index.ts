@@ -11,6 +11,7 @@ import { existsSync, constants } from 'fs'
 import { access, readFile, stat } from 'fs/promises'
 import { appendGist, ReviewQueue, writeAtomic } from './workspace/review'
 import { getSettings, projectSettings, pythonEnv, resolved, setSettings } from './app/settings'
+import { loadDevEnv } from './app/dev-env'
 import { startMcp, type McpDeps } from './agent/mcp'
 import { agentResources } from './agent/agent-resources'
 import { VariantService } from './agent/variants'
@@ -43,6 +44,9 @@ import { registerEditor } from './ipc/editor'
 import { registerRender } from './ipc/render'
 
 registerSchemes()
+
+// Load local .env* files in development only (never in packaged builds or unit tests).
+if (!app.isPackaged && !process.env['VITEST']) loadDevEnv(app.getAppPath())
 
 // BS_USER_DATA=out/test-profile runs on a throwaway profile (settings, runtime, cache) instead of the real one;
 // set before anything below reads userData

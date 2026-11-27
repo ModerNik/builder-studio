@@ -3,6 +3,7 @@ import { app } from 'electron'
 import { existsSync, readFileSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { DEFAULT_LINTER_SETTINGS, SettingsSchema, type PathCheck, type Settings } from '@shared/api'
+import { applyDevEnvSettings } from './dev-env'
 import { resolveLocations, runtimeEnv } from './locations'
 import { projectMinecraftVersion } from '../workspace/projects'
 import { findClaude, findJar } from '../runtime/detect'
@@ -42,22 +43,24 @@ let current: Settings | undefined
 
 export function getSettings(): Settings {
   if (!current) {
+    let raw: Record<string, unknown>
     try {
-      const raw = { ...EMPTY, ...JSON.parse(readFileSync(file(), 'utf8')) }
-      // Older or hand-edited files keep every valid field; invalid ones use defaults in memory only.
-      const r = SettingsSchema.safeParse(raw)
-      current = r.success
-        ? r.data
-        : SettingsSchema.parse({
-            ...raw,
-            ...Object.fromEntries(
-              r.error.issues.map((i) => [i.path[0], EMPTY[i.path[0] as keyof Settings]])
-            )
-          })
+      raw = { ...EMPTY, ...JSON.parse(readFileSync(file(), 'utf8')) }
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
-      current = { ...EMPTY }
+      raw = { ...EMPTY }
     }
+    if (!app.isPackaged) raw = applyDevEnvSettings(raw)
+    // Older or hand-edited files keep every valid field; invalid ones use defaults in memory only.
+    const r = SettingsSchema.safeParse(raw)
+    current = r.success
+      ? r.data
+      : SettingsSchema.parse({
+          ...raw,
+          ...Object.fromEntries(
+            r.error.issues.map((i) => [i.path[0], EMPTY[i.path[0] as keyof Settings]])
+          )
+        })
   }
   return current
 }
