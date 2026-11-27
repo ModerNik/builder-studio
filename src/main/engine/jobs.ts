@@ -1,12 +1,18 @@
 // JobService: one Python subprocess per build job (builds clash in one interpreter), events parsed from stdout.
 import { spawn, type ChildProcess } from 'child_process'
-import { MAX_JOB_LOG, type Job, type JobSpec, type JobUpdate, type Settings } from '@shared/api'
+import {
+  MAX_JOB_LOG,
+  MAX_JOBS,
+  type Job,
+  type JobSpec,
+  type JobUpdate,
+  type Settings
+} from '@shared/api'
 import { lineSplitter, parseEvent } from '@shared/events'
 import { pythonEnv, resolved } from '../app/settings'
 import { stagingDir } from '../workspace/ship'
 
 const LOG_BATCH_MS = 100 // one IPC message per batch: a chatty build sent thousands per second
-const MAX_JOBS = 30
 // build.py has no dump part: call mcb.dump the way the bridge does, in its own process
 const DUMP =
   "import sys; from mcb.bridge import dump; print(dump(sys.argv[1], sys.argv[2], int(sys.argv[3]))['text'])"

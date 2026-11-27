@@ -103,14 +103,13 @@ export function AgentComposer({
     for (const f of list.slice(0, Math.max(0, room))) {
       const name = fileName(f)
       setUploading((u) => [...u, name])
-      try {
-        const path = await attachFile(build, name, f)
-        setFiles((fs) => [...fs, path])
-      } catch (e) {
-        toast.error('Couldn’t attach ' + name + '. ' + errorMessage(e))
-      } finally {
-        setUploading((u) => u.filter((n) => n !== name))
-      }
+      // a promise chain, not try/finally: React Compiler skips components with a finally block
+      await attachFile(build, name, f)
+        .then(
+          (path) => setFiles((fs) => [...fs, path]),
+          (e) => void toast.error('Couldn’t attach ' + name + '. ' + errorMessage(e))
+        )
+        .finally(() => setUploading((u) => u.filter((n) => n !== name)))
     }
   }
   const go = (text: string): void => {

@@ -1,5 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest'
-import { CAPABILITIES, type AgentMsg, type AgentState, type ThreadEvent } from '@shared/api'
+import { type AgentMsg, type AgentState, type ThreadEvent } from '@shared/api'
+import { CAPABILITIES } from '@shared/constants'
 
 const OFF: AgentState = {
   provider: 'claude',

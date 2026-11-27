@@ -5,13 +5,8 @@ import { Switch } from '@/shared/ui/primitives/switch'
 import { SettingsPanel, SettingsRow } from '@/entities/settings/ui/Settings'
 import { CHECK_DESCRIPTIONS, checkLabel } from '@/entities/build/model/workspace'
 import { useSaveSettings } from '@/entities/settings/model/save'
-import {
-  DEFAULT_LINT_RULES,
-  LINT_RULES,
-  type LintRule,
-  type LintRuleToggles,
-  type Settings
-} from '@shared/api'
+import { type LintRule, type LintRuleToggles, type Settings } from '@shared/api'
+import { DEFAULT_LINT_RULES, LINT_RULES } from '@shared/constants'
 import { ErrorNotice } from './bits'
 
 export function Linter({ settings }: { settings: Settings }): ReactElement {

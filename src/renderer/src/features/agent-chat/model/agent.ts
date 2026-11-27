@@ -5,8 +5,6 @@ import { errorMessage } from '@/shared/ui/feedback/errors'
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import {
-  CAPABILITIES,
-  EFFORTS,
   type AgentModel,
   type AgentMode,
   type AgentState,
@@ -15,6 +13,7 @@ import {
   type Provider,
   type SessionRef
 } from '@shared/api'
+import { CAPABILITIES, EFFORTS } from '@shared/constants'
 import { queryClient, studio } from '@/shared/api/studio'
 import { reduce, reduceLive, type Item } from './transcript'
 

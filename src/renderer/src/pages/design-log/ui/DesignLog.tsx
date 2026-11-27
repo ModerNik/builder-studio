@@ -181,19 +181,22 @@ function Log({ name }: { name: string }): ReactElement {
   async function save(): Promise<void> {
     if (!draft || !dirty || saving) return
     setSaving(true)
-    try {
-      const out = mergeFromEdit(draft.body, draft.base)
-      await writeDesign(name, draft.base, out)
-      setDraft(null)
-      designSaved(name)
-      toast.success('Design log saved')
-    } catch (e) {
-      const why = refusal(e)
-      if (why) setDraft({ ...draft, refused: why })
-      else toast.error(errorText(e))
-    } finally {
-      setSaving(false)
-    }
+    // a promise chain, not try/finally: React Compiler skips components with a finally block
+    await Promise.resolve()
+      .then(() => writeDesign(name, draft.base, mergeFromEdit(draft.body, draft.base)))
+      .then(
+        () => {
+          setDraft(null)
+          designSaved(name)
+          toast.success('Design log saved')
+        },
+        (e) => {
+          const why = refusal(e)
+          if (why) setDraft({ ...draft, refused: why })
+          else toast.error(errorText(e))
+        }
+      )
+      .finally(() => setSaving(false))
   }
 
   async function reload(): Promise<void> {

@@ -10,12 +10,8 @@ import { InlineNotice } from '@/shared/ui/feedback/Alert'
 import { StatusBadge } from '@/shared/ui/status/StatusBadge'
 import { SettingsPanel, SettingsRow } from '@/entities/settings/ui/Settings'
 import { PROVIDER_TEXT, signInNeeded } from '@/features/agent-chat/model/providers'
-import {
-  PROVIDERS,
-  type Provider,
-  type ProviderDiagnostic,
-  type Settings
-} from '@shared/api'
+import { type Provider, type ProviderDiagnostic, type Settings } from '@shared/api'
+import { PROVIDERS } from '@shared/constants'
 import { ErrorNotice, SettingInput } from './bits'
 import { clampCap } from '@/entities/settings/model/cap'
 import { useSaveSettings } from '@/entities/settings/model/save'

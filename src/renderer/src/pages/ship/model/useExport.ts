@@ -3,7 +3,8 @@
 // Automatic DESIGN.md update & Git commit. ui/Ship.tsx renders what this returns.
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { DEFAULT_LINTER_SETTINGS, type Job, type JobSpec } from '@shared/api'
+import { type Job, type JobSpec } from '@shared/api'
+import { DEFAULT_LINTER_SETTINGS } from '@shared/constants'
 import {
   DEFAULT_MINECRAFT_VERSION,
   defaultExportFormat,

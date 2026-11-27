@@ -66,6 +66,10 @@ export interface PlaceBlock {
 }
 
 const key = (c: readonly number[]): string => c.join(',')
+// outside the hook: React Compiler can't compile optional chains inside a logical test
+const sameHit = (a: ViewerHit | null, b: ViewerHit | null): boolean =>
+  a === b ||
+  (!!a && !!b && a.cell.join() === b.cell.join() && a.adjacent.join() === b.adjacent.join())
 export const blockName = (state: string): string => parseState(state).id.replace(/^minecraft:/, '')
 const boxOf = (a: Cell, b: Cell): { min: Cell; max: Cell } => ({
   min: a.map((v, i) => Math.min(v, b[i])) as Cell,
@@ -367,10 +371,7 @@ export function useBlockEditor({
     )
     picks.use(place.info.id)
   }
-  const onHover = (p: ViewerHit | null): void =>
-    setHover((h) =>
-      h?.cell.join() === p?.cell.join() && h?.adjacent.join() === p?.adjacent.join() ? h : p
-    )
+  const onHover = (p: ViewerHit | null): void => setHover((h) => (sameHit(h, p) ? h : p))
 
   // Transform (DESIGN › Tool options): the selected box moved, turned and flipped, one History entry on Apply
   const transforming = editable && tool === 'transform'

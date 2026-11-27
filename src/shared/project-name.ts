@@ -1,34 +1,32 @@
-import { z } from 'zod'
+// Zod-free so the renderer can check names without loading zod at boot; the schemas in api.ts reuse these rules.
+import { PROJECT_NAME_MAX_LENGTH } from './constants'
 
-export const PROJECT_NAME_MAX_LENGTH = 100
+export { PROJECT_NAME_MAX_LENGTH }
 
-/** User-facing project display name: spaces, numbers, Unicode and any printable symbols up to 100 chars. */
-export const ProjectNameSchema = z
-  .string()
-  .trim()
-  .min(1, 'Enter a project name')
-  .max(PROJECT_NAME_MAX_LENGTH, `Use at most ${PROJECT_NAME_MAX_LENGTH} characters`)
-  .refine(
-    (s) => !/[\p{Cc}\p{Zl}\p{Zp}]/u.test(s),
-    'Project name cannot contain control characters or line breaks'
-  )
+/**
+ * Why a user-facing project display name (already trimmed) is invalid, or '' when it is fine:
+ * spaces, numbers, Unicode and any printable symbols up to 100 chars.
+ */
+export function projectNameIssue(name: string): string {
+  if (!name) return 'Enter a project name'
+  if (name.length > PROJECT_NAME_MAX_LENGTH)
+    return `Use at most ${PROJECT_NAME_MAX_LENGTH} characters`
+  if (/[\p{Cc}\p{Zl}\p{Zp}]/u.test(name))
+    return 'Project name cannot contain control characters or line breaks'
+  return ''
+}
 
 const RESERVED_WINDOWS = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i
 
-/** On-disk folder name under builds/ passed to the Python engine (tools.new_build). */
-export const BuildFolderNameSchema = z
-  .string()
-  .max(PROJECT_NAME_MAX_LENGTH)
-  .regex(
-    /^[a-z][a-z0-9_]*$/,
-    'Use lowercase letters, digits and underscores, starting with a letter'
-  )
-  .refine((s) => !RESERVED_WINDOWS.test(s), 'Reserved Windows name')
-
-export const ProjectMetaSchema = z.object({
-  name: ProjectNameSchema
-})
-export type ProjectMeta = z.infer<typeof ProjectMetaSchema>
+/** Why an on-disk folder name under builds/ (passed to the Python engine) is invalid, or ''. */
+export function buildFolderIssue(folder: string): string {
+  if (folder.length > PROJECT_NAME_MAX_LENGTH)
+    return `Use at most ${PROJECT_NAME_MAX_LENGTH} characters`
+  if (!/^[a-z][a-z0-9_]*$/.test(folder))
+    return 'Use lowercase letters, digits and underscores, starting with a letter'
+  if (RESERVED_WINDOWS.test(folder)) return 'Reserved Windows name'
+  return ''
+}
 
 const MAX_SLUG_BASE = 80
 
@@ -60,5 +58,7 @@ export function slugFromProjectName(
   while (taken.has(candidate)) {
     candidate = `${base}_${suffix++}`
   }
-  return BuildFolderNameSchema.parse(candidate)
+  const issue = buildFolderIssue(candidate)
+  if (issue) throw new Error(`${candidate}: ${issue}`)
+  return candidate
 }

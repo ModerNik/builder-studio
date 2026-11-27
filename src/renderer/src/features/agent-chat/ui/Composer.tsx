@@ -221,6 +221,9 @@ export function Composer({
   const uploading = attachments.some((a) => a.uploading)
   const selected = onCommand && !skillPicker ? parseChatCommand(text) : null
   const showGhost = !compact && !!suggestion && !text && !running && !uploading && !disabledReason
+  const describedBy = [disabledReason ? `${id}-why` : '', showGhost ? `${id}-suggestion` : '']
+    .filter(Boolean)
+    .join(' ')
   const canSend =
     (!!text.trim() && (selected || (!running && !uploading && !disabledReason))) || showGhost
   const sigil = sigils[0]
@@ -376,11 +379,7 @@ export function Composer({
           aria-autocomplete="list"
           aria-controls={open ? `${id}-list` : undefined}
           aria-activedescendant={open ? `${id}-opt-${at}` : undefined}
-          aria-describedby={
-            [disabledReason && `${id}-why`, showGhost && `${id}-suggestion`]
-              .filter(Boolean)
-              .join(' ') || undefined
-          }
+          aria-describedby={describedBy || undefined}
           onChange={(e) => {
             setText(e.target.value)
             if (!e.target.value.startsWith(sigil)) setSkillPicker(false)

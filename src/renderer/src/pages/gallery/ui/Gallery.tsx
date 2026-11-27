@@ -62,7 +62,8 @@ import {
   type BuildState,
   type Sort
 } from '@/entities/build/model/gallery'
-import { PROJECT_NAME_MAX_LENGTH, type BuildSummary } from '@shared/api'
+import { type BuildSummary } from '@shared/api'
+import { PROJECT_NAME_MAX_LENGTH } from '@shared/constants'
 import { plain } from '@/shared/lib/format'
 import { ImportDialog } from '@/features/import-projects/ui/ImportProjects'
 import { SchematicFileField } from '@/features/import-schematic/ui/ImportSchematic'
@@ -281,6 +282,7 @@ export function Gallery(): ReactElement {
               <Card
                 key={b.name}
                 build={b}
+                now={builds.dataUpdatedAt}
                 state={stateOf(b)}
                 onOpen={() => open(b.name)}
                 onRender={() => openRenderStudio({ build: b.name })}
@@ -296,6 +298,7 @@ export function Gallery(): ReactElement {
                 <Card
                   layout="row"
                   build={b}
+                  now={builds.dataUpdatedAt}
                   state={stateOf(b)}
                   onOpen={() => open(b.name)}
                   onRender={() => openRenderStudio({ build: b.name })}
@@ -410,6 +413,7 @@ const busyReason = 'Stop the running draft to rename or delete.'
 
 function Card({
   build: b,
+  now,
   state,
   layout = 'card',
   onOpen,
@@ -418,6 +422,8 @@ function Card({
   onDelete
 }: {
   build: BuildSummary
+  /** When the list was fetched: ages ("12 min ago") refresh with it, as the cards are memoized per build. */
+  now: number
   state: BuildState
   layout?: 'card' | 'row'
   onOpen: () => void
@@ -459,7 +465,7 @@ function Card({
           name={displayName}
           image={b.preview ? buildUrl(b.preview, Math.round(b.previewMtime ?? b.mtime)) : null}
           status={status ?? 'No status yet'}
-          meta={buildMeta(b)}
+          meta={buildMeta(b, now)}
           badge={
             (state !== 'progress' || failed) && (
               <span className="flex flex-wrap gap-1">

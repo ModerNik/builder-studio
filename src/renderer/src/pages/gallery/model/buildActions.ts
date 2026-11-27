@@ -3,8 +3,7 @@ import { useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { NewBuildNameSchema } from '@shared/api'
-import { normalizeProjectName, slugFromProjectName } from '@shared/project-name'
+import { normalizeProjectName, projectNameIssue, slugFromProjectName } from '@shared/project-name'
 import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import { errorMessage } from '@/shared/ui/feedback/errors'
 import { studio } from '@/shared/api/studio'
@@ -48,26 +47,24 @@ export function useNewBuild(
     setFailure('')
   }
   const takenSet = new Set(takenDisplayNames.map(normalizeProjectName))
-  const parsed = NewBuildNameSchema.safeParse(name)
+  const clean = name.trim()
+  const issue = projectNameIssue(clean)
   const rule = !name
     ? ''
-    : !parsed.success
-      ? parsed.error.issues[0].message
-      : takenSet.has(normalizeProjectName(parsed.data))
-        ? `“${parsed.data}” is taken. Pick another.`
-        : ''
-  const folder = parsed.success && !rule ? slugFromProjectName(parsed.data, takenFolders) : ''
+    : issue ||
+      (takenSet.has(normalizeProjectName(clean)) ? `“${clean}” is taken. Pick another.` : '')
+  const folder = !issue && !rule ? slugFromProjectName(clean, takenFolders) : ''
   /** False when the name needs fixing: the dialog moves focus to it. */
   const create = async (): Promise<boolean> => {
     if (busy || file.choosing) return true
     if (!name.trim()) setFailure('Enter a project name.')
-    if (!parsed.success || rule) return false
+    if (issue || rule) return false
     setBusy(true)
     setFailure('')
     try {
       const created = file.source
-        ? (await commitSchematic({ id: file.source.id, name: parsed.data })).build
-        : await studio.builds.create(parsed.data, minecraftVersion)
+        ? (await commitSchematic({ id: file.source.id, name: clean })).build
+        : await studio.builds.create(clean, minecraftVersion)
       file.clear()
       setSelectedVersion(null)
       onOpenChange(false)
@@ -95,7 +92,6 @@ export function useNewBuild(
     minecraftVersion,
     setSelectedVersion,
     file,
-    parsed,
     folder,
     rule,
     create,
@@ -111,17 +107,18 @@ export function useRenameBuild(
 ) {
   const [to, setTo] = useState(build.displayName)
   const rename = useRunOptions((s) => s.rename)
-  const parsed = NewBuildNameSchema.safeParse(to)
+  const clean = to.trim()
+  const issue = projectNameIssue(clean)
   const otherTaken = new Set(otherTakenDisplayNames.map(normalizeProjectName))
-  const error = !parsed.success
-    ? parsed.error.issues[0].message
-    : otherTaken.has(normalizeProjectName(parsed.data))
+  const error = issue
+    ? issue
+    : otherTaken.has(normalizeProjectName(clean))
       ? 'Taken. Pick another name.'
       : ''
   const submit = (): void => {
-    if (error || !parsed.success) return
-    if (parsed.data === build.displayName) return onClose()
-    studio.builds.rename(build.name, parsed.data).then(
+    if (error) return
+    if (clean === build.displayName) return onClose()
+    studio.builds.rename(build.name, clean).then(
       (now) => {
         if (now !== build.name) rename(build.name, now)
         onClose()

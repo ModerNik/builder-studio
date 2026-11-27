@@ -1,5 +1,6 @@
 import { expect, it, vi } from 'vitest'
-import { MAX_JOB_LOG, type Job } from '@shared/api'
+import { type Job } from '@shared/api'
+import { MAX_JOB_LOG, MAX_JOBS } from '@shared/constants'
 
 // every window.studio call resolves to [] and every subscription is a no-op
 vi.hoisted(() => {
@@ -27,4 +28,13 @@ it('keeps a running job log out of the job list, capped, and folds it in at the 
   apply({ id: 1, kind: 'end', state: 'failed', code: 1 })
   expect(useJobs.getState().logs).toEqual({})
   expect(useJobs.getState().jobs[0].log.at(-1)).toBe(String(MAX_JOB_LOG - 1))
+})
+
+it('keeps only the newest jobs, like main', () => {
+  const { apply } = useJobs.getState()
+  for (let id = 100; id < 100 + MAX_JOBS + 5; id++)
+    apply({ id, kind: 'start', job: { id, events: [], log: [] } as unknown as Job })
+  const ids = useJobs.getState().jobs.map((j) => j.id)
+  expect(ids).toHaveLength(MAX_JOBS)
+  expect(ids[0]).toBe(100 + MAX_JOBS + 4)
 })

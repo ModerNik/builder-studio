@@ -57,13 +57,8 @@ import {
   useRewindPreview
 } from '@/features/agent-chat/model/panel'
 import type { Item } from '@/features/agent-chat/model/transcript'
-import {
-  DEFAULT_LINTER_SETTINGS,
-  type AgentMode,
-  type PermissionAsk,
-  type Permit,
-  type SessionRef
-} from '@shared/api'
+import { type AgentMode, type PermissionAsk, type Permit, type SessionRef } from '@shared/api'
+import { DEFAULT_LINTER_SETTINGS } from '@shared/constants'
 import { hasEnabledLintRule, lintProblems } from '@/shared/lib/format'
 import { useBuild } from '@/entities/build/model/builds'
 import { useCurrentBuild } from '@/entities/build/model/current-build'
@@ -194,14 +189,10 @@ function BuildAgent({ build }: { build: string }): ReactElement {
   const rename = async (name: string): Promise<void> => {
     if (!name.trim() || renaming) return
     setRenaming(true)
-    try {
-      await renameThread(ref, id, state.provider, build, name.trim())
-      close()
-    } catch (e) {
-      toast.error(errorMessage(e))
-    } finally {
-      setRenaming(false)
-    }
+    // promise chains, not try/finally: React Compiler skips components with a finally block
+    await renameThread(ref, id, state.provider, build, name.trim())
+      .then(close, (e) => void toast.error(errorMessage(e)))
+      .finally(() => setRenaming(false))
   }
   const command = (name: ChatCommand, args: string): void => {
     if (args && name !== 'rename' && !(name === 'compact' && state.provider === 'claude')) {
@@ -450,15 +441,15 @@ function ActiveTranscript({
     const files = undoFiles && previewValue && !previewValue.unavailable ? previewValue.files : null
     setEditSubmitting(true)
     setEditError(undefined)
-    try {
-      await editMessageTurn(ref, build, activeEdit.point, text, files, activeEdit.attachments)
-      setEditTarget(null)
-    } catch (e) {
-      setEditError(errorMessage(e))
-      void editPreview.refetch()
-    } finally {
-      setEditSubmitting(false)
-    }
+    await editMessageTurn(ref, build, activeEdit.point, text, files, activeEdit.attachments)
+      .then(
+        () => setEditTarget(null),
+        (e) => {
+          setEditError(errorMessage(e))
+          void editPreview.refetch()
+        }
+      )
+      .finally(() => setEditSubmitting(false))
   }
 
   const handleFork = async (item: Extract<Item, { kind: 'user' }>): Promise<void> => {
@@ -466,11 +457,7 @@ function ActiveTranscript({
     setEditTarget(null)
     setEditError(undefined)
     setForking(true)
-    try {
-      await forkThread(ref, build, item.point)
-    } finally {
-      setForking(false)
-    }
+    await forkThread(ref, build, item.point).finally(() => setForking(false))
   }
 
   const last = items.findLast((i) => i.kind === 'user')

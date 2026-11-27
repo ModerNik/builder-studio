@@ -1,13 +1,13 @@
 // The Workspace's labels and pure helpers. The bridge data and parts overlays are in lib/analysis.ts;
 // UI lives in app/workspace/*.
 import {
-  DEFAULT_LINT_RULES,
   type Job,
   type LintRule,
   type LintRuleToggles,
   type LintWhere,
   type PartInfo
 } from '@shared/api'
+import { DEFAULT_LINT_RULES } from '@shared/constants'
 import type { Cell } from '@/entities/viewer/ui/BuildViewer'
 import type { ViewName } from '@/entities/viewer/model/look'
 import { isLintRuleEnabled, short } from '@/shared/lib/format'

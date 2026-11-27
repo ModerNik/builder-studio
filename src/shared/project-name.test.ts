@@ -1,11 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import {
-  BuildFolderNameSchema,
-  PROJECT_NAME_MAX_LENGTH,
-  ProjectNameSchema,
-  normalizeProjectName,
-  slugFromProjectName
-} from './project-name'
+import { BuildFolderNameSchema, ProjectNameSchema } from './api'
+import { PROJECT_NAME_MAX_LENGTH, normalizeProjectName, slugFromProjectName } from './project-name'
 
 describe('ProjectNameSchema', () => {
   it('allows spaces, numbers, Unicode and printable symbols up to the length limit', () => {
