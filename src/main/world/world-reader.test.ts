@@ -203,13 +203,19 @@ describe('world-reader & site-meta', () => {
   })
 
   it('keeps only the lowres tile of the current region stamp in the cache', async () => {
-    const root = join(tmpdir(), `bs-world-test-${Date.now()}-${Math.random().toString(16).slice(2)}`)
+    const root = join(
+      tmpdir(),
+      `bs-world-test-${Date.now()}-${Math.random().toString(16).slice(2)}`
+    )
     dirs.push(root)
     const world = join(root, 'save')
     const cache = join(root, 'cache')
     await mkdir(join(world, 'region'), { recursive: true })
     await writeFile(join(world, 'level.dat'), makeLevelDat())
-    await writeFile(join(world, 'region', 'r.0.0.mca'), makeRegionFile(makeTestNbtChunk('minecraft:stone', 66)))
+    await writeFile(
+      join(world, 'region', 'r.0.0.mca'),
+      makeRegionFile(makeTestNbtChunk('minecraft:stone', 66))
+    )
 
     const tiles = async (): Promise<string[]> => {
       const out: string[] = []
@@ -237,7 +243,10 @@ describe('world-reader & site-meta', () => {
 
     // Editing the save changes the region stamp: the new tile replaces the old one on disk
     await new Promise((r) => setTimeout(r, 20))
-    await writeFile(join(world, 'region', 'r.0.0.mca'), makeRegionFile(makeTestNbtChunk('minecraft:dirt', 70)))
+    await writeFile(
+      join(world, 'region', 'r.0.0.mca'),
+      makeRegionFile(makeTestNbtChunk('minecraft:dirt', 70))
+    )
     await readLowresTile(world, 'overworld', 0, 0, cache)
     await new Promise((r) => setTimeout(r, 100))
     const after = await waitForTiles(1)

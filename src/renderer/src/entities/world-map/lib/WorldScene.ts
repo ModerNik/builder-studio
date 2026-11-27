@@ -587,7 +587,6 @@ export class WorldScene {
   }
 
   private frame(now: number): void {
-
     const dt = Math.min(0.05, Math.max(0.001, (now - (this.lastTime || now)) / 1000))
     this.lastTime = now
 

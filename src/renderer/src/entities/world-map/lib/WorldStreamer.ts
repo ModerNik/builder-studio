@@ -629,7 +629,15 @@ export class WorldStreamer {
 
     // Hysteresis: hires chunks load below 260 (140 top-down) and are dropped only well past that
     const dropHires = camMode !== 'top' ? camDist >= 330 : camDist >= 190
-    this.evictOutOfRange(centerRx, centerRz, lowRadius + 1, targetX, targetZ, hiresRadius, dropHires)
+    this.evictOutOfRange(
+      centerRx,
+      centerRz,
+      lowRadius + 1,
+      targetX,
+      targetZ,
+      hiresRadius,
+      dropHires
+    )
     this.evictLru(targetX, targetZ)
     this.emitStats()
   }
@@ -658,7 +666,10 @@ export class WorldStreamer {
     const maxDist = hiresRadius > 0 ? (hiresRadius + 2) * 16 : -1
     let chunksLeft = MAX_EVICT_CHUNKS_PER_SWEEP
     for (const c of this.chunks.values()) {
-      if (maxDist >= 0 && Math.hypot((c.cx + 0.5) * 16 - targetX, (c.cz + 0.5) * 16 - targetZ) <= maxDist) {
+      if (
+        maxDist >= 0 &&
+        Math.hypot((c.cx + 0.5) * 16 - targetX, (c.cz + 0.5) * 16 - targetZ) <= maxDist
+      ) {
         continue
       }
       if (chunksLeft-- <= 0) {
