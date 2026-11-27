@@ -58,6 +58,18 @@ export interface FlyTarget {
 
 const DEFAULT_ORIENTATION: Orientation = [0, 0, 0, 1]
 
+function boxesOverlap(a: Box2D, b: Box2D): boolean {
+  const [ax1, az1, ax2, az2] = normalizeBox(a)
+  const [bx1, bz1, bx2, bz2] = normalizeBox(b)
+  return ax1 <= bx2 && ax2 >= bx1 && az1 <= bz2 && az2 >= bz1
+}
+
+function sameGroundStats(a: GroundStats | null, b: GroundStats | null): boolean {
+  if (a === b) return true
+  if (!a || !b) return false
+  return a.min === b.min && a.max === b.max && a.median === b.median
+}
+
 interface Props {
   source: WorldDataSource | null
   /** Optional mcpack:// URL for textured 3D voxel chunks and build preview. */
@@ -118,9 +130,12 @@ export function WorldMapViewport({
   const sceneRef = useRef<WorldScene | null>(null)
   const streamerRef = useRef<WorldStreamer | null>(null)
   const overlayRef = useRef<PlacementOverlay | null>(null)
+  const cursorTextRef = useRef<HTMLSpanElement>(null)
+  const lastGroundRef = useRef<GroundStats | null>(null)
+  const hoverRafRef = useRef(0)
+  const hoverPtRef = useRef<{ x: number; y: number } | null>(null)
 
   const [orientation, setOrientation] = useState<Orientation>(DEFAULT_ORIENTATION)
-  const [cursor, setCursor] = useState<WorldCursor | null>(null)
   const [streamStats, setStreamStats] = useState<StreamStats>({
     lowresLoaded: 0,
     hiresLoaded: 0,
@@ -171,12 +186,35 @@ export function WorldMapViewport({
     if (!el) return
 
     let scene: WorldScene | null = null
+    let statsTimer: ReturnType<typeof setTimeout> | null = null
+    const scheduleStats = (bounds?: Box2D): void => {
+      const p = propsRef.current
+      if (!p.onGroundStats) return
+      const box =
+        p.mode === 'build' ? buildBoxFromOrigin(p.origin, p.buildSize, p.rotation) : p.areaBox
+      if (!box) {
+        if (lastGroundRef.current !== null) {
+          lastGroundRef.current = null
+          p.onGroundStats(null)
+        }
+        return
+      }
+      if (bounds && !boxesOverlap(bounds, box)) return
+      if (statsTimer !== null) return
+      statsTimer = setTimeout(() => {
+        statsTimer = null
+        recomputeStats()
+      }, 150)
+    }
+
     const streamer = new WorldStreamer(
       () => {
         scene?.invalidate()
-        recomputeStats()
       },
-      (s) => setStreamStats(s)
+      (s) => setStreamStats(s),
+      {
+        onTerrainBounds: (bounds) => scheduleStats(bounds)
+      }
     )
     scene = new WorldScene(el, streamer, (ori) => setOrientation(ori))
     const overlay = new PlacementOverlay(scene, {
@@ -200,14 +238,16 @@ export function WorldMapViewport({
       if (!p.onGroundStats) return
       const box =
         p.mode === 'build' ? buildBoxFromOrigin(p.origin, p.buildSize, p.rotation) : p.areaBox
-      if (!box) {
-        p.onGroundStats(null)
-        return
-      }
-      p.onGroundStats(computeGroundStats(box, (x, z) => streamer.heightAt(x, z)))
+      const next = box ? computeGroundStats(box, (x, z) => streamer.heightAt(x, z)) : null
+      if (sameGroundStats(lastGroundRef.current, next)) return
+      lastGroundRef.current = next
+      p.onGroundStats(next)
     }
 
     return () => {
+      if (statsTimer !== null) clearTimeout(statsTimer)
+      if (hoverRafRef.current) cancelAnimationFrame(hoverRafRef.current)
+      hoverRafRef.current = 0
       onHeightLookup?.(() => null)
       ro.disconnect()
       overlay.dispose()
@@ -291,7 +331,10 @@ export function WorldMapViewport({
     const statsBox = mode === 'build' ? buildBoxFromOrigin(origin, buildSize, rotation) : areaBox
     const ground =
       statsBox && streamer ? computeGroundStats(statsBox, (x, z) => streamer.heightAt(x, z)) : null
-    onGroundStats?.(ground)
+    if (!sameGroundStats(lastGroundRef.current, ground)) {
+      lastGroundRef.current = ground
+      onGroundStats?.(ground)
+    }
     overlayRef.current?.update({
       mode,
       box: areaBox,
@@ -301,6 +344,13 @@ export function WorldMapViewport({
       groundY: ground?.median ?? null
     })
   }, [mode, areaBox, origin, rotation, margin, buildSize, onGroundStats])
+
+  const setCursorReadout = (hit: WorldCursor | null): void => {
+    const el = cursorTextRef.current
+    if (!el) return
+    const next = hit ? `X ${hit.x}  Y ${hit.y}  Z ${hit.z}` : '—'
+    if (el.textContent !== next) el.textContent = next
+  }
 
   const announce = (msg: string): void => setToast({ msg, at: Date.now() })
 
@@ -347,7 +397,7 @@ export function WorldMapViewport({
 
     // 2. Shift + Left-drag in Area mode draws a new footprint box directly on the 3D terrain
     if (mode === 'area' && e.shiftKey) {
-      const hit = scene.pickTerrain(e.clientX, e.clientY)
+      const hit = scene.pickTerrain(e.clientX, e.clientY, true)
       if (hit) {
         dragRef.current = { kind: 'draw', anchorX: hit.x, anchorZ: hit.z }
         scene.controls.enabled = false
@@ -364,23 +414,40 @@ export function WorldMapViewport({
   const onPointerMove = (e: PointerEvent<HTMLDivElement>): void => {
     const scene = sceneRef.current
     if (!scene) return
-    const hit = scene.pickTerrain(e.clientX, e.clientY)
-    setCursor(hit)
 
     const drag = dragRef.current
-    if (!drag) return
-    if (drag.kind === 'click') {
+    if (drag?.kind === 'click') {
       drag.travel = Math.max(
         drag.travel,
         Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY)
       )
       return
     }
-    if (!hit) return
-    if (drag.kind === 'draw') {
-      onAreaBoxChange?.(normalizeBox([drag.anchorX, drag.anchorZ, hit.x, hit.z]))
-    } else if (drag.kind === 'corner') {
-      onAreaBoxChange?.(normalizeBox([drag.fixedX, drag.fixedZ, hit.x, hit.z]))
+    if (drag?.kind === 'draw' || drag?.kind === 'corner') {
+      const hit = scene.pickTerrain(e.clientX, e.clientY, false)
+      setCursorReadout(hit)
+      if (!hit) return
+      if (drag.kind === 'draw') {
+        onAreaBoxChange?.(normalizeBox([drag.anchorX, drag.anchorZ, hit.x, hit.z]))
+      } else {
+        onAreaBoxChange?.(normalizeBox([drag.fixedX, drag.fixedZ, hit.x, hit.z]))
+      }
+      return
+    }
+
+    // Skip hover picking while orbiting/panning with mouse buttons held
+    if (e.buttons !== 0 || overlayRef.current?.isDragging) return
+
+    // Coalesce hover coordinate updates to one heightfield lookup per animation frame (zero React re-renders)
+    hoverPtRef.current = { x: e.clientX, y: e.clientY }
+    if (!hoverRafRef.current) {
+      hoverRafRef.current = requestAnimationFrame(() => {
+        hoverRafRef.current = 0
+        const pt = hoverPtRef.current
+        const sc = sceneRef.current
+        if (!pt || !sc) return
+        setCursorReadout(sc.pickTerrain(pt.x, pt.y, false))
+      })
     }
   }
 
@@ -392,8 +459,9 @@ export function WorldMapViewport({
     if (!drag || drag.kind !== 'click' || drag.travel >= 5 || !scene) return
     if (overlayRef.current?.isDragging) return
 
-    const hit = scene.pickTerrain(e.clientX, e.clientY)
+    const hit = scene.pickTerrain(e.clientX, e.clientY, true)
     if (!hit) return
+    setCursorReadout(hit)
     if (mode === 'area') {
       const [w, d] = areaBox ? boxDimensions(areaBox) : [32, 32]
       onAreaBoxChange?.(centeredBox(hit.x, hit.z, w, d))
@@ -407,6 +475,10 @@ export function WorldMapViewport({
     const scene = sceneRef.current
     if (!scene) return
 
+    if (e.key === 'Shift') {
+      scene.setFlyKey('shift', true)
+      return
+    }
     if (e.key === '1') {
       onCameraModeChange?.('3d')
       return
@@ -426,6 +498,7 @@ export function WorldMapViewport({
     }
     if ('wasdWASD'.includes(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
       scene.setFlyKey(e.key, true)
+      scene.setFlyKey('shift', e.shiftKey)
       return
     }
 
@@ -447,6 +520,10 @@ export function WorldMapViewport({
   }
 
   const onKeyUp = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (e.key === 'Shift') {
+      sceneRef.current?.setFlyKey('shift', false)
+      return
+    }
     if ('wasdWASD'.includes(e.key)) sceneRef.current?.setFlyKey(e.key, false)
   }
 
@@ -464,11 +541,14 @@ export function WorldMapViewport({
           dragRef.current = null
           if (sceneRef.current) sceneRef.current.controls.enabled = true
         }}
-        onPointerLeave={() => setCursor(null)}
+        onPointerLeave={() => {
+          hoverPtRef.current = null
+          setCursorReadout(null)
+        }}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onBlur={() => {
-          ;['w', 'a', 's', 'd'].forEach((k) => sceneRef.current?.setFlyKey(k, false))
+          ;['w', 'a', 's', 'd', 'shift'].forEach((k) => sceneRef.current?.setFlyKey(k, false))
         }}
         className="size-full cursor-grab outline-none active:cursor-grabbing"
       />
@@ -486,8 +566,8 @@ export function WorldMapViewport({
 
       {/* Bottom-start live coordinate readout */}
       <ViewerOverlay className="pointer-events-none absolute bottom-(--viewer-inset) left-(--viewer-inset) z-floating flex items-center gap-2.5 px-2.5 py-1 font-mono text-xs tabular-nums">
-        <span className="text-fg-secondary">
-          {cursor ? `X ${cursor.x}  Y ${cursor.y}  Z ${cursor.z}` : '—'}
+        <span ref={cursorTextRef} className="text-fg-secondary">
+          —
         </span>
         {streamStats.pending > 0 ? (
           <span className="text-fg-muted" aria-live="polite">

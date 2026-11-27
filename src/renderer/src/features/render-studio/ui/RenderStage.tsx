@@ -348,18 +348,14 @@ export const RenderStage = forwardRef<
       framePreset: (preset) => {
         const renderer = rendererRef.current
         if (!renderer) return
-        const spec = STUDIO_CAMERA_PRESETS.find((v) => v.id === preset)
         setActivePreset(preset)
         renderer.framePreset(preset, settings.projection, settings.fov)
-        if (spec?.id === 'eye_s' && settings.projection !== 'perspective') {
-          onProjectionChange('perspective')
-        }
       },
       resetCamera: () => {
         rendererRef.current?.framePreset(activePreset, settings.projection, settings.fov)
       }
     }),
-    [loaded, activePreset, settings.projection, settings.fov, onProjectionChange]
+    [loaded, activePreset, settings.projection, settings.fov]
   )
 
   // Compute exact WYSIWYG viewport frame for fixed aspect ratios so live view and export match 1:1
@@ -495,12 +491,7 @@ export const RenderStage = forwardRef<
                   variant={selected ? 'secondary' : 'ghost'}
                   onClick={() => {
                     setActivePreset(id)
-                    if (id === 'eye_s') {
-                      onProjectionChange('perspective')
-                      rendererRef.current?.framePreset(id, 'perspective', settings.fov)
-                    } else {
-                      rendererRef.current?.framePreset(id, settings.projection, settings.fov)
-                    }
+                    rendererRef.current?.framePreset(id, settings.projection, settings.fov)
                   }}
                 >
                   {spec.short}
@@ -512,7 +503,7 @@ export const RenderStage = forwardRef<
               label={
                 settings.projection === 'perspective'
                   ? 'Switch to isometric'
-                  : 'Switch to perspective'
+                  : 'Switch to 3D'
               }
             >
               <Button
@@ -526,7 +517,7 @@ export const RenderStage = forwardRef<
                 }
               >
                 <Pyramid aria-hidden="true" />
-                {settings.projection === 'perspective' ? 'Persp' : 'Iso'}
+                {settings.projection === 'perspective' ? '3D' : 'Iso'}
               </Button>
             </Tip>
             <Tip label="Reframe build">

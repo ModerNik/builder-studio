@@ -1,30 +1,40 @@
 // Settings › Minecraft: the default target, per-version game files and game folders.
-import { useState, type ReactElement } from 'react'
-import { CircleCheck, CircleDashed, TriangleAlert } from 'lucide-react'
+import { useState, type FormEvent, type ReactElement } from 'react'
+import { CircleCheck, CircleDashed, Plus, Trash2, TriangleAlert } from 'lucide-react'
+import { Badge } from '@/shared/ui/primitives/badge'
 import { Button } from '@/shared/ui/primitives/button'
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle
+} from '@/shared/ui/primitives/dialog'
 import { Field } from '@/shared/ui/primitives/field'
 import { Input } from '@/shared/ui/primitives/input'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/shared/ui/primitives/select'
 import { StatusBadge } from '@/shared/ui/status/StatusBadge'
 import { SettingsPanel, SettingsRow } from '@/entities/settings/ui/Settings'
 import { MinecraftVersionSelect } from '@/entities/settings/ui/MinecraftVersionSelect'
 import { useAvailability } from '@/entities/availability/model/availability'
 import type { Settings } from '@shared/api'
-import { DEFAULT_MINECRAFT_VERSION, MINECRAFT_VERSIONS } from '@shared/minecraft'
+import { DEFAULT_MINECRAFT_VERSION } from '@shared/minecraft'
 import { SettingInput } from './bits'
 import { useLocations, useMissingPaths, useSaveSettings } from '@/entities/settings/model/save'
 import { useInstallations } from '@/entities/settings/model/detected'
 import { refreshAvailability } from '../model/minecraft'
+import {
+  addableMinecraftVersions,
+  defaultAddVersion,
+  visibleMinecraftVersions,
+  withVersionFiles,
+  withoutVersionFiles
+} from '../model/minecraftVersions'
 import { pickPath } from '../model/pick'
 
-type Badge = 'ready' | 'optional' | 'needed'
-const BADGE: Record<Badge, [tone: 'success' | 'warning' | 'neutral', text: string]> = {
+type StatusTone = 'ready' | 'optional' | 'needed'
+const BADGE: Record<StatusTone, [tone: 'success' | 'warning' | 'neutral', text: string]> = {
   ready: ['success', 'Ready'],
   optional: ['neutral', 'Optional'],
   needed: ['warning', 'Needed for Export']
@@ -92,6 +102,102 @@ function VersionPath({
   )
 }
 
+function AddVersionForm({
+  addable,
+  installed,
+  onCancel,
+  onAdd
+}: {
+  addable: readonly string[]
+  installed: readonly { version: string; jar: string }[]
+  onCancel: () => void
+  onAdd: (version: string, files: { jar?: string; pack?: string }) => void
+}): ReactElement {
+  const [version, setVersion] = useState(() => defaultAddVersion(addable, installed))
+  const [jar, setJar] = useState('')
+  const [pack, setPack] = useState('')
+  const detectedJar = installed.find((item) => item.version === version)?.jar ?? ''
+
+  const submit = (e: FormEvent): void => {
+    e.preventDefault()
+    if (!version) return
+    onAdd(version, { jar, pack })
+  }
+
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-4">
+      <DialogHeader>
+        <DialogTitle>Add Minecraft version</DialogTitle>
+        <DialogDescription>
+          Choose a version to override its client jar or texture pack. Leave a field empty to use
+          what Builder Studio finds.
+        </DialogDescription>
+      </DialogHeader>
+      <DialogBody className="flex flex-col gap-4">
+        <Field label="Minecraft version">
+          <MinecraftVersionSelect
+            value={version}
+            onChange={setVersion}
+            versions={addable}
+            label="Minecraft version to add"
+            className="w-full"
+          />
+        </Field>
+        <Field label="Client jar" hint="Optional. Used to inspect this version’s blocks.">
+          <div className="flex min-w-0 gap-2">
+            <Input
+              value={jar}
+              placeholder={detectedJar || 'Not found automatically'}
+              className="min-w-0 flex-1 font-mono text-sm"
+              spellCheck={false}
+              onChange={(e) => setJar(e.target.value)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              aria-label={`Browse for ${version || 'selected version'} client jar`}
+              onClick={() =>
+                void pickPath('file', jar || detectedJar).then((picked) => picked && setJar(picked))
+              }
+            >
+              Browse…
+            </Button>
+          </div>
+        </Field>
+        <Field label="Texture pack" hint="Optional. Overrides the client jar textures.">
+          <div className="flex min-w-0 gap-2">
+            <Input
+              value={pack}
+              placeholder="Not set"
+              className="min-w-0 flex-1 font-mono text-sm"
+              spellCheck={false}
+              onChange={(e) => setPack(e.target.value)}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              aria-label={`Browse for ${version || 'selected version'} texture pack`}
+              onClick={() =>
+                void pickPath('file', pack).then((picked) => picked && setPack(picked))
+              }
+            >
+              Browse…
+            </Button>
+          </div>
+        </Field>
+      </DialogBody>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="submit" variant="primary" disabled={!version}>
+          Add version
+        </Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
 export function Minecraft({ settings }: { settings: Settings }): ReactElement {
   const requirements = useAvailability().data?.requirements
   const found = useLocations()
@@ -101,17 +207,15 @@ export function Minecraft({ settings }: { settings: Settings }): ReactElement {
   const target = settings.minecraftVersion ?? DEFAULT_MINECRAFT_VERSION
   const installed = installations.data ?? []
   const configured = settings.minecraftFiles ?? {}
-  const versions = [
-    ...new Set([target, ...Object.keys(configured), ...installed.map((i) => i.version)])
-  ].sort((a, b) => MINECRAFT_VERSIONS.indexOf(b) - MINECRAFT_VERSIONS.indexOf(a))
-  const [addVersion, setAddVersion] = useState('')
-  const addable = MINECRAFT_VERSIONS.filter((version) => !versions.includes(version))
+  const versions = visibleMinecraftVersions(target, configured)
+  const addable = addableMinecraftVersions(versions)
+  const [addOpen, setAddOpen] = useState(false)
   const fields: {
     key: 'schematics' | 'saves'
     label: string
     help: string
     browse: 'folder'
-    badge: Badge
+    badge: StatusTone
     empty?: string
   }[] = [
     {
@@ -151,9 +255,28 @@ export function Minecraft({ settings }: { settings: Settings }): ReactElement {
           const legacy = version === DEFAULT_MINECRAFT_VERSION
           const savedJar = configured[version]?.jar ?? (legacy ? settings.jar : '')
           const savedPack = configured[version]?.pack ?? (legacy ? settings.pack : '')
+          const isTarget = version === target
           return (
-            <div key={version} className="flex flex-col gap-4 border-t border-border-subtle p-4">
-              <h3 className="font-medium text-fg">Minecraft {version}</h3>
+            <div key={version} className="flex flex-col gap-4 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium text-fg">Minecraft {version}</h3>
+                  {isTarget && <Badge variant="outline">Default</Badge>}
+                </div>
+                {!isTarget && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Remove Minecraft ${version}`}
+                    onClick={() =>
+                      save.mutate({ minecraftFiles: withoutVersionFiles(configured, version) })
+                    }
+                  >
+                    <Trash2 aria-hidden />
+                    Remove
+                  </Button>
+                )}
+              </div>
               <VersionPath
                 version={version}
                 kind="jar"
@@ -173,36 +296,31 @@ export function Minecraft({ settings }: { settings: Settings }): ReactElement {
         })}
         {addable.length > 0 && (
           <SettingsRow
-            title="Add game files for another version"
-            detail="Set a client jar or texture pack for a version not listed above."
+            title="Other versions"
+            detail="Configure a client jar or texture pack for another Minecraft version."
           >
-            <Select value={addVersion} onValueChange={setAddVersion}>
-              <SelectTrigger aria-label="Version to add" className="w-36">
-                <SelectValue placeholder="Choose version" />
-              </SelectTrigger>
-              <SelectContent>
-                {[...addable].reverse().map((version) => (
-                  <SelectItem key={version} value={version}>
-                    {version}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              variant="outline"
-              disabled={!addVersion}
-              onClick={() => {
-                if (addVersion) {
-                  save.mutate({ minecraftFiles: { ...configured, [addVersion]: {} } })
-                  setAddVersion('')
-                }
-              }}
-            >
+            <Button variant="outline" onClick={() => setAddOpen(true)}>
+              <Plus aria-hidden />
               Add version
             </Button>
           </SettingsRow>
         )}
       </SettingsPanel>
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          {addOpen && (
+            <AddVersionForm
+              addable={addable}
+              installed={installed}
+              onCancel={() => setAddOpen(false)}
+              onAdd={(version, files) => {
+                save.mutate({ minecraftFiles: withVersionFiles(configured, version, files) })
+                setAddOpen(false)
+              }}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
       <SettingsPanel title="Game folders">
         {fields.map((f) => {
           const [tone, text] = BADGE[f.badge]

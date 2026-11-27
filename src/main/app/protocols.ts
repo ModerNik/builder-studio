@@ -6,10 +6,28 @@ import { net, protocol } from 'electron'
 import { pathToFileURL } from 'url'
 import { WorldDimensionSchema } from '@shared/api'
 import { servedFile } from '../workspace/paths'
-import { readHiresChunk, readLowresTile } from '../world/world-reader'
+import createWorldWorker from '../world/world-worker?nodeWorker'
+import { WorldWorkerPool } from '../world/world-worker-pool'
 import { resolved } from './settings'
 import { isMinecraftVersion } from '@shared/minecraft'
 import { fileRevision } from './locations'
+
+let worldPool: WorldWorkerPool | null = null
+
+function getWorldPool(): WorldWorkerPool {
+  if (!worldPool) {
+    worldPool = new WorldWorkerPool({
+      createWorker: () => createWorldWorker({})
+    })
+  }
+  return worldPool
+}
+
+/** Terminate the background world reader worker threads on app exit. */
+export function disposeWorldPool(): void {
+  worldPool?.dispose()
+  worldPool = null
+}
 
 const PRIVILEGES = {
   standard: true,
@@ -73,6 +91,7 @@ export function handleProtocols(): void {
       if (!world || !dimRes.success || !existsSync(join(world, 'level.dat'))) {
         return new Response('forbidden', { status: 403, headers: cors })
       }
+      if (req.signal?.aborted) return new Response(null, { status: 499, headers: cors })
       const { cache } = resolved()
       if (url.pathname === '/lowres') {
         const rx = parseIntParam(url.searchParams.get('rx'))
@@ -80,7 +99,14 @@ export function handleProtocols(): void {
         if (rx === null || rz === null) {
           return new Response('bad params', { status: 400, headers: cors })
         }
-        const bytes = await readLowresTile(world, dimRes.data, rx, rz, cache)
+        const bytes = await getWorldPool().readLowres(
+          world,
+          dimRes.data,
+          rx,
+          rz,
+          cache,
+          req.signal
+        )
         if (!bytes) return new Response(null, { status: 204, headers: cors })
         return new Response(new Uint8Array(bytes), {
           status: 200,
@@ -93,7 +119,14 @@ export function handleProtocols(): void {
         if (cx === null || cz === null) {
           return new Response('bad params', { status: 400, headers: cors })
         }
-        const bytes = await readHiresChunk(world, dimRes.data, cx, cz, cache)
+        const bytes = await getWorldPool().readHires(
+          world,
+          dimRes.data,
+          cx,
+          cz,
+          cache,
+          req.signal
+        )
         if (!bytes) return new Response(null, { status: 204, headers: cors })
         return new Response(new Uint8Array(bytes), {
           status: 200,
@@ -102,6 +135,9 @@ export function handleProtocols(): void {
       }
       return new Response('not found', { status: 404, headers: cors })
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        return new Response(null, { status: 499, headers: cors })
+      }
       console.error('[world://]', req.url, err)
       return new Response('error', { status: 500, headers: cors })
     }

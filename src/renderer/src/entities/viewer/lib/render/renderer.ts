@@ -245,6 +245,13 @@ export class CameraManager extends THREE.EventDispatcher<{ change: object }> {
     if (next === this.active) return
     next.position.copy(this.active.position)
     next.quaternion.copy(this.active.quaternion)
+    if (next === this.ortho && this.bounds) {
+      // Pull the orthographic camera outside the build's bounding sphere so ortho.near never clips the front.
+      const back = new THREE.Vector3(0, 0, 1).applyQuaternion(next.quaternion).normalize()
+      const minDist = this.bounds.radius * 2.5
+      const along = next.position.clone().sub(this.bounds.centre).dot(back)
+      if (along < minDist) next.position.addScaledVector(back, minDist - along)
+    }
     this.active = next
     this.controls.object = next
     this.updateClipPlanes()
